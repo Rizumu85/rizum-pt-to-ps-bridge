@@ -306,98 +306,313 @@ traversal is fully Python. Only `alg.mapexport.save` is a JS-only dependency.
 
 ---
 
----
-
-## 2. SP JS API (fallback — only if Python is missing something)
-
-Source: `pt-python-doc-md/substance_painter/js.md` + `javascript-doc/`.
-
-### 2.1 Capabilities confirmed present in JS but missing in Python
-_Populate after §1 is done._
-
-### 2.2 JS invocation bridge
-- [ ] How to call `alg.*` from Python (`substance_painter.js.evaluate`?)
-- [ ] Return-value marshalling
-- [ ] Error propagation
-
----
-
 ## 3. UXP Photoshop API
 
-Source: `uxp-photoshop-main/reference-ps.js`, `uxp-photoshop-main/src/`.
+Source: `uxp-photoshop-main/src/pages/ps_reference/` + `uxp-api/reference-js/`
++ `guides/uxp_guide/`.
 
-### 3.1 PSD creation & save
-- [ ] `app.documents.add(...)` signature
-- [ ] `doc.saveAs` / `doc.save` for PSD
-- [ ] Color mode, bit depth, ICC profile control
-- [ ] Open existing PSD
+Entry point: `const { app, action, core, constants } = require('photoshop');`
 
-### 3.2 Layer creation
-- [ ] Raster (`ArtLayer`) from PNG file
-- [ ] Layer group (`LayerSet`)
-- [ ] Clipping mask toggle (`grouped` / `clipping mask`)
-- [ ] Layer ordering / move-to-end / move-to-beginning
-- [ ] Set opacity, visibility
+### 3.1 Minimum Photoshop version
 
-### 3.3 Blend modes
-- [ ] `BlendMode` enum values actually supported in UXP (may differ from ExtendScript)
-- [ ] PASSTHROUGH for groups
-- [ ] Gap list: which SP modes have no UXP mapping
+Manifest v5 requires **Photoshop ≥ 23.3** (UXP ≥ 6.0). All methods we rely on
+are available at 23.3. Set `manifest.host.minVersion = "23.3.0"`.
 
-### 3.4 Layer masks
-- [ ] Add layer mask from PNG (grayscale)
-- [ ] Detect whether layer has a mask
-- [ ] `Apply Layer Mask` detection (pre-sync-back diagnostic)
+This revises `design.md §2` which said "PS ≥ 23"; update to 23.3.
 
-### 3.5 Metadata (XMP / per-layer info)
-- [ ] XMP packet read/write on document
-- [ ] Per-layer custom metadata: supported method in UXP
-- [ ] Sidecar-JSON fallback policy
+### 3.2 PSD creation & save — ✅ covered
 
-### 3.6 Panel UI
-_`uxp-photoshop-main/reference-spectrum.js`, `reference-html.js`, `reference-css.js`._
+| Need | API |
+|---|---|
+| New doc | `await app.createDocument({width, height, resolution, mode: "RGBColorMode", fill: "transparent"})` |
+| Open existing | `await app.open(fileEntry)` — takes UXP File entry |
+| Save PSD | `await doc.saveAs.psd(fileEntry, {embedColorProfile: true}, asCopy=false)` |
+| Save current | `await doc.save()` |
+| Close | `await doc.close(SaveOptions.DONOTSAVECHANGES)` |
 
-- [ ] Panel registration via manifest
-- [ ] Spectrum Web Components used: `sp-button`, `sp-checkbox`, etc.
-- [ ] Event model inside modal execution
+Color mode: `"RGBColorMode"` (default), bit depth via `doc.bitsPerChannel`.
 
-### 3.7 File I/O + local FS
-- [ ] UXP FS API: `require('fs')` or `uxp.storage.localFileSystem`
-- [ ] Write PNG + JSON to a path outside the plugin sandbox
-- [ ] Hash computation (sha1) availability
+### 3.3 Layer creation & arrangement — ✅ covered via high-level DOM
 
-### 3.8 Modal execution scope
-- [ ] `executeAsModal` wrapper for all doc-mutating calls
-- [ ] Long-running export: batching + progress
+| Need | API |
+|---|---|
+| New raster layer | `await doc.createPixelLayer({name, opacity, blendMode, fillNeutral})` |
+| New group | `await doc.createLayerGroup({name, opacity, blendMode, fromLayers})` |
+| Group existing | `await doc.groupLayers([layer1, layer2])` |
+| Duplicate / move across doc | `await layer.duplicate(targetDoc)` |
+| Reorder | `layer.move(relativeLayer, ElementPlacement.PLACEBEFORE\|PLACEAFTER\|PLACEINSIDE\|PLACEATBEGINNING\|PLACEATEND)` |
+| Delete | `layer.delete()` |
+| Visibility | `layer.visible = bool` |
+| Opacity / fill | `layer.opacity = 0–100`, `layer.fillOpacity = 0–100` (ints) |
+| Name | `layer.name = str` |
+| Lock | `layer.allLocked = bool`, `.pixelsLocked`, `.positionLocked`, `.transparentPixelsLocked` |
+| **Clipping mask** (design.md §5.2) | `layer.isClippingMask = true` — clips to layer below |
+| Rasterize | `await layer.rasterize(RasterizeType)` / `await doc.rasterizeAllLayers()` |
 
-### 3.9 Document / layer change detection
-_For sync-back "last changed" tracking._
+### 3.4 Placing a PNG as raster content — ⚠ no high-level API
 
-- [ ] Event or poll-hash strategy
-- [ ] Timestamp / dirty flag per layer
+UXP Layer has no direct "load PNG into this raster layer" call. Two routes:
+
+**Path A (proven from v1.1.8):**
+```javascript
+const pngDoc = await app.open(pngEntry);
+const ours = pngDoc.layers[0];
+await ours.duplicate(targetDoc);               // copies layer into our PSD
+await pngDoc.closeWithoutSaving();
+```
+
+**Path B (surgical, via `batchPlay`):** the `placeEvent` action descriptor,
+followed by `rasterize()`. More complex, same end state.
+
+**Decision**: Path A. Matches what the old plugin did in JSX, survives new
+UXP quirks, doesn't require reverse-engineering action descriptors.
+
+### 3.5 Layer mask add/set — ⚠ `batchPlay` only
+
+No high-level method. Add reveal-all mask, then fill it from a grayscale PNG
+via the same open-and-duplicate trick targeting the mask channel:
+
+```javascript
+// Add reveal-all mask to active layer
+await action.batchPlay([{
+  _obj: "make", new: {_class: "channel"},
+  at: {_ref: "channel", _enum: "channel", _value: "mask"},
+  using: {_enum: "userMaskEnabled", _value: "revealAll"}
+}], {});
+// Select the mask channel, then paste the grayscale PNG's pixels into it.
+```
+
+Inbound flow uses `batchPlay` with `set` + `to: {_obj: "file", _path: maskPng}`
+via the `placeEvent` action, or opens the mask PNG as a new doc and copies
+its pixel channel into the mask channel of the target layer. **Details will
+be finalized at M2 impl time by recording the sequence via PS's "Record Action
+Commands" developer menu** (per `batchplay.md` workflow).
+
+Mask presence detection: `doc.layers[i]` has no direct `hasLayerMask`
+property. Use `batchPlay` `get` on `{_ref: "property", _property: "hasUserMask"}`
+or check bounds differences — implementation detail for M2.
+
+### 3.6 Blend modes — ✅ covered, better than v1.1.8
+
+UXP `constants.BlendMode` members (relevant for our map):
+`NORMAL, MULTIPLY, SCREEN, OVERLAY, DARKEN, LIGHTEN, COLORBURN,
+COLORDODGE, LINEARBURN, LINEARDODGE, LINEARLIGHT, VIVIDLIGHT, PINLIGHT,
+HARDLIGHT, SOFTLIGHT, DIFFERENCE, EXCLUSION, SUBTRACT, DIVIDE, HUE,
+SATURATION, COLOR, LUMINOSITY, PASSTHROUGH, DISSOLVE, DARKERCOLOR,
+LIGHTERCOLOR, HARDMIX`.
+
+**Full SP → PS mapping** (supersedes the v1.1.8 table):
+
+| SP BlendingMode | UXP BlendMode | Bake policy |
+|---|---|---|
+| Normal, Replace | NORMAL | keep |
+| PassThrough (group only) | PASSTHROUGH | keep |
+| Disable | — (set `visible=false`) | keep |
+| Multiply | MULTIPLY | keep |
+| Screen | SCREEN | keep |
+| Overlay | OVERLAY | keep |
+| Darken | DARKEN | keep |
+| Lighten | LIGHTEN | keep |
+| LinearDodge | LINEARDODGE | keep |
+| LinearBurn | LINEARBURN | keep |
+| ColorBurn | COLORBURN | keep |
+| ColorDodge | COLORDODGE | keep |
+| SoftLight | SOFTLIGHT | keep |
+| HardLight | HARDLIGHT | keep |
+| VividLight | VIVIDLIGHT | keep |
+| LinearLight | LINEARLIGHT | keep |
+| PinLight | PINLIGHT | keep |
+| Difference | DIFFERENCE | keep |
+| Exclusion | EXCLUSION | keep |
+| Subtract | SUBTRACT | keep |
+| Divide | DIVIDE | keep |
+| Saturation | SATURATION | keep |
+| Color | COLOR | keep |
+| **Tint** | HUE (approx) | **bake in default; `[!]` in preserve-mode** |
+| **Value** | LUMINOSITY (approx) | **bake in default; `[!]` in preserve-mode** |
+| InverseDivide, InverseSubtract, SignedAddition | — | **always bake** |
+| NormalMapCombine, NormalMapDetail, NormalMapInverseDetail | — | **always bake** |
+
+**Improvements over v1.1.8 JSX plugin**:
+- `Darken`, `Lighten` now mapped (old plugin dropped them)
+- `LinearLight` now mapped (old plugin dropped it)
+- `Tint` → `HUE`, `Value` → `LUMINOSITY` have approximate mappings in
+  "Preserve all layers" mode instead of silent drop
+
+### 3.7 Panel UI — ✅ covered
+
+Manifest v5 entrypoint:
+```json
+{
+  "entrypoints": [{
+    "type": "panel",
+    "id": "rizumBridge",
+    "label": {"default": "Rizum PT Bridge"},
+    "minimumSize": {"width": 260, "height": 300},
+    "icons": [...]
+  }]
+}
+```
+
+Root is `index.html` (declared via `"main": "index.html"`). Standard DOM +
+Spectrum Web Components (`<sp-button>`, `<sp-checkbox>`, `<sp-menu>`,
+`<sp-action-button>`, etc.) for controls. CSS via Spectrum CSS.
+
+No modal blocking for the panel itself. Long operations wrap in
+`executeAsModal`.
+
+### 3.8 File I/O — ✅ covered
+
+`manifest.requiredPermissions.localFileSystem = "fullAccess"` gives us
+arbitrary read/write. Two interfaces:
+
+**Modern (token-based, UXP native):**
+```javascript
+const fs = require('uxp').storage.localFileSystem;
+const entry = await fs.getEntryWithUrl("file:" + absolutePath);   // needs fullAccess
+await entry.write(data);
+// or getFileForOpening() / getFileForSaving() for user pickers
+```
+
+**Node-style fs** (convenience shim in UXP):
+```javascript
+const fs = require('fs');
+await fs.writeFile(path, buffer);
+const data = await fs.readFile(path);
+const list = await fs.readdir(dir);
+```
+
+Use Node-style `fs` for the sync manifest + PNG I/O — simpler for our
+read-manifest / write-manifest flow. `getFileForOpening()` picker for the
+"pick a build_request.json" action on initial SP→PS build.
+
+SHA1/hash: use Web Crypto `crypto.subtle.digest('SHA-1', buffer)`.
+
+### 3.9 Modal execution scope — ✅ covered
+
+All document-mutating calls must be inside:
+```javascript
+await require('photoshop').core.executeAsModal(async (ctx) => {
+  // all the createLayer / setBlendMode / batchPlay calls
+}, {commandName: "Rizum: Build PSD"});
+```
+
+`ctx.isCancelled` / `ctx.onCancel` for user-cancel handling. Wrap each
+per-UDIM-tile build in its own modal scope so cancelling mid-export stops
+cleanly between tiles.
+
+History suspension: `doc.suspendHistory(cb)` OR `ctx.hostControl.suspendHistory({documentID})`
+inside modal scope — collapses all our mutations into one undoable step.
+
+### 3.10 Metadata — ⚠ revised: layer-name suffix + sidecar JSON
+
+UXP exposes `require('uxp').xmp` for **document-level** XMP. Per-layer XMP
+is not exposed in the high-level API. `batchPlay` can poke layer metadata
+but it's fragile across PS versions.
+
+**Revised schema** (replaces `design.md §7`):
+
+- Every plugin-created PS layer gets a suffix `‡<sp_uid>` appended to its
+  name (`DiffuseBase ‡a3f7`). The double-dagger (U+2021) is a single char
+  chosen because it's not on any keyboard, so user-typed names won't
+  collide. Users can rename the prefix freely as long as they keep the
+  trailing `‡<uid>` — the regex `‡[0-9a-f]+$` is the lookup key.
+- The PSD also gets a sidecar JSON: `<psdname>.rizum.json` next to the
+  PSD file, containing:
+  ```json
+  {
+    "rizum_version": "2.0.0",
+    "sp_project_path": "C:/.../project.spp",
+    "sp_project_uuid": "<from sp.project.get_uuid()>",
+    "baseline_timestamp": "ISO-8601",
+    "udim": 1001,
+    "layers": [
+      {"sp_uid": "a3f7", "sp_kind": "layer", "sync_direction": "both",
+       "ps_name": "DiffuseBase ‡a3f7"},
+      {"sp_uid": "b912", "sp_kind": "baked_effect",
+       "sync_direction": "sp_to_ps_only",
+       "ps_name": "[baked] Tint_Layer ‡b912"}
+    ]
+  }
+  ```
+- On sync-back, UXP parses the suffix from each layer's name as primary
+  key; sidecar JSON is cross-reference to detect renames/duplicates.
+
+**Design revision required**: update `design.md §7`.
+
+### 3.11 Document / layer change detection — ⚠ compute on demand
+
+UXP has `action.addNotificationListener(events, cb)` — event IDs include
+`"select"`, `"make"`, `"delete"`, `"set"`, etc. But per-layer pixel-dirty
+tracking is not a first-class event. Strategy:
+
+- Don't try to track dirty state continuously
+- When user clicks "Push to Painter", UXP iterates all `‡<sp_uid>`-tagged
+  layers, exports each to PNG into a temp folder, SHA1s the PNG, compares
+  against the baseline-export hash stored in sidecar JSON
+- Unchanged layers get pre-unchecked in the push panel; changed ones are
+  pre-checked
+- User confirms and pushes
+
+This avoids depending on the unreliable event stream, at the cost of a
+one-off "scan" step (a few seconds for a typical PSD).
 
 ---
 
-## 4. Gaps & decisions
+## 4. Gaps & decisions — populated
 
-_Fill once §1–3 are populated._
+### 4.1 Confirmed gaps
 
-### 4.1 Capabilities missing from chosen API stack
+| Gap | Resolution |
+|---|---|
+| SP Python cannot export a single layer/effect/mask to PNG | Use `alg.mapexport.save` via `sp.js.evaluate` (see §2.1) |
+| SP Python cannot read project-level export path | Use `alg.mapexport.exportPath()` via `sp.js.evaluate` (see §2.1) |
+| SP Python paint layers don't accept a bitmap source directly (strokes not exposed) | Insert a top `FillEffectNode` with PNG as source; hide existing content stack as backup (§1.7) |
+| UXP has no high-level "load PNG into layer" | `app.open(pngEntry)` + `duplicate(targetDoc)` (§3.4) |
+| UXP has no high-level layer-mask manipulation | `batchPlay` with `make new channel mask` + open+copy for mask content (§3.5) |
+| UXP has no reliable per-layer XMP metadata | Layer-name suffix `‡<sp_uid>` + sidecar JSON (§3.10) |
+| UXP has no per-layer dirty event | Hash-on-demand when user clicks Push (§3.11) |
+
 ### 4.2 JS fallback scope (SP side)
-### 4.3 Design-doc revisions required (if any)
+
+Exactly two JS calls are wrapped by `bridge.py`:
+
+- `alg.mapexport.save(path, filepath, opts)` — per-layer PNG export
+- `alg.mapexport.exportPath()` — project texture export path
+
+Nothing else. All traversal, blend modes, effects, masks, layer-stack
+mutation, UI, events, and logging are Python-native.
+
+### 4.3 Design-doc revisions required
+
+Applied at the end of this block:
+
+1. **`design.md §2`**: change "PS ≥ 23" to "PS ≥ 23.3" (manifest v5
+   requirement)
+2. **`design.md §7`** (metadata schema): replace with layer-name-suffix
+   `‡<sp_uid>` + sidecar JSON model (see §3.10 here)
+
+No other design revisions forced. `design.md §4–§6` all remain valid given
+UXP + batchPlay coverage.
 
 ---
 
-## 5. Open questions to resolve during reading
+## 5. Open questions to resolve during implementation
 
-- Does SP Python expose enough of the effect stack for a sub-effect to be
-  exported as an isolated PNG? If not, sub-effect clipping-group mapping
-  (`design.md §5.2`) may need to fall back to JS or be reduced to
-  flatten-per-layer.
-- Does UXP support writing per-layer XMP metadata reliably across PS 23,
-  24, 25, 26? If not, sidecar JSON becomes the only source of truth.
-- What is the exact gamma behavior of PS blend modes in UXP (vs
-  ExtendScript legacy)? Needed to calibrate `compensation.py`.
-- UXP panel + modal execution: can the sync-back panel show a diff
-  dialog while a modal export is running? If not, split into two
-  separate user actions.
+(Resolved ones deleted. Remaining:)
+
+- **PS blend-mode gamma behavior in UXP**: the per-layer method-B
+  pre-compensation formula needs empirical calibration. Plan: in M3, write
+  a test PSD with known SP exports for each blend mode, visually compare
+  against SP viewport, tune per-mode LUT. Documented in `plan.md M3`
+  already.
+- **batchPlay for mask insert + content fill**: the exact action
+  descriptor sequence will be worked out at M2 using Photoshop's "Record
+  Action Commands" developer mode. Low risk — well-documented path — but
+  not pre-verified here.
+- **UXP `getEntryWithUrl("file:...")` with `fullAccess`**: documented but
+  not hands-on verified. Node-style `fs` is a safer fallback; if the
+  token-based approach has quirks, `fs.readFile`/`writeFile` covers us.
+- **Panel UI behavior while `executeAsModal` is running**: per docs the
+  panel stays responsive (events queue up). If we hit a blocking issue,
+  split the long export into smaller modal scopes per UDIM tile.

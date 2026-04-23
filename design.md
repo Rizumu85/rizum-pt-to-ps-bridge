@@ -26,7 +26,7 @@ such calls kept explicit in `analysis.md §2`.
 
 ## 2. Photoshop plugin distribution
 
-Must install on **any Photoshop ≥ 23 regardless of Creative Cloud status,
+Must install on **any Photoshop ≥ 23.3 regardless of Creative Cloud status,
 Adobe ID, or license legitimacy.**
 
 Method: unpacked UXP plugin folder written directly into
@@ -299,21 +299,65 @@ Avoids the double-mask pitfall.
 
 ## 7. Metadata schema
 
-Stored per-PS-layer in XMP, mirrored in `<psdname>.rizum.json` next to the PSD
-(XMP on PSD layers is inconsistent across PS versions; the JSON is the
-authoritative fallback).
+UXP has no reliable per-layer XMP metadata API (see `analysis.md §3.10`),
+so metadata lives in two places with the **layer-name suffix as the primary
+key** and the sidecar JSON as the authoritative details lookup.
+
+### 7.1 Per-layer key
+
+Every plugin-created PS layer's name ends with `‡<sp_uid>` (U+2021 double
+dagger + hex uid). Example: `DiffuseBase ‡a3f7`. The double dagger was
+picked because it's not on any keyboard, so user-typed text won't collide.
+Users can rename the prefix freely; the trailing `‡<uid>` is the stable
+anchor. Lookup regex: `‡([0-9a-f]+)$`.
+
+### 7.2 Sidecar JSON
+
+Next to the PSD, one file per PSD: `<psdname>.rizum.json`.
 
 ```json
 {
-  "rizum_sp_uid": "<uid>",
-  "rizum_sp_kind": "layer" | "fill_effect" | "paint_effect" |
-                    "baked_effect" | "anchor_ref" | "flattened_mask",
-  "rizum_sync_direction": "both" | "sp_to_ps_only"
+  "rizum_version": "2.0.0",
+  "sp_project_path": "C:/.../project.spp",
+  "sp_project_uuid": "<from sp.project.get_uuid()>",
+  "baseline_timestamp": "ISO-8601",
+  "udim": 1001,
+  "layers": [
+    {
+      "sp_uid": "a3f7",
+      "sp_kind": "layer",
+      "sync_direction": "both",
+      "ps_name": "DiffuseBase ‡a3f7",
+      "baseline_hash": "sha1:..."
+    },
+    {
+      "sp_uid": "b912",
+      "sp_kind": "baked_effect",
+      "sync_direction": "sp_to_ps_only",
+      "ps_name": "[baked] Tint_Layer ‡b912",
+      "baseline_hash": "sha1:..."
+    }
+  ]
 }
 ```
 
-`baked_effect` and `anchor_ref` get `sync_direction: "sp_to_ps_only"` —
-UXP panel renders them as "cannot sync" entries.
+`sp_kind` values: `layer`, `fill_effect`, `paint_effect`, `baked_effect`,
+`flattened_mask`. ("anchor_ref" merged into `baked_effect` per `design.md §5.4`.)
+
+`baked_effect` entries get `sync_direction: "sp_to_ps_only"` — UXP panel
+renders them as "cannot sync" entries.
+
+`baseline_hash` is the SHA1 of the PNG exported from SP when the PSD was
+originally built. On Push to Painter, UXP computes the current hash of each
+layer's rendered pixels and compares to detect changes.
+
+### 7.3 Sync-back matching
+
+1. UXP reads every PS layer, matches suffix regex → gets `sp_uid`
+2. Cross-references sidecar JSON for `sp_kind` and `sync_direction`
+3. `sync_direction == "sp_to_ps_only"` layers marked "⊘ cannot sync"
+4. SP-side `sync_inbox.py` uses `sp_uid` from manifest to find the node
+   via `sp.layerstack.get_node_by_uid(int(uid, 16))`
 
 ---
 
