@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>Substance 3D Painter Script Tutorial: custom shader UI - Layering sample</title>
+
+	<!--[if lt IE 9]>
+	<script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+	<![endif]-->
+	<link type="text/css" rel="stylesheet" href="styles/sunlight.dark.css">
+
+	<link type="text/css" rel="stylesheet" href="styles/site.alg_flatly.css">
+
+</head>
+
+<body>
+
+<div class="navbar navbar-default navbar-fixed-top ">
+<div class="container">
+	<div class="navbar-header">
+		<a class="navbar-brand" href="index.html">Substance 3D Painter Script</a>
+		<button class="navbar-toggle" type="button" data-toggle="collapse" data-target="#topNavigation">
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+        </button>
+	</div>
+	<div class="navbar-collapse collapse" id="topNavigation">
+		<ul class="nav navbar-nav">
+			
+			<li class="dropdown">
+				<a href="namespaces.list.html" class="dropdown-toggle" data-toggle="dropdown">Namespaces<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.html">alg</a></li><li><a href="alg.baking.html">alg.baking</a></li><li><a href="alg.display.html">alg.display</a></li><li><a href="alg.fileIO.html">alg.fileIO</a></li><li><a href="alg.log.html">alg.log</a></li><li><a href="alg.mapexport.html">alg.mapexport</a></li><li><a href="alg.project.html">alg.project</a></li><li><a href="alg.project.settings.html">alg.project.settings</a></li><li><a href="alg.resources.html">alg.resources</a></li><li><a href="alg.settings.html">alg.settings</a></li><li><a href="alg.shaders.html">alg.shaders</a></li><li><a href="alg.subprocess.html">alg.subprocess</a></li><li><a href="alg.texturesets.html">alg.texturesets</a></li><li><a href="alg.ui.html">alg.ui</a></li><li><a href="base64.html">base64</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="classes.list.html" class="dropdown-toggle" data-toggle="dropdown">Classes<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.baking.BakingError.html">alg.baking.BakingError</a></li><li><a href="alg.display.DisplaySettingsError.html">alg.display.DisplaySettingsError</a></li><li><a href="alg.fileIO.File.html">alg.fileIO.File</a></li><li><a href="alg.fileIO.FileIOError.html">alg.fileIO.FileIOError</a></li><li><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></li><li><a href="alg.project.ProjectError.html">alg.project.ProjectError</a></li><li><a href="alg.resources.ResourcesError.html">alg.resources.ResourcesError</a></li><li><a href="alg.shaders.ShaderParameter.html">alg.shaders.ShaderParameter</a></li><li><a href="alg.shaders.ShadersError.html">alg.shaders.ShadersError</a></li><li><a href="alg.subprocess.SubprocessError.html">alg.subprocess.SubprocessError</a></li><li><a href="alg.texturesets.TextureSetsError.html">alg.texturesets.TextureSetsError</a></li><li><a href="alg.ui.UiError.html">alg.ui.UiError</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="tutorials.list.html" class="dropdown-toggle" data-toggle="dropdown">Tutorials<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="tutorial-baker_parameters.html">baker parameters</a></li><li><a href="tutorial-custom_shader_ui.html">custom shader UI - Basic</a></li><li><a href="tutorial-custom_shader_ui_layering.html">custom shader UI - Layering sample</a></li><li><a href="tutorial-plugin_skeleton.html">plugin skeleton</a></li><li><a href="tutorial-ui.html">custom UI</a></li><li><a href="tutorial-websocket.html">remote connection with a WebSocket</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="qmlmodules.list.html" class="dropdown-toggle" data-toggle="dropdown">QML extensions<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a></li>
+				</ul>
+			</li>
+			
+		</ul>
+        
+            <div class="col-sm-3 col-md-3">
+                <form class="navbar-form" role="search">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Search" name="q" id="search-input">
+                        <div class="input-group-btn">
+                            <button class="btn btn-default" id="search-submit"><i class="glyphicon glyphicon-search"></i></button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        
+	</div>
+
+</div>
+</div>
+
+
+<div class="container" id="toc-content">
+<div class="row">
+
+	
+	<div class="col-md-12">
+	
+		<div id="main">
+			<section class="tutorial-section">
+
+<header>
+    
+
+    <h2>custom shader UI - Layering sample</h2>
+</header>
+
+<article>
+    <h3>Custom shader UI material layering sample</h3>
+<p>Material layering shaders are quite complex and need tens of parameters. It is important to be able
+to override the view to change the UX when working with layered materials.</p>
+<p>The following custom UI example is based on PBR material layering shaders embedded in the starter_assets shelf.</p>
+<p>We want to simplify the UX when editing material parameters instead of having only a simple list of parameters
+with the following mockup:</p>
+<center>
+![Custom dynamic UI](images/custom_shader_ui/mockup.png)<br/>
+*Possible mockup for the material layering shader parameters UI*
+</center>
+<h4>Bind QML to shader parameter</h4>
+<p>We want to connect QML components to shader parameters. In order to help us, we will use a helper function.</p>
+<p><a href="code/custom_shader_ui/shaderparameterconnect.js">shaderparameterconnect.js</a> -
+Value connection helper source</p>
+<pre class="prettyprint source"><code>// Connect a shader parameter to the property of a QML component
+// @param qmlComponent QML component
+// @param propertyKey QML component key to bind
+// @param shaderParameter Shader parameter object
+function connectPropertyToShaderParameter(qmlComponent, propertyKey, shaderParameter) {
+  // Set QML property to the current parameter value
+  qmlComponent[propertyKey] = shaderParameter.value;
+
+  // When the QML property has changed, update shader parameter data
+  qmlComponent[propertyKey+&quot;Changed&quot;].connect(function() {
+    shaderParameter.value = qmlComponent[propertyKey];
+  });
+
+  // When the shader parameter data has changed, update the QML property
+  shaderParameter.valueChanged.connect(function() {
+    qmlComponent[propertyKey] = shaderParameter.value;
+  });
+}
+</code></pre>
+<h4>Common parameters</h4>
+<p>First, we want to display the shader common parameters in a standard way, as a list of parameters inside a group.
+To do that, we declare for each parameter the appropriate widget and its label.
+On each widget we bind the corresponding shader parameter using the method above.</p>
+<p><a href="code/custom_shader_ui/CommonParameters.qml">CommonParameters.qml</a> -
+Common parameters displaying source</p>
+<pre class="prettyprint source"><code>import QtQuick 2.7
+import QtQuick.Layouts 1.3
+import AlgWidgets 2.0
+import &quot;shaderparameterconnect.js&quot; as ShaderConnect
+
+GridLayout {
+  id: layout
+  columns: 2
+
+  function connectParameter(parameter) {
+    var components = {
+      &quot;ao_intensity&quot;: aoIntensity,
+      &quot;nbSamples&quot;: samplingQuality.item,
+      &quot;UseNormalFromMask&quot;: normalFromMask,
+      &quot;DebugMode&quot;: debugMode,
+      &quot;DebugChannel&quot;: debugChannel.item
+    };
+    if (parameter.identifier in components) {
+      components[parameter.identifier].parameter = parameter;
+    }
+  }
+
+  function _initializeLabelComponent(component, labelComponent) {
+    // The component triggers its label visibility
+    labelComponent.visible = Qt.binding(function() { return component.visible });
+
+    // When a shader parameter is connected, bind values changes
+    component.parameterChanged.connect(function() {
+      if (!component.parameter) return;
+
+      // Apply the parameter label on the QML label
+      var parameter = component.parameter;
+      labelComponent.text = parameter.description.label;
+
+      // Connect the QML component to the shader parameter
+      ShaderConnect.connectPropertyToShaderParameter(component, &quot;dataValue&quot;, parameter);
+    });
+  }
+
+  // Use a QML Component to avoid duplication when declaring a AlgComboBox
+  Component {
+    id: comboBoxComponent
+    AlgComboBox {
+      property var parameter: null
+
+      property var dataValue
+      textRole: &quot;label&quot;
+      model: parameter? parameter.description.enumValues : {}
+
+      Component.onCompleted: {
+        // Bind the index of the selected entry to its real value
+        currentIndexChanged.connect(function() {
+          dataValue = model[currentIndex].value;
+        });
+        dataValueChanged.connect(function() {
+          for (var i in model) {
+            if (model[i].value === dataValue) {
+              currentIndex = i;
+              break;
+            }
+          }
+        });
+      }
+    }
+  }
+
+  // Ambient occlusion intensity
+  AlgSlider {
+    id: aoIntensity
+    Layout.fillWidth: true
+    Layout.columnSpan: 2
+    property var parameter: null
+
+    onParameterChanged: {
+      if (!parameter) return;
+      text = parameter.description.label;
+      minValue = parameter.description.min;
+      maxValue = parameter.description.max;
+
+      // Connect the QML component to the shader parameter
+      ShaderConnect.connectPropertyToShaderParameter(aoIntensity, &quot;value&quot;, parameter);
+    }
+  }
+
+  // Sampling quality combobox
+  AlgLabel {
+    id: labelSamplingQuality
+  }
+  Loader {
+    Layout.fillWidth: true;
+    id: samplingQuality
+    sourceComponent: comboBoxComponent
+    onLoaded: layout._initializeLabelComponent(item, labelSamplingQuality);
+  }
+
+  // Normal from mask checkbox
+  AlgLabel {
+    id: labelNormalFromMask
+  }
+  AlgCheckBox {
+    Layout.fillWidth: true;
+    id: normalFromMask
+    property alias dataValue: normalFromMask.checked
+    property var parameter: null
+    Component.onCompleted: layout._initializeLabelComponent(normalFromMask, labelNormalFromMask);
+  }
+
+  // Debug mode checkbox
+  AlgLabel {
+    id: labelDebugMode
+  }
+  AlgCheckBox {
+    Layout.fillWidth: true;
+    id: debugMode
+    property alias dataValue: debugMode.checked
+    property var parameter: null
+    Component.onCompleted: layout._initializeLabelComponent(debugMode, labelDebugMode);
+  }
+
+  // Debugged channel combobox
+  AlgLabel {
+    id: labelDebugChannel
+  }
+  Loader {
+    Layout.fillWidth: true;
+    id: debugChannel
+    sourceComponent: comboBoxComponent
+    onLoaded: layout._initializeLabelComponent(item, labelDebugChannel);
+    visible: debugMode.checked
+  }
+}
+</code></pre>
+<center>
+![Common parameters displaying](images/custom_shader_ui/layering_common_parameters.png)<br/>
+*Common parameters displaying*
+</center>
+<h4>Material parameters</h4>
+<p>The same way we display common parameters, we want to be able to display material parameters as a list.
+As material parameters widgets are mainly sliders, we use here a repeater to avoid the code duplication.</p>
+<p><a href="code/custom_shader_ui/MaterialParameters.qml">MaterialParameters.qml</a> -
+Material parameters displaying source</p>
+<pre class="prettyprint source"><code>import QtQuick 2.7
+import QtQuick.Layouts 1.3
+import AlgWidgets 2.0
+import &quot;shaderparameterconnect.js&quot; as ShaderConnect
+
+ColumnLayout {
+  property var materialData: null
+
+  AlgResourceWidget {
+    Layout.fillWidth: true
+    visible: !!parameter
+    property var parameter: materialData? materialData.material : null
+    filters: AlgResourcePicker.DECAL | AlgResourcePicker.TEXTURE | AlgResourcePicker.FILTER |
+             AlgResourcePicker.MATERIAL | AlgResourcePicker.PRESET_MATERIAL;
+    refineQuery: &quot;u:material &quot;;
+    defaultLabel: &quot;Select material &quot; + (parameter? parameter.description.label : &quot;&quot;)
+
+    onParameterChanged: {
+      if (!parameter) return;
+      // Connect the QML component to the shader parameter
+      requestUrl(parameter.value);
+      urlChanged.connect(function() {
+        parameter.value = url;
+      });
+      parameter.valueChanged.connect(function() {
+        requestUrl(parameter.value);
+      });
+    }
+  }
+
+  // As materials parameters are only sliders, we just repeat 4 sliders
+  // and affect a shader parameter object on each one
+  Repeater {
+    model: materialData.parameters
+    delegate: AlgSlider {
+      id: slider
+      Layout.fillWidth: true
+      visible: !!modelData
+      text: modelData.description.label
+      minValue: modelData.description.min
+      maxValue: modelData.description.max
+
+      Component.onCompleted: { // Connect the QML component to the shader parameter
+        ShaderConnect.connectPropertyToShaderParameter(slider, &quot;value&quot;, modelData);
+      }
+    }
+  }
+}
+</code></pre>
+<center>
+![Material parameters displaying](images/custom_shader_ui/layering_material_parameters.png)<br/>
+*Material parameters displaying*
+</center>
+<h4>Material preview</h4>
+<p>To help the user quickly navigate between the materials parameters,
+we created a button that displays a preview of the selected resource for a given material.
+<a href="code/custom_shader_ui/MaterialPreview.qml">MaterialPreview.qml</a> -
+Material preview source</p>
+<pre class="prettyprint source"><code>import QtQuick 2.7
+import QtQuick.Controls 2.0
+import QtQuick.Layouts 1.3
+import AlgWidgets 2.0
+
+ColumnLayout {
+  id: root
+  spacing: 0
+  property alias text: label.text
+  property var material: null
+  property bool selected: false
+  signal clicked()
+
+  Component.onCompleted: {
+    button.clicked.connect(clicked)
+  }
+
+  Button {
+    id: button
+
+    property var previewOpacity: selected?
+      1 :
+      pressed ? 0.2 : 0.6
+
+    background: Rectangle {
+      anchors.fill: button
+      implicitWidth: 50
+      implicitHeight: 50
+      color: &quot;transparent&quot;
+    }
+
+    Image {
+      mipmap: true
+      cache: false
+      anchors.fill: parent
+      fillMode: Image.PreserveAspectFit
+      opacity: button.previewOpacity
+      visible: root.material && root.material.value
+      source: &quot;image://resources/&quot; + ((root.material && root.material.value)?
+        root.material.value : &quot;&quot;)
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      opacity: button.previewOpacity
+      visible: !(root.material && root.material.value)
+      radius: width*0.5
+      color : &quot;#111&quot;
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      visible: selected
+      border.color: &quot;#000&quot;
+      border.width: 1
+      color: &quot;transparent&quot;
+      opacity: 0.5
+    }
+  }
+  AlgLabel {
+    id: label
+    Layout.alignment: Qt.AlignHCenter
+  }
+}
+</code></pre>
+<center>
+![Material preview displaying](images/custom_shader_ui/layering_material_preview.png)<br/>
+*Material preview displaying*
+</center>
+<h4>Final UI</h4>
+<p>The final UI only uses the previously declared components and forwards shader parameter objects to
+the right components.</p>
+<p><a href="code/custom_shader_ui/custom-ui.qml">custom-ui.qml</a> -
+Common parameters displaying source</p>
+<pre class="prettyprint source"><code>import QtQuick 2.7
+import QtQuick.Layouts 1.3
+import Painter 1.0
+import AlgWidgets 2.0
+import AlgWidgets.Style 2.0
+
+Rectangle {
+  id: root
+  color: AlgStyle.background.color.mainWindow
+  height: mainLayout.height
+  onHeightChanged: {
+    if (height != mainLayout.height) {
+      height = Qt.binding(function() {return mainLayout.height});
+    }
+  }
+
+  property string displayedMaterial: &quot;&quot;
+  property var materialsModel: {}
+
+  function displayShaderParameters(shaderId) {
+    try {
+      // Retrieve the list of each shader parameters with its full description for each one
+      var parameters = alg.shaders.parameters(shaderId);
+      var materials = alg.shaders.materials(shaderId);
+
+      var model = {};
+      for (var i in materials) {
+        model[materials[i].description.label] = {'material': materials[i], 'parameters': []};
+      }
+
+      // For each parameter, connect it to a QML component inside the
+      // common parameters group or a material parameters group
+      for (var i in parameters) {
+        var parameter = parameters[i];
+        if (parameter in materials) continue;
+        var group = &quot;group&quot; in parameter.description? parameter.description.group : &quot;&quot;;
+        if (group in model) {
+          model[group].parameters.push(parameter);
+        }
+        else {
+          commonParameters.connectParameter(parameter);
+        }
+      }
+
+      // Order parameters by the order of declaration in the shader
+      for(var i in model) {
+        model[i].parameters.sort(function(a,b) { return a.indexInShader-b.indexInShader })
+      }
+      materialsModel = Object.keys(model).map(function(v) { return model[v] })
+        .sort(function(a,b) { return a.material.indexInShader-b.material.indexInShader });
+      displayedMaterial = materialsModel[0].material.description.label;
+    }
+    catch(e) {
+      alg.log.error(e.message);
+    }
+  }
+
+  ColumnLayout {
+    id: mainLayout
+    width: parent.width
+
+    AlgGroupWidget {
+      text: &quot;Common parameters&quot;
+      activeScopeBorder: true
+      Layout.fillWidth: true
+      toggled: true
+
+      CommonParameters {
+        Layout.fillWidth: true
+        id: commonParameters
+      }
+    }
+
+    AlgScrollView {
+      Layout.fillWidth: true
+      Layout.preferredHeight: contentHeight + bottomMargin
+
+      RowLayout {
+        Layout.fillWidth: true
+
+        Repeater {
+          model: materialsModel
+          delegate: MaterialPreview {
+            material: modelData.material
+            text: modelData.material.description.label
+            selected: displayedMaterial == text
+            onClicked: {
+              displayedMaterial = text;
+              materialsGroup.toggled = true;
+            }
+          }
+        }
+      }
+    }
+
+    AlgGroupWidget {
+      id: materialsGroup
+      text: displayedMaterial + &quot; parameters&quot;
+      activeScopeBorder: true
+      Layout.fillWidth: true
+      toggled: true
+
+      ColumnLayout {
+        Layout.fillWidth: true
+
+        Repeater {
+          model: materialsModel
+          delegate: MaterialParameters {
+            Layout.fillWidth: true
+            visible: modelData.material.description.label == displayedMaterial
+            materialData: modelData
+          }
+        }
+      }
+    }
+  }
+}
+</code></pre>
+<center>
+![Final custom layering shader UI](images/custom_shader_ui/layering_custom.png)<br/>
+*Final custom layering shader UI*
+</center>
+</article>
+
+</section>
+
+		</div>
+	</div>
+
+	<div class="clearfix"></div>
+
+	
+
+</div>
+</div>
+
+
+    <div class="modal fade" id="searchResults">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title">Search results</h4>
+          </div>
+          <div class="modal-body"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div><!-- /.modal-content -->
+      </div><!-- /.modal-dialog -->
+    </div>
+
+
+<footer>
+
+
+<span class="jsdoc-message">
+	Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.11</a>
+	
+		on 2026-03-12T17:03:20+01:00
+	
+	using the <a href="https://github.com/docstrap/docstrap">DocStrap template</a>.
+</span>
+</footer>
+
+<script src="scripts/docstrap.lib.js"></script>
+<script src="scripts/toc.js"></script>
+
+    <script type="text/javascript" src="scripts/fulltext-search-ui.js"></script>
+
+
+<script>
+$( function () {
+	$( "[id*='$']" ).each( function () {
+		var $this = $( this );
+
+		$this.attr( "id", $this.attr( "id" ).replace( "$", "__" ) );
+	} );
+
+	$( ".tutorial-section pre, .readme-section pre, pre.prettyprint.source" ).each( function () {
+		var $this = $( this );
+
+		var example = $this.find( "code" );
+		exampleText = example.html();
+		var lang = /{@lang (.*?)}/.exec( exampleText );
+		if ( lang && lang[1] ) {
+			exampleText = exampleText.replace( lang[0], "" );
+			example.html( exampleText );
+			lang = lang[1];
+		} else {
+			var langClassMatch = example.parent()[0].className.match(/lang\-(\S+)/);
+			lang = langClassMatch ? langClassMatch[1] : "javascript";
+		}
+
+		if ( lang ) {
+
+			$this
+			.addClass( "sunlight-highlight-" + lang )
+			.addClass( "linenums" )
+			.html( example.html() );
+
+		}
+	} );
+
+	Sunlight.highlightAll( {
+		lineNumbers : false,
+		showMenu : true,
+		enableDoclinks : true
+	} );
+
+	$.catchAnchorLinks( {
+        navbarOffset: 10
+	} );
+	$( "#toc" ).toc( {
+		anchorName  : function ( i, heading, prefix ) {
+			return $( heading ).attr( "id" ) || ( prefix + i );
+		},
+		selectors   : "#toc-content h1,#toc-content h2,#toc-content h3,#toc-content h4",
+		showAndHide : false,
+		smoothScrolling: true
+	} );
+
+	$( "#main span[id^='toc']" ).addClass( "toc-shim" );
+	$( '.dropdown-toggle' ).dropdown();
+
+    $( "table" ).each( function () {
+      var $this = $( this );
+      $this.addClass('table');
+    } );
+
+} );
+</script>
+
+
+
+<!--Navigation and Symbol Display-->
+
+
+<!--Google Analytics-->
+
+
+
+    <script type="text/javascript">
+        $(document).ready(function() {
+            SearcherDisplay.init();
+        });
+    </script>
+
+
+</body>
+</html>

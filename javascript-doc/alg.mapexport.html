@@ -1,0 +1,4827 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>Substance 3D Painter Script Namespace: mapexport</title>
+
+	<!--[if lt IE 9]>
+	<script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+	<![endif]-->
+	<link type="text/css" rel="stylesheet" href="styles/sunlight.dark.css">
+
+	<link type="text/css" rel="stylesheet" href="styles/site.alg_flatly.css">
+
+</head>
+
+<body>
+
+<div class="navbar navbar-default navbar-fixed-top ">
+<div class="container">
+	<div class="navbar-header">
+		<a class="navbar-brand" href="index.html">Substance 3D Painter Script</a>
+		<button class="navbar-toggle" type="button" data-toggle="collapse" data-target="#topNavigation">
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+        </button>
+	</div>
+	<div class="navbar-collapse collapse" id="topNavigation">
+		<ul class="nav navbar-nav">
+			
+			<li class="dropdown">
+				<a href="namespaces.list.html" class="dropdown-toggle" data-toggle="dropdown">Namespaces<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.html">alg</a></li><li><a href="alg.baking.html">alg.baking</a></li><li><a href="alg.display.html">alg.display</a></li><li><a href="alg.fileIO.html">alg.fileIO</a></li><li><a href="alg.log.html">alg.log</a></li><li><a href="alg.mapexport.html">alg.mapexport</a></li><li><a href="alg.project.html">alg.project</a></li><li><a href="alg.project.settings.html">alg.project.settings</a></li><li><a href="alg.resources.html">alg.resources</a></li><li><a href="alg.settings.html">alg.settings</a></li><li><a href="alg.shaders.html">alg.shaders</a></li><li><a href="alg.subprocess.html">alg.subprocess</a></li><li><a href="alg.texturesets.html">alg.texturesets</a></li><li><a href="alg.ui.html">alg.ui</a></li><li><a href="base64.html">base64</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="classes.list.html" class="dropdown-toggle" data-toggle="dropdown">Classes<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.baking.BakingError.html">alg.baking.BakingError</a></li><li><a href="alg.display.DisplaySettingsError.html">alg.display.DisplaySettingsError</a></li><li><a href="alg.fileIO.File.html">alg.fileIO.File</a></li><li><a href="alg.fileIO.FileIOError.html">alg.fileIO.FileIOError</a></li><li><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></li><li><a href="alg.project.ProjectError.html">alg.project.ProjectError</a></li><li><a href="alg.resources.ResourcesError.html">alg.resources.ResourcesError</a></li><li><a href="alg.shaders.ShaderParameter.html">alg.shaders.ShaderParameter</a></li><li><a href="alg.shaders.ShadersError.html">alg.shaders.ShadersError</a></li><li><a href="alg.subprocess.SubprocessError.html">alg.subprocess.SubprocessError</a></li><li><a href="alg.texturesets.TextureSetsError.html">alg.texturesets.TextureSetsError</a></li><li><a href="alg.ui.UiError.html">alg.ui.UiError</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="tutorials.list.html" class="dropdown-toggle" data-toggle="dropdown">Tutorials<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="tutorial-baker_parameters.html">baker parameters</a></li><li><a href="tutorial-custom_shader_ui.html">custom shader UI - Basic</a></li><li><a href="tutorial-custom_shader_ui_layering.html">custom shader UI - Layering sample</a></li><li><a href="tutorial-plugin_skeleton.html">plugin skeleton</a></li><li><a href="tutorial-ui.html">custom UI</a></li><li><a href="tutorial-websocket.html">remote connection with a WebSocket</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="qmlmodules.list.html" class="dropdown-toggle" data-toggle="dropdown">QML extensions<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a></li>
+				</ul>
+			</li>
+			
+		</ul>
+        
+            <div class="col-sm-3 col-md-3">
+                <form class="navbar-form" role="search">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Search" name="q" id="search-input">
+                        <div class="input-group-btn">
+                            <button class="btn btn-default" id="search-submit"><i class="glyphicon glyphicon-search"></i></button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        
+	</div>
+
+</div>
+</div>
+
+
+<div class="container" id="toc-content">
+<div class="row">
+
+	
+	<div class="col-md-8">
+	
+		<div id="main">
+			
+
+	<h1 class="page-title">Namespace: mapexport</h1>
+<section>
+
+<header>
+    
+        <h2>
+            <span class="ancestors"><a href="alg.html">alg</a>.</span>
+        
+        mapexport
+        </h2>
+        
+    
+</header>
+
+
+<article>
+    <div class="container-overview">
+    
+        
+            <div class="description">Exports maps from the currently opened project</div>
+        
+
+        
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+        
+    
+    </div>
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="alg.mapexport.ExportError.html">ExportError</a></dt>
+            <dd></dd>
+        </dl>
+    
+
+    
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Methods</h3>
+
+        <dl>
+            
+<hr>
+<dt>
+    <h4 class="name" id=".channelFormat"><span class="type-signature">&lt;static> </span>channelFormat(stackPath, channel)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Retrieve the channel format of a specific stack channel.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a></span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Path to the stack</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>channel</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Identifier of the channel to export (see <a href="alg.mapexport.html#.channelIdentifiers">channelIdentifiers</a>)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    The channel format if stack found
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="alg.mapexport.html#.ChannelFormat">alg.mapexport.ChannelFormat</a></span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".channelIdentifiers"><span class="type-signature">&lt;static> </span>channelIdentifiers( [stackPath])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the list of channel identifiers.
+     If a context is passed (texture set/stack), return only used channels with resolved user channels.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Path to the stack used to resolve channels</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Channel identifiers are:
+     basecolor, height, specular, opacity, emissive, displacement, glossiness,
+     roughness, anisotropylevel, anisotropyangle, transmissive, scattering,
+     reflection, ior, metallic, normal, ambientOcclusion, diffuse, specularlevel,
+     blendingmask, [custom user names].
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".convertedMapIdentifiers"><span class="type-signature">&lt;static> </span>convertedMapIdentifiers()</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the list of converted map identifiers.
+     A converted map is a map computed from other channels/maps.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Converted map identifiers are:
+     1/ior, ao_mixed, diffuse, f0, glossiness, glossiness2, normal,
+     normal_directx, reflection, specular, unity4diff, unity4gloss
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".documentStructure"><span class="type-signature">&lt;static> </span>documentStructure()</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Dump the document structure
+    </div>
+    
+
+    
+
+    
+
+    
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Null if no project is opened, the document structure as an Object else
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+        <h5>Example</h5>
+        
+    <pre class="sunlight-highlight-javascript">// Form of the document structure:
+     { materials: [{
+       name: &quot;Material 1&quot;,
+       selected: true,
+       stacks: [{ // Only one unnamed stack by default
+         name: &quot;&quot;,
+         selected: true,
+         channels: [&quot;basecolor&quot;, &quot;height&quot;, ...],
+         layers: [{
+           name: &quot;Layer 1&quot;,
+           uid: 24
+           hasMask: true,
+           selected: false,
+           maskSelected: false,
+           enabled: true
+         }, {
+           name: &quot;Folder 1&quot;,
+           uid: 48
+           hasMask: false,
+           selected: true,
+           maskSelected: false,
+           layers: [{
+             name: &quot;Layer 2&quot;,
+             uid: 66
+             hasMask: false,
+             selected: false,
+             maskSelected: false,
+             enabled: true
+           }, {...}]
+         }, {...}]
+       }, {...}]
+     }, {...}]}</pre>
+
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".exportDocumentMaps"><span class="type-signature">&lt;static> </span>exportDocumentMaps(preset, path, format [, mapInfo] [, stackPaths] [, exportShaderParams] [, exportUSD])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Export the document with an export preset. If no stack paths are given, all the texture sets will
+     be exported regardless of the current selected ones in the project export options.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>preset</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Export preset name or a filepath to a .spexp file</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>path</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Path to the folder where the map will be exported</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>format</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Export image format ("jpg", "png" ...)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mapInfo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.MapInfo">alg.mapexport.MapInfo</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Control export parameters</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPaths</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;<a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a>></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Paths to the stacks</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>exportShaderParams</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    false
+                
+                </td>
+            
+
+            <td class="description last">Export shader instances json file</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>exportUSD</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    false
+                
+                </td>
+            
+
+            <td class="description last">Export USD file</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Exported maps infos indexed by stack.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+        <h5>Example</h5>
+        
+    <pre class="sunlight-highlight-javascript">// export 1k tiff textures with the &quot;PBR MetalRough&quot; preset and display the output
+     alg.log.info(alg.mapexport.exportDocumentMaps(
+       &quot;PBR MetalRough&quot;,
+       &quot;c:/tmp/export/pbr&quot;,
+       &quot;tiff&quot;,
+       {resolution:[1024,1024]}
+     ));
+
+     // output example on the PreviewSphere sample project
+     {
+        &quot;Sphere&quot;:{
+           &quot;$mesh_$textureSet_BaseColor&quot;: &quot;c:/tmp/export/pbr/Sphere_Sphere_BaseColor.tiff&quot;,
+           &quot;$mesh_$textureSet_Emissive&quot;: &quot;&quot;,
+           &quot;$mesh_$textureSet_Height&quot;: &quot;c:/tmp/export/pbr/Sphere_Sphere_Height.tiff&quot;,
+           &quot;$mesh_$textureSet_Metallic&quot;: &quot;c:/tmp/export/pbr/Sphere_Sphere_Metallic.tiff&quot;,
+           &quot;$mesh_$textureSet_Normal&quot;: &quot;c:/tmp/export/pbr/Sphere_Sphere_Normal.tiff&quot;,
+           &quot;$mesh_$textureSet_Roughness&quot;: &quot;c:/tmp/export/pbr/Sphere_Sphere_Roughness.tiff&quot;
+        }
+     }
+
+     </pre>
+
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".exportPath"><span class="type-signature">&lt;static> </span>exportPath()</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the export path of the opened project
+    </div>
+    
+
+    
+
+    
+
+    
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    The export path if a project is opened, an empty string else
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".getPathsExportDocumentMaps"><span class="type-signature">&lt;static> </span>getPathsExportDocumentMaps(preset, path, format [, stackPaths])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Same as <a href="alg.mapexport.html#.exportDocumentMaps">alg.mapexport.exportDocumentMaps</a> but without performing rendering and disk writing. If no stack
+     paths are given, all the texture sets will be considered as exported regardless of the current selected ones
+     in the project export options.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>preset</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Export preset name or a filepath to a .spexp file</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>path</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Path to the folder where the map will be exported</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>format</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Export image format ("jpg", "png" ...)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPaths</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;<a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a>></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Paths to the stacks</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Exported maps infos indexed by stack. See <a href="alg.mapexport.html#.exportDocumentMaps">alg.mapexport.exportDocumentMaps</a> for more details.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">object</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".getProjectExportOptions"><span class="type-signature">&lt;static> </span>getProjectExportOptions()</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the project export options
+    </div>
+    
+
+    
+
+    
+
+    
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    An object with all the current options. See <a href="alg.mapexport.html#.setProjectExportOptions">setProjectExportOptions</a> for the list of members
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".getProjectExportPreset"><span class="type-signature">&lt;static> </span>getProjectExportPreset()</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the project export preset
+    </div>
+    
+
+    
+
+    
+
+    
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    If a project is opened, the export preset of the project. Otherwise throws an error
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".layerBlendingModes"><span class="type-signature">&lt;static> </span>layerBlendingModes(layerPath)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Retrieve blending modes information of a specific layer
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>layerPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Description of the layer.</p>
+     <p>Generic form of the layer path:
+     ["Texture set name", "Optional stack name", "Optional group name", ...,
+     "Layer name"].</p>
+     <p>It is also possible to use a layer uid as a layer path.</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Blending modes information
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+        <h5>Examples</h5>
+        
+    <pre class="sunlight-highlight-javascript">// get blending modes of the layer &quot;Fill layer 2&quot; in the texture set &quot;M1&quot;
+     var modes = alg.mapexport.layerBlendingModes([&quot;M1&quot;, &quot;Fill layer 2&quot;]);
+     // output example:
+     var modes = {
+       basecolor: {
+         mode: &quot;Multiply&quot;,
+         opacity: 50
+       },
+       height:{
+         &quot;mode&quot;:&quot;Linear dodge (Add)&quot;,
+         &quot;opacity&quot;: 100
+       },
+       {...}
+     };
+     </pre>
+
+    <pre class="sunlight-highlight-javascript">// get blending modes of the layer with uid 42
+     var modes = alg.mapexport.layerBlendingModes(42);
+     </pre>
+
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".meshMapIdentifiers"><span class="type-signature">&lt;static> </span>meshMapIdentifiers( [textureSetName])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Get the list of mesh map identifiers
+     If a context is passed (texture set), return only existing mesh maps.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>textureSetName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Name of the texture set to resolve mesh maps</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Mesh map identifiers are:
+     normal_base, world_space_normals, id, ambient_occlusion, curvature, position, thickness
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;string></span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".save"><span class="type-signature">&lt;static> </span>save(dataPath, filePath [, mapInfo])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Render and save a part of the document to a file.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>dataPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;object></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Description of the object to be rendered.</p>
+     <p>Generic form of the data path:
+     ["Texture set name", "Optional stack name", "Optional group name", ...,
+     "Optional layer name", "Map name"].</p>
+     <p>It is also possible to use a layer uid to generate the data path:
+     [Layer uid (number), "Map name"].</p>
+     <p>Valid map names are:
+     mask, basecolor, base color, height, specular, opacity, emissive,
+     displacement, glossiness, roughness, anisotropylevel, anisotropy level,
+     anisotropyangle, anisotropy angle, transmissive, reflection, ior,
+     metallic, normal, ambientocclusion, user0, user 0, user1, user 1, user2, user 2, user3,
+     user 3, user4, user 4, user5, user 5, user6, user 6, user7, user 7, [custom user names].</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">The file where the image will be saved. Image format
+     is based on file extension.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mapInfo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.MapInfo">alg.mapexport.MapInfo</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Control export parameters</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+
+    
+        <h5>Examples</h5>
+        
+    <pre class="sunlight-highlight-javascript">// export the &quot;base color&quot; map from the &quot;M1&quot; texture set in jpg format
+     alg.mapexport.save([&quot;M1&quot;, &quot;base color&quot;], &quot;c:/file_path.jpg&quot;)
+
+     </pre>
+
+    <pre class="sunlight-highlight-javascript">// export the mask of a layer in png format
+     alg.mapexport.save([&quot;M1&quot;, &quot;Group 1&quot;, &quot;Layer 1&quot;, &quot;mask&quot;], &quot;c:/file_path.png&quot;)
+
+     </pre>
+
+    <pre class="sunlight-highlight-javascript">// export the mask of a layer specifying the uid
+     alg.mapexport.save([24, &quot;mask&quot;], &quot;c:/file_path.png&quot;)
+
+     </pre>
+
+    <pre class="sunlight-highlight-javascript">// export without padding and a custom resolution
+     alg.mapexport.save(
+        [&quot;M1&quot;, &quot;base color&quot;],
+        &quot;c:/file_path.jpg&quot;,
+        {padding:&quot;Transparent&quot;, dilation:0, resolution:[256,512]})
+
+     </pre>
+
+    <pre class="sunlight-highlight-javascript">// explicitly disable dithering on normal/height maps when exporting with 8-bits file formats
+     alg.mapexport.save([&quot;M1&quot;, &quot;normal&quot;], &quot;c:/file_path.tga&quot;, {dithering:&quot;disabled&quot;})
+
+     </pre>
+
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".saveChannelMap"><span class="type-signature">&lt;static> </span>saveChannelMap(stackPath, channel, filePath [, mapInfo])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Render and save a stack channel of the document to a file.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Path to the stack</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>channel</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Identifier of the channel to export (see <a href="alg.mapexport.html#.channelIdentifiers">channelIdentifiers</a>)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">The file where the image will be saved. Image format
+     is based on file extension.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mapInfo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.MapInfo">alg.mapexport.MapInfo</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Control export parameters</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".saveConvertedMap"><span class="type-signature">&lt;static> </span>saveConvertedMap(stackPath, convertedMap, filePath [, mapInfo])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Render and save a converted map of the document to a file.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>stackPath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.StackPath">alg.mapexport.StackPath</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Path to the stack</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>convertedMap</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Identifier of the converted map to export (see <a href="alg.mapexport.html#.convertedMapIdentifiers">convertedMapIdentifiers</a>)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">The file where the image will be saved. Image format
+     is based on file extension.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mapInfo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.MapInfo">alg.mapexport.MapInfo</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Control export parameters</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".saveMeshMap"><span class="type-signature">&lt;static> </span>saveMeshMap(textureSetName, meshMap, filePath [, mapInfo])</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Save an mesh map of the document to a file.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>textureSetName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Name of the texture set</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>meshMap</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Identifier of the mesh map to export (see <a href="alg.mapexport.html#.meshMapIdentifiers">meshMapIdentifiers</a>)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>filePath</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">The file where the image will be saved. Image format
+     is based on file extension.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mapInfo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="alg.mapexport.html#.MapInfo">alg.mapexport.MapInfo</a></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Control export parameters</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".setProjectExportOptions"><span class="type-signature">&lt;static> </span>setProjectExportOptions(options)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Set the project export options. Throws if it failed to set an option, or if there is no project open.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>options</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">An object which contains the options to set.
+                <h6 class="method-params-label method-subparams-label">Properties</h6>
+                
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>fileFormat</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The file format extension for the map exports (e.g. PNG, TIFF)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>padding</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The padding type. One of the following (Passthrough, Color, Transparent, Diffusion, Infinite)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>dilation</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The number of pixels for the dilation</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>bitDepth</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The number of bits per channel (8,16,32)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>exportShaderParams</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export the shader parameters along with the maps</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>exportUSD</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export the USD file</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".setProjectExportPreset"><span class="type-signature">&lt;static> </span>setProjectExportPreset(presetName)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Set the project export preset from its name.
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>presetName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Name of the preset</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".showExportDialog"><span class="type-signature">&lt;static> </span>showExportDialog(options)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Open the project export dialog
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>options</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export dialog options that can be used to override project defaults.
+                <h6 class="method-params-label method-subparams-label">Properties</h6>
+                
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>format</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export image format ("jpg", "png" ...)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>path</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export path, has to be absolute</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>preset</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Export preset name</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+    <div class="param-desc">
+    
+        
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+    
+    </div>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    True if the latest export was successful
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">boolean</span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+</dd>
+
+        
+            
+<hr>
+<dt>
+    <h4 class="name" id=".textureSetResolution"><span class="type-signature">&lt;static> </span>textureSetResolution(name)</h4>
+    
+    
+</dt>
+<dd>
+
+    
+    <div class="description">
+        Return the current resolution in pixels of a texture set
+    </div>
+    
+
+    
+
+    
+
+    
+    
+        <h5>Parameters:</h5>
+        
+
+<table class="params table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>name</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Name of the texture set</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+
+    
+
+    
+
+    
+
+    
+    <h5>Throws:</h5>
+    
+            
+
+<dl>
+    <dt>
+        <div class="param-desc">
+        If there is no opened project or texture set doesn't exist
+        </div>
+    </dt>
+    <dt>
+        <dl>
+            <dt>
+                Type
+            </dt>
+            <dd>
+                
+<span class="param-type"><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></span>
+
+
+
+            </dd>
+        </dl>
+    </dt>
+</dl>
+
+
+        
+
+    
+    <h5>Returns:</h5>
+    
+            
+<div class="param-desc">
+    Resolution in pixels as an array [width, height]
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;int></span>
+
+
+
+    </dd>
+</dl>
+
+
+        
+
+    
+        <h5>Example</h5>
+        
+    <pre class="sunlight-highlight-javascript">// log the resolution of the texture set &quot;default_material&quot;
+     var resolution = alg.mapexport.textureSetResolution(&quot;default_material&quot;);
+     alg.log.info(resolution);
+     // output: [1024, 1024]
+     </pre>
+
+
+    
+</dd>
+
+        </dl>
+    
+
+    
+        <h3 class="subsection-title">Type Definitions</h3>
+
+        <dl>
+                
+<hr>
+<dt class="name" id=".ChannelFormat">
+    <h4 id=".ChannelFormat">ChannelFormat</h4>
+
+    
+</dt>
+<dd>
+    
+
+    
+        <h5>Type:</h5>
+        <ul>
+            <li>
+                
+<span class="param-type">Object</span>
+
+
+
+            </li>
+        </ul>
+    
+
+    
+<dl class="details">
+    
+
+    <h5 class="subsection-title">Properties:</h5>
+
+    <dl>
+
+<table class="props table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>label</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The channel format label: could be one of [sRGB8, L8, RGB8, L16, RGB16, L16F, RGB16F, L32F, RGB32F]</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>color</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">True if the format is in color, false if it is grayscale</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>floating</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">True if the format uses floating point representation, false otherwise</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>bitDepth</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">int</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Bit per color channel (could be one of 8, 16 or 32 bpc)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+</dl>
+
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+</dd>
+
+            
+                
+<hr>
+<dt class="name" id=".MapInfo">
+    <h4 id=".MapInfo">MapInfo</h4>
+
+    
+</dt>
+<dd>
+    
+
+    
+        <h5>Type:</h5>
+        <ul>
+            <li>
+                
+<span class="param-type">Object</span>
+
+
+
+            </li>
+        </ul>
+    
+
+    
+<dl class="details">
+    
+
+    <h5 class="subsection-title">Properties:</h5>
+
+    <dl>
+
+<table class="props table table-striped">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Argument</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>padding</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    "Infinite"
+                
+                </td>
+            
+
+            <td class="description last">Control the type of padding.
+      Possible values are: "Passthrough", "Infinite", "Transparent", "Color", "Diffusion".
+      Refer to the user documentation for meanings.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>dilation</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">int</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    16
+                
+                </td>
+            
+
+            <td class="description last">Padding dilation size in pixels (no effect if padding is "Passthrough" or "Infinite")</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>dithering</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    "enabled"
+                
+                </td>
+            
+
+            <td class="description last">When exporting a 16-bit texture as 8-bit, unwanted artefacts may arise. Enabling dithering can reduce them. Dithering is only applied to Height and Normal maps that are exported at 8-bit.
+      Possible values are: "disabled", "enabled".</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>resolution</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;int></span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last">Resolution of the rendered map (array of two power of two numbers),
+      refer to application limitation for resolutions minimum and maximum.
+      If not specified, uses the texture set resolution.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>bitDepth</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">int</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    8
+                
+                </td>
+            
+
+            <td class="description last">Bit per channel to use (could be one of 8, 16 or 32 bpc)</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>keepAlpha</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    false
+                
+                </td>
+            
+
+            <td class="description last">Keep the alpha channel of the exported map if true</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+</dl>
+
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+</dd>
+
+            
+                
+<hr>
+<dt class="name" id=".StackPath">
+    <h4 id=".StackPath">StackPath</h4>
+
+    
+</dt>
+<dd>
+    
+    <div class="description">
+        Path to the stack (could be ["Texture set name"] or ["Texture set name", "Stack name"])
+    </div>
+    
+
+    
+        <h5>Type:</h5>
+        <ul>
+            <li>
+                
+<span class="param-type">Array.&lt;string></span>
+
+
+
+            </li>
+        </ul>
+    
+
+    
+<dl class="details">
+    
+
+	
+
+	
+
+	
+
+    
+
+    
+
+    
+
+    
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+</dl>
+
+
+    
+</dd>
+
+            </dl>
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+		</div>
+	</div>
+
+	<div class="clearfix"></div>
+
+	
+		<div class="col-md-3">
+			<div id="toc" class="col-md-3 hidden-xs hidden-sm hidden-md"></div>
+		</div>
+	
+
+</div>
+</div>
+
+
+    <div class="modal fade" id="searchResults">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title">Search results</h4>
+          </div>
+          <div class="modal-body"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div><!-- /.modal-content -->
+      </div><!-- /.modal-dialog -->
+    </div>
+
+
+<footer>
+
+
+<span class="jsdoc-message">
+	Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.11</a>
+	
+		on 2026-03-12T17:03:20+01:00
+	
+	using the <a href="https://github.com/docstrap/docstrap">DocStrap template</a>.
+</span>
+</footer>
+
+<script src="scripts/docstrap.lib.js"></script>
+<script src="scripts/toc.js"></script>
+
+    <script type="text/javascript" src="scripts/fulltext-search-ui.js"></script>
+
+
+<script>
+$( function () {
+	$( "[id*='$']" ).each( function () {
+		var $this = $( this );
+
+		$this.attr( "id", $this.attr( "id" ).replace( "$", "__" ) );
+	} );
+
+	$( ".tutorial-section pre, .readme-section pre, pre.prettyprint.source" ).each( function () {
+		var $this = $( this );
+
+		var example = $this.find( "code" );
+		exampleText = example.html();
+		var lang = /{@lang (.*?)}/.exec( exampleText );
+		if ( lang && lang[1] ) {
+			exampleText = exampleText.replace( lang[0], "" );
+			example.html( exampleText );
+			lang = lang[1];
+		} else {
+			var langClassMatch = example.parent()[0].className.match(/lang\-(\S+)/);
+			lang = langClassMatch ? langClassMatch[1] : "javascript";
+		}
+
+		if ( lang ) {
+
+			$this
+			.addClass( "sunlight-highlight-" + lang )
+			.addClass( "linenums" )
+			.html( example.html() );
+
+		}
+	} );
+
+	Sunlight.highlightAll( {
+		lineNumbers : false,
+		showMenu : true,
+		enableDoclinks : true
+	} );
+
+	$.catchAnchorLinks( {
+        navbarOffset: 10
+	} );
+	$( "#toc" ).toc( {
+		anchorName  : function ( i, heading, prefix ) {
+			return $( heading ).attr( "id" ) || ( prefix + i );
+		},
+		selectors   : "#toc-content h1,#toc-content h2,#toc-content h3,#toc-content h4",
+		showAndHide : false,
+		smoothScrolling: true
+	} );
+
+	$( "#main span[id^='toc']" ).addClass( "toc-shim" );
+	$( '.dropdown-toggle' ).dropdown();
+
+    $( "table" ).each( function () {
+      var $this = $( this );
+      $this.addClass('table');
+    } );
+
+} );
+</script>
+
+
+
+<!--Navigation and Symbol Display-->
+
+
+<!--Google Analytics-->
+
+
+
+    <script type="text/javascript">
+        $(document).ready(function() {
+            SearcherDisplay.init();
+        });
+    </script>
+
+
+</body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "private": true,
+  "name": "uxp-photoshop-documentation",
+  "version": "0.1.24",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdobeDocs/uxp-photoshop"
+  },
+  "dependencies": {
+    "@adobe/gatsby-theme-aio": "^4.14.14",
+    "axios": "0.30.0",
+    "gatsby": "4.22.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "uxp-documentation": "github:adobedocs/uxp#v8.1.0"
+  },
+  "overrides": {
+    "axios": "0.30.0"
+  },
+  "scripts": {
+    "start": "gatsby build && gatsby serve",
+    "start:prefix": "gatsby build --prefix-paths && gatsby serve --prefix-paths",
+    "_copy-uxp-html": "rm -rf src/pages/uxp-api/reference-html && cp -r node_modules/uxp-documentation/_transclusions/photoshop/uxp/reference-html src/pages/uxp-api/ && cp node_modules/uxp-documentation/reference-html.js reference-html.js",
+    "_copy-uxp-spectrum": "rm -rf src/pages/uxp-api/reference-spectrum && cp -r node_modules/uxp-documentation/_transclusions/photoshop/uxp/reference-spectrum src/pages/uxp-api/ && cp node_modules/uxp-documentation/reference-spectrum.js reference-spectrum.js",
+    "_copy-uxp-js": "rm -rf src/pages/uxp-api/reference-js && cp -r node_modules/uxp-documentation/_transclusions/photoshop/uxp/reference-js src/pages/uxp-api/ && cp node_modules/uxp-documentation/reference-js.js reference-js.js",
+    "_copy-uxp-css": "rm -rf src/pages/uxp-api/reference-css && cp -r node_modules/uxp-documentation/_transclusions/photoshop/uxp/reference-css src/pages/uxp-api/ && cp node_modules/uxp-documentation/reference-css.js reference-css.js",
+    "_copy-uxp": "npm run _copy-uxp-js && npm run _copy-uxp-css && npm run _copy-uxp-html && npm run _copy-uxp-spectrum",
+    "_copy-uxp-files": "cp node_modules/uxp-documentation/src/pages/uxp-api/*.md src/pages/uxp-api/",
+    "prepare-uxp": "npm run _copy-uxp && npm run _copy-uxp-files",
+    "predev": "npm run prepare-uxp",
+    "dev": "gatsby develop",
+    "prebuild": "npm run prepare-uxp",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 gatsby build",
+    "build:incremental": "GATSBY_EXPERIMENTAL_PAGE_BUILD_ON_DATA_CHANGES=true gatsby build --log-pages",
+    "serve": "gatsby serve",
+    "clean": "gatsby clean",
+    "test:links": "remark src/pages --quiet --frail",
+    "lint": "docker run --rm -e RUN_LOCAL=true --env-file '.github/super-linter.env' -v \"$PWD\":/tmp/lint github/super-linter:slim-v4.10.1"
+  },
+  "remarkConfig": {
+    "plugins": [
+      "remark-validate-links"
+    ]
+  },
+  "packageManager": "yarn@3.2.1",
+  "devDependencies": {
+    "eslint": "^7.32.0",
+    "remark-cli": "^11.0.0",
+    "remark-validate-links": "^12.1.0"
+  },
+  "resolutions": {
+    "axios": "0.30.0",
+    "sharp": "0.33.0",
+    "gatsby-sharp": "1.12.0"
+  }
+}

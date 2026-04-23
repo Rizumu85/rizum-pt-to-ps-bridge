@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>Substance 3D Painter Script Index</title>
+
+	<!--[if lt IE 9]>
+	<script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+	<![endif]-->
+	<link type="text/css" rel="stylesheet" href="styles/sunlight.dark.css">
+
+	<link type="text/css" rel="stylesheet" href="styles/site.alg_flatly.css">
+
+</head>
+
+<body>
+
+<div class="navbar navbar-default navbar-fixed-top ">
+<div class="container">
+	<div class="navbar-header">
+		<a class="navbar-brand" href="index.html">Substance 3D Painter Script</a>
+		<button class="navbar-toggle" type="button" data-toggle="collapse" data-target="#topNavigation">
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+			<span class="icon-bar"></span>
+        </button>
+	</div>
+	<div class="navbar-collapse collapse" id="topNavigation">
+		<ul class="nav navbar-nav">
+			
+			<li class="dropdown">
+				<a href="namespaces.list.html" class="dropdown-toggle" data-toggle="dropdown">Namespaces<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.html">alg</a></li><li><a href="alg.baking.html">alg.baking</a></li><li><a href="alg.display.html">alg.display</a></li><li><a href="alg.fileIO.html">alg.fileIO</a></li><li><a href="alg.log.html">alg.log</a></li><li><a href="alg.mapexport.html">alg.mapexport</a></li><li><a href="alg.project.html">alg.project</a></li><li><a href="alg.project.settings.html">alg.project.settings</a></li><li><a href="alg.resources.html">alg.resources</a></li><li><a href="alg.settings.html">alg.settings</a></li><li><a href="alg.shaders.html">alg.shaders</a></li><li><a href="alg.subprocess.html">alg.subprocess</a></li><li><a href="alg.texturesets.html">alg.texturesets</a></li><li><a href="alg.ui.html">alg.ui</a></li><li><a href="base64.html">base64</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="classes.list.html" class="dropdown-toggle" data-toggle="dropdown">Classes<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="alg.baking.BakingError.html">alg.baking.BakingError</a></li><li><a href="alg.display.DisplaySettingsError.html">alg.display.DisplaySettingsError</a></li><li><a href="alg.fileIO.File.html">alg.fileIO.File</a></li><li><a href="alg.fileIO.FileIOError.html">alg.fileIO.FileIOError</a></li><li><a href="alg.mapexport.ExportError.html">alg.mapexport.ExportError</a></li><li><a href="alg.project.ProjectError.html">alg.project.ProjectError</a></li><li><a href="alg.resources.ResourcesError.html">alg.resources.ResourcesError</a></li><li><a href="alg.shaders.ShaderParameter.html">alg.shaders.ShaderParameter</a></li><li><a href="alg.shaders.ShadersError.html">alg.shaders.ShadersError</a></li><li><a href="alg.subprocess.SubprocessError.html">alg.subprocess.SubprocessError</a></li><li><a href="alg.texturesets.TextureSetsError.html">alg.texturesets.TextureSetsError</a></li><li><a href="alg.ui.UiError.html">alg.ui.UiError</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="tutorials.list.html" class="dropdown-toggle" data-toggle="dropdown">Tutorials<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="tutorial-baker_parameters.html">baker parameters</a></li><li><a href="tutorial-custom_shader_ui.html">custom shader UI - Basic</a></li><li><a href="tutorial-custom_shader_ui_layering.html">custom shader UI - Layering sample</a></li><li><a href="tutorial-plugin_skeleton.html">plugin skeleton</a></li><li><a href="tutorial-ui.html">custom UI</a></li><li><a href="tutorial-websocket.html">remote connection with a WebSocket</a></li>
+				</ul>
+			</li>
+			
+			<li class="dropdown">
+				<a href="qmlmodules.list.html" class="dropdown-toggle" data-toggle="dropdown">QML extensions<b class="caret"></b></a>
+				<ul class="dropdown-menu ">
+					<li><a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a></li>
+				</ul>
+			</li>
+			
+		</ul>
+        
+            <div class="col-sm-3 col-md-3">
+                <form class="navbar-form" role="search">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Search" name="q" id="search-input">
+                        <div class="input-group-btn">
+                            <button class="btn btn-default" id="search-submit"><i class="glyphicon glyphicon-search"></i></button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        
+	</div>
+
+</div>
+</div>
+
+
+<div class="container" id="toc-content">
+<div class="row">
+
+	
+	<div class="col-md-8">
+	
+		<div id="main">
+			
+
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+	
+	
+
+
+
+
+
+    <section class="readme-section">
+        <article><h1>Substance 3D Painter plugin system</h1>
+<p>Extend Substance 3D Painter functionalities in javascript and <a href="http://doc.qt.io/qt-6/qmlfirststeps.html">qml</a>.</p>
+<h2>First steps</h2>
+<ul>
+<li><a href="tutorial-plugin_skeleton.html">Plugin skeleton</a></li>
+<li><a href="tutorial-ui.html">Custom UI</a></li>
+<li><a href="alg.html">Javascript API</a></li>
+</ul>
+<h2>QML extensions</h2>
+<ul>
+<li><a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a></li>
+</ul>
+<h2>Plugin installation</h2>
+<p>Create a folder in <code>&quot;Documents/Adobe/Substance 3D Painter/plugins&quot;</code> that contains at least a <code>&quot;main.qml&quot;</code> file. The folder name will be used as the plugin name. Plugins can be enabled/disabled from the Substance 3D Painter <code>Plugins</code> menu entry.</p>
+<h2>API Changes</h2>
+<h3>1.1.20 (Substance 3D Painter 12.0.0)</h3>
+<ul>
+<li>Update to Qt 6.8.6.
+<ul>
+<li>If you are creating a plugin that displays a window, you may need to call <a href="https://doc.qt.io/qt-6/qml-qtquick-window.html#show-method">window.show</a> method in addition to setting the window.visible property to true.</li>
+<li>Some functions that returned <code>Array</code> objects are returning <code>V4Sequence</code> objects now.</li>
+</ul>
+</li>
+<li>Added <a href="alg.html#.isArrayLike">alg.isArrayLike</a> to test for <code>Array</code> or <code>V4Sequence</code>. The latter has the same API as an Array, except for returning false for Array.isArray() test</li>
+</ul>
+<h3>1.1.19 (Substance 3D Painter 11.0.0)</h3>
+<ul>
+<li>Removed <a href="alg.ui.html#.AppMenu">alg.ui.AppMenu.SendTo</a> entry as this app menu has been removed from Painter</li>
+</ul>
+<h3>1.1.18 (Substance 3D Painter 10.1.0)</h3>
+<ul>
+<li>Update to Qt 6.5.4. Some QML modules may not be available/compatible anymore.</li>
+</ul>
+<h3>1.1.17 (Substance 3D Painter 8.3.0)</h3>
+<ul>
+<li>Common parameters for baking is now instanciated per material as materialParameters.</li>
+<li><a href="alg.baking.html#.commonBakingParameters">commonBakingParameters</a> now always throw an error. Use <a href="alg.baking.html#.textureSetBakingParameters">textureSetBakingParameters</a> instead.</li>
+<li><a href="alg.baking.html#.setCommonBakingParameters">setCommonBakingParameters</a> now always throw an error. Use <a href="alg.baking.html#.setTextureSetBakingParameters">setTextureSetBakingParameters</a> instead.</li>
+<li><a href="alg.baking.html#.textureSetBakingParameters">textureSetBakingParameters</a> now outputs common parameters for the texture set as materialParameters.</li>
+<li><a href="alg.baking.html#.setTextureSetBakingParameters">setTextureSetBakingParameters</a> now allows to set common parameters for the texture set as materialParameters.</li>
+<li><a href="alg.baking.html#.curvatureMethod">curvatureMethod</a> now requires a texture set name.</li>
+<li><a href="alg.baking.html#.setCurvatureMethod">setCurvatureMethod</a> now requires a texture set name.</li>
+</ul>
+<h3>1.1.16 (Substance 3D Painter 8.1.0)</h3>
+<ul>
+<li>Fix qml deprecated warnings with Qt 5.15 update.</li>
+</ul>
+<h3>1.1.15 (Substance 3D Painter 7.3.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.project</h6>
+<ul>
+<li>Add <a href="alg.project.html#.isBusy">isBusy</a>. Project saving functions are disabled when Substance 3D Painter is busy.</li>
+</ul>
+<h3>1.1.14 (Substance 3D Painter 7.2.3)</h3>
+<h5>namespaces</h5>
+<h6>alg.ui</h6>
+<ul>
+<li><a href="alg.mapexport.html#.showExportDialog">showExportDialog</a> now returns latest export status.</li>
+</ul>
+<h3>1.1.13 (Substance 3D Painter 7.2.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.ui</h6>
+<ul>
+<li>Add <a href="alg.ui.html#.addAction">addAction</a> to add a custom action to an existing menu.</li>
+</ul>
+<h3>1.1.12 (Substance Painter 6.2.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.project</h6>
+<ul>
+<li><a href="alg.project.html#.ProjectSettings">ProjectSettings</a> has been updated to support new UV Tile (UDIM) workflow, see <a href="alg.project.html#.ProjectSettings">ProjectSettings</a> for more details.</li>
+</ul>
+<h3>1.1.11 (Substance Painter 6.1.3)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>The <code>onProjectOpened</code> event is now called when the project is fully loaded.</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Every method of the <code>mapexport</code> namespace will now throw an exception if called when no project is opened.</li>
+</ul>
+<h3>1.1.10 (Substance Painter 6.1.2)</h3>
+<h5>namespaces</h5>
+<h6>alg.baking</h6>
+<ul>
+<li>Add <a href="alg.baking.html#.curvatureMethod">curvatureMethod</a> to query the current method used to compute the curvature.</li>
+<li>Add <a href="alg.baking.html#.setCurvatureMethod">setCurvatureMethod</a> to change the method used to compute the curvature.</li>
+</ul>
+<h3>1.1.9 (Substance Painter 2019.3.0)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Minor changes inside some QML Items have been made to remove new warnings introduced with Qt 5.12.5.</li>
+<li>The upgrade to Qt 5.12.5 allows the use of new version of qml modules, see the <a href="../qml-doc/qmlmodules.html">Qt QML modules</a> page.</li>
+</ul>
+<h3>1.1.8 (Substance Painter 2019.2.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.texturesets</h6>
+<ul>
+<li>Add <a href="alg.texturesets.html#.setResolution">setResolution</a> to change the resolution of one or several texture sets.</li>
+<li>Add <a href="alg.texturesets.html#.getActiveTextureSet">getActiveTextureSet</a> to get the currently paintable texture set.</li>
+<li>Add <a href="alg.texturesets.html#.setActiveTextureSet">setActiveTextureSet</a> to set the currently paintable texture set.</li>
+</ul>
+<h6>alg.baking</h6>
+<ul>
+<li>The property <code>Dilation_width</code> in the commonParameters has been renamed <code>Dilation_Width</code> with a capital <code>W</code>. We still support the old name.</li>
+<li>The property <code>Ignore_Backface</code> for the Thickness baker has been removed since it was not used. If this property is set, we just ignore it.</li>
+</ul>
+<h5>Plugins</h5>
+<ul>
+<li>Add the <code>onActiveTextureSetAboutToChange</code> and <code>onActiveTextureSetChanged</code> events on <code>PainterPlugin</code> root object.</li>
+</ul>
+<h3>1.1.7 (Substance Painter 2019.1.3)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Expose <code>wrapMode</code> and <code>elide</code> properties of buttons and checkboxes.</li>
+</ul>
+<h3>1.1.6 (Substance Painter 2019.1.1)</h3>
+<h5>namespaces</h5>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Change <a href="alg.mapexport.html#.documentStructure">documentStructure</a> behavior, layer <code>selected</code> parameter will be true even if the mask is selected.</li>
+</ul>
+<h3>1.1.5 (Substance Painter 2019.1.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.fileIO</h6>
+<ul>
+<li>Add <a href="alg.fileIO.html#.listDir">listDir</a> to list entries in a directory</li>
+<li>Add <a href="alg.fileIO.html#.isFile">isFile</a> to check wether a path is a file</li>
+<li>Add <a href="alg.fileIO.html#.isDir">isDir</a> to check wether a path is a directory</li>
+<li>Add <a href="alg.fileIO.File.html#remove">remove</a> to delete a file from the file system</li>
+<li>Optional attribute <code>filePath</code> added to <a href="alg.resources.html#.getResourceInfo">getResourceInfo</a> result, which provides the local file path of the resource, if possible.</li>
+</ul>
+<h6>alg.mapexport</h6>
+<ul>
+<li>New attribute <code>dithering</code> added to <a href="alg.mapexport.html#.MapInfo">MapInfo</a> type.</li>
+</ul>
+<h6>alg.texturesets</h6>
+<ul>
+<li>Add <a href="alg.texturesets.html#.structure">structure</a> to query the detailed structure of a texture set.</li>
+</ul>
+<h3>1.1.4 (Substance Painter 2018.3.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.display</h6>
+<ul>
+<li>New module display <a href="alg.display.html">alg.display</a>.</li>
+<li>Add <a href="alg.display.html#.getEnvironmentResource">getEnvironmentResource</a> to get the current environment map of the project</li>
+<li>Add <a href="alg.display.html#.setEnvironmentResource">setEnvironmentResource</a> to change the environment map of the project</li>
+<li>Add <a href="alg.display.html#.getColorLutResource">getColorLutResource</a> to get the current color profile LUT of the project</li>
+<li>Add <a href="alg.display.html#.setColorLutResource">setColorLutResource</a> to change the color profile LUT of the project</li>
+</ul>
+<h6>alg.texturesets</h6>
+<ul>
+<li>Add <a href="alg.texturesets.html#.addChannel">addChannel</a> to create a new channel in a given texture set</li>
+<li>Add <a href="alg.texturesets.html#.editChannel">editChannel</a> to edit a specific channel in a given texture set</li>
+<li>Add <a href="alg.texturesets.html#.removeChannel">removeChannel</a> to remove a specific channel in a given texture set</li>
+</ul>
+<h3>1.1.3 (Substance Painter 2018.2.2)</h3>
+<h5>namespaces</h5>
+<h6>alg.project</h6>
+<ul>
+<li>Add <a href="alg.project.html#.saveAsTemplate">saveAsTemplate</a> method to create a template file (spt) from a currently open project</li>
+</ul>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Add <a href="alg.mapexport.html#.getProjectExportOptions">getProjectExportOptions</a> to query the current export options (file format, padding, etc) of a project</li>
+<li>Add <a href="alg.mapexport.html#.getProjectExportPreset">getProjectExportPreset</a> to query the current export preset used of a project</li>
+<li>Add <a href="alg.mapexport.html#.setProjectExportOptions">setProjectExportOptions</a> to modify the export options (file format, padding, etc) of a project (without exporting)</li>
+<li>Add <a href="alg.mapexport.html#.setProjectExportPreset">setProjectExportPreset</a> to modify the export preset of a project (without exporting)</li>
+</ul>
+<h3>1.1.2 (Substance Painter 2018.2.0)</h3>
+<h5>namespaces</h5>
+<h5>Plugins</h5>
+<ul>
+<li>Fix the <code>onNewProjectCreated</code> event on <code>PainterPlugin</code> root object to be called even if creating project from a template.</li>
+</ul>
+<h6>alg.shaders</h6>
+<ul>
+<li><a href="alg.shaders.html#.ShaderInstance">Shader instance</a> now contains the internal url of the shader resource.</li>
+<li>Add <a href="alg.shaders.html#.updateShaderInstance">updateShaderInstance</a> method to give possibility to update the shader resource in use by an instance.</li>
+</ul>
+<h3>1.1.1 (Substance Painter 2018.1.2)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Add version 2.0 of <a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a> module. See <a href="../qml-doc/changelog-v-2-0.html">AlgWidgets changelog</a> for more information.</li>
+<li>AlgWidgets version 1.0 has been deprecated, use version 2.0 instead.</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.project</h6>
+<ul>
+<li><a href="alg.project.html#.save">Saving functions</a> can now be configured with the saving mode (Incremental saving/Full saving).</li>
+</ul>
+<h3>1.1.0 (Substance Painter 2018.1.0)</h3>
+<h5>QML environment</h5>
+<ul>
+<li>Upgrade Qt version from 5.7.x to 5.9.x branch (Long term support), including many QML changes. See the <a href="https://doc-snapshots.qt.io/qt5-5.9/">official documentation</a> for more information.</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.log</h6>
+<ul>
+<li>The function <a href="alg.log.html#.warning">warn</a> has been deprecated, use <a href="alg.log.html#.warning">warning</a> instead.</li>
+</ul>
+<h6>alg.mapexport</h6>
+<ul>
+<li>The function <a href="alg.mapexport.html#.meshMapIdentifiers">additionalMapIdentifiers</a> has been deprecated, use <a href="alg.mapexport.html#.meshMapIdentifiers">meshMapIdentifiers</a> instead.</li>
+<li>The function <a href="alg.mapexport.html#.saveMeshMap">saveAdditionalMap</a> has been deprecated, use <a href="alg.mapexport.html#.saveMeshMap">saveMeshMap</a> instead.</li>
+</ul>
+<h6>alg.ui</h6>
+<ul>
+<li>Add <a href="alg.ui.html#.addWidgetToPluginToolBar">addWidgetToPluginToolBar</a> method to give possiblity to pack all custom tool buttons inside a standard common toolbar.</li>
+</ul>
+<h3>1.0.10 (Substance Painter 2017.4.2)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Add a <code>onExportAboutToStart</code> and <code>onExportFinished</code> events on <code>PainterPlugin</code> root object that are triggered through the GUI respectively just before and right after the export process (see <a href="tutorial-plugin_skeleton.html">Plugin Skeleton</a> tutorial).</li>
+<li>Add <a href="alg.mapexport.html#.getPathsExportDocumentMaps">getPathsExportDocumentMaps</a> method to get the filepaths of the exported textures for the given export preset without doing the export.</li>
+</ul>
+<h3>1.0.9 (Substance Painter 2017.4.1)</h3>
+<h5>namespaces</h5>
+<h6>alg.project</h6>
+<ul>
+<li>Add an <a href="alg.project.html#.exportMesh">exportMesh</a> method to export the internal mesh from the current project</li>
+</ul>
+<h3>1.0.8 (Substance Painter 2017.3.0)</h3>
+<h5>namespaces</h5>
+<h6>alg</h6>
+<ul>
+<li>Add a <a href="alg.html#.documents_directory">documents_directory</a> property to get the Substance Painter documents folder</li>
+</ul>
+<h6>alg.project</h6>
+<ul>
+<li>Add a <a href="alg.project.html#.saveAsCopy">saveAsCopy</a> method to save the current project as a copy</li>
+</ul>
+<h3>1.0.7 (Substance Painter 2017.2.0)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Add a <code>onComputationStatusChanged</code> event on <code>PainterPlugin</code> root object to know the state of the engine computing stacks content (see <a href="tutorial-plugin_skeleton.html">Plugin Skeleton</a> tutorial)</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Add <a href="alg.mapexport.html#.textureSetResolution">textureSetResolution</a> method to get the current resolution of a texture set</li>
+</ul>
+<h3>1.0.6 (Substance Painter 2017.1.0)</h3>
+<h5>namespaces</h5>
+<h6>alg.fileIO</h6>
+<ul>
+<li>Fix the wrong behavior when working with binary data</li>
+</ul>
+<h6>alg.resources</h6>
+<ul>
+<li>Add <a href="alg.resources.html#.importShelfResource">importShelfResource</a> method to import a resource into the default shelf</li>
+<li>Add <a href="alg.resources.html#.refreshShelves">refreshShelves</a> method to discover new resources added in the shelves folders</li>
+<li>Add <a href="alg.resources.html#.selectResources">selectResources</a> method to display and select resources in the shelf window</li>
+</ul>
+<h3>1.0.5 (Substance Painter 2.6.0)</h3>
+<h5>JavaScript environment</h5>
+<ul>
+<li>Improve compatibility with external JavaScript libraries by adding some missing functions in the environment
+<ul>
+<li>Add <a href="https://w3schools.com/jsref/met_win_settimeout.asp">setTimeout and clearTimeout</a> functions</li>
+<li>Add <a href="https://w3schools.com/jsref/met_win_setinterval.asp">setInterval and clearInterval</a> functions</li>
+</ul>
+</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.resources</h6>
+<ul>
+<li>Add <a href="alg.resources.html#.findResources">findResources</a> method to look for resources matching a pattern</li>
+<li>Add <a href="alg.resources.html#.documentResources">documentResources</a> method to retrieve used resources in the project</li>
+<li>Add <a href="alg.resources.html#.getResourceInfo">getResourceInfo</a> method to query information on a specific resources</li>
+<li>Add <a href="alg.resources.html#.updateDocumentResources">updateDocumentResources</a> method to update used resources in the project</li>
+<li>Add <a href="alg.resources.html#.shelves">shelves</a> and <a href="alg.resources.html#.userShelves">userShelves</a> methods to query available shelves</li>
+</ul>
+<h3>1.0.4 (Substance Painter 2.5.2)</h3>
+<h5>namespaces</h5>
+<h6>alg.resources</h6>
+<ul>
+<li>Add <a href="alg.resources.html#.addShelf">addShelf</a> and <a href="alg.resources.html#.removeShelf">removeShelf</a> methods allowing to add/remove shelves</li>
+<li>Add <a href="alg.resources.html#.shelfExists">shelfExists</a> method to query if a shelf with the same name already exists</li>
+<li>Add <a href="alg.resources.html#.pluginShelves">pluginShelves</a> method to query the shelves added by the plugin</li>
+</ul>
+<h3>1.0.3 (Substance Painter 2.5.0)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Add a <a href="../qml-doc/algwidgets-qmlmodule.html">AlgWidgets</a> QML components library matching Substance Painter style with its specific documentation</li>
+<li>Add a <a href="../qml-doc/thumbnails.html">resources</a> image provider to help retrieving resources thumbnails</li>
+<li>Upgrade Qt version allowing to use <a href="https://doc.qt.io/qt-6/qtquickcontrols2-index.html">Qt Quick Controls 2</a> in QML files</li>
+</ul>
+<h5>Custom shader UI</h5>
+<ul>
+<li>Give the possibility to override the shader parameters UI with a QML file</li>
+</ul>
+<h5>Tutorials</h5>
+<ul>
+<li>Add a <a href="tutorial-custom_shader_ui.html">basic custom shader UI tutorial</a></li>
+<li>Add an <a href="tutorial-custom_shader_ui_layering.html">advanced custom shader UI tutorial</a> with a material layering use case</li>
+<li>Add a <a href="tutorial-websocket.html">WebSocket communication tutorial</a></li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.baking</h6>
+<ul>
+<li>Report errors when setting baking data</li>
+</ul>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Add <a href="alg.mapexport.html#.exportDocumentMaps">exportDocumentMaps</a> method to export document stacks with a given export preset</li>
+</ul>
+<h6>alg.project</h6>
+<ul>
+<li>Add <a href="alg.project.html#.create">create</a> method to set up a new project</li>
+<li>Add <a href="alg.project.html#.lastImportedMeshUrl">lastImportedMeshUrl</a> method to retrieve the URL of the mesh used in the project</li>
+</ul>
+<h6>alg.project.settings</h6>
+<ul>
+<li>Add new <a href="alg.project.settings.html">project.settings</a> namespace to provide persistent custom settings control in the project</li>
+</ul>
+<h6>alg.resources</h6>
+<ul>
+<li>Add new <a href="alg.resources.html">resources</a> namespace to import resources</li>
+</ul>
+<h6>alg.shaders</h6>
+<ul>
+<li>Add new <a href="alg.shaders.html">shaders</a> namespace to query and give control on shaders parameters</li>
+</ul>
+<h3>1.0.2 (Substance Painter 2.3.1)</h3>
+<h5>namespaces</h5>
+<h6>alg.baking / alg.mapexport</h6>
+<ul>
+<li>Fix some namming inconsistencies</li>
+</ul>
+<h6>alg.settings</h6>
+<ul>
+<li>Fix <code>alg.settings.value</code>: The method now ensure that the returned value
+is of the same type as the default value</li>
+</ul>
+<h3>1.0.1 (Substance Painter 2.3)</h3>
+<h5>Plugins</h5>
+<ul>
+<li>Add an About dialog generated from a <code>plugin.json</code> file that describes the plugin</li>
+<li>Add <code>configure</code> action in the plugins menu and its equivalent callback on main plugin file</li>
+<li>Add possibility to reload a plugin in the plugins menu</li>
+</ul>
+<h5>namespaces</h5>
+<h6>alg.baking</h6>
+<ul>
+<li>Add examples on method <code>commonBakingParameters</code>, <code>setCommonBakingParameters</code>, <code>materialBakingParameters</code>, and <code>setMaterialBakingParameters</code></li>
+</ul>
+<h6>alg.mapexport</h6>
+<ul>
+<li>Add <code>saveChannelMap</code> method to export a channel map</li>
+<li>Add <code>saveMeshMap</code> method to export a mesh map (additional map)</li>
+<li>Add <code>saveConverted</code> method to export a converted map computed from others channels/maps</li>
+<li>Add <code>channelIdentifiers</code> method to get the list of channel identifiers</li>
+<li>Add <code>meshMapIdentifiers</code> method to get the list of mesh map (additional map) identifiers</li>
+<li>Add <code>convertedMapIdentifiers</code> method to get the list of converted map identifiers</li>
+<li>Add <code>layerBlendingModes</code> method to retrieve blending modes from a layer for each channels (<code>mode</code> and <code>opacity</code>)</li>
+<li>Add <code>channelFormat</code> method to retrieve channel format of a stack channel</li>
+<li>Add export parameters
+<ul>
+<li>Extended padding control (<code>type</code> and <code>dilation</code>)</li>
+<li>Bits per channel control (<code>bitDepth</code>)</li>
+<li>Keep, or not, alpha channel (<code>keepAlpha</code>)</li>
+</ul>
+</li>
+<li>Add <code>uid</code>and <code>enabled</code> members on layers on <code>documentStructure</code> method output</li>
+<li>Add possibility to export a layer content based on its uid on <code>save</code> method</li>
+<li>Add possibility to resolve custom user channels name</li>
+</ul>
+<h6>alg.project</h6>
+<ul>
+<li>Add <code>name</code> method to get current project name</li>
+</ul>
+<h6>alg.settings</h6>
+<ul>
+<li>Add new <code>settings</code> namespace to give plugin persistent settings control</li>
+</ul>
+<h6>alg.subprocess</h6>
+<ul>
+<li>Add <code>startDetached</code> method to start a command in a new process, and detaches from it</li>
+</ul></article>
+    </section>
+
+
+
+
+
+
+
+		</div>
+	</div>
+
+	<div class="clearfix"></div>
+
+	
+		<div class="col-md-3">
+			<div id="toc" class="col-md-3 hidden-xs hidden-sm hidden-md"></div>
+		</div>
+	
+
+</div>
+</div>
+
+
+    <div class="modal fade" id="searchResults">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title">Search results</h4>
+          </div>
+          <div class="modal-body"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div><!-- /.modal-content -->
+      </div><!-- /.modal-dialog -->
+    </div>
+
+
+<footer>
+
+
+<span class="jsdoc-message">
+	Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.11</a>
+	
+		on 2026-03-12T17:03:19+01:00
+	
+	using the <a href="https://github.com/docstrap/docstrap">DocStrap template</a>.
+</span>
+</footer>
+
+<script src="scripts/docstrap.lib.js"></script>
+<script src="scripts/toc.js"></script>
+
+    <script type="text/javascript" src="scripts/fulltext-search-ui.js"></script>
+
+
+<script>
+$( function () {
+	$( "[id*='$']" ).each( function () {
+		var $this = $( this );
+
+		$this.attr( "id", $this.attr( "id" ).replace( "$", "__" ) );
+	} );
+
+	$( ".tutorial-section pre, .readme-section pre, pre.prettyprint.source" ).each( function () {
+		var $this = $( this );
+
+		var example = $this.find( "code" );
+		exampleText = example.html();
+		var lang = /{@lang (.*?)}/.exec( exampleText );
+		if ( lang && lang[1] ) {
+			exampleText = exampleText.replace( lang[0], "" );
+			example.html( exampleText );
+			lang = lang[1];
+		} else {
+			var langClassMatch = example.parent()[0].className.match(/lang\-(\S+)/);
+			lang = langClassMatch ? langClassMatch[1] : "javascript";
+		}
+
+		if ( lang ) {
+
+			$this
+			.addClass( "sunlight-highlight-" + lang )
+			.addClass( "linenums" )
+			.html( example.html() );
+
+		}
+	} );
+
+	Sunlight.highlightAll( {
+		lineNumbers : false,
+		showMenu : true,
+		enableDoclinks : true
+	} );
+
+	$.catchAnchorLinks( {
+        navbarOffset: 10
+	} );
+	$( "#toc" ).toc( {
+		anchorName  : function ( i, heading, prefix ) {
+			return $( heading ).attr( "id" ) || ( prefix + i );
+		},
+		selectors   : "#toc-content h1,#toc-content h2,#toc-content h3,#toc-content h4",
+		showAndHide : false,
+		smoothScrolling: true
+	} );
+
+	$( "#main span[id^='toc']" ).addClass( "toc-shim" );
+	$( '.dropdown-toggle' ).dropdown();
+
+    $( "table" ).each( function () {
+      var $this = $( this );
+      $this.addClass('table');
+    } );
+
+} );
+</script>
+
+
+
+<!--Navigation and Symbol Display-->
+
+
+<!--Google Analytics-->
+
+
+
+    <script type="text/javascript">
+        $(document).ready(function() {
+            SearcherDisplay.init();
+        });
+    </script>
+
+
+</body>
+</html>

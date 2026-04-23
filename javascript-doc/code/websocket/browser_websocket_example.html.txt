@@ -1,0 +1,19 @@
+<html>
+<head><title>Substance 3D Painter connection test</title></head>
+<body></body>
+<script>
+// Create a WebSocket object
+// It will attempt to open the connection to the Substance 3D Painter server
+var socket = new WebSocket("ws://localhost:12345/");
+
+// When the connection is initialized, send a message to Substance 3D Painter to welcome it
+socket.onopen = function onSocketOpen() {
+  socket.send("Hello Substance 3D Painter");
+}
+
+// When we receive content from the WebSocket, display it
+socket.onmessage = function onSocketMessage(event) {
+  document.write(event.data);
+}
+</script>
+</html>

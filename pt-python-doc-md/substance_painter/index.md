@@ -1,0 +1,485 @@
+# substance_painter package
+
+The `substance_painter` package is a collection of modules that give access to *Substance 3D Painter* functions and runtime data.
+
+You can for example:
+
+- Open, save, rename, etc. a *Substance 3D Painter* project with the `project` module.
+- Change the "Display Settings" or your project, like environment map and color grading, with the `display` module.
+- Change the channels of the Texture Set of your project with the `textureset` module.
+- Export the textures of your project with the `export` module.
+- Print messages to the console and the log file with the `logging` module.
+- Customize the UI of *Substance 3D Painter* with the `ui` module.
+
+Event handling is done via the `event` module. Finally, the *Substance Painter* Python API introduces several custom exceptions, which are listed and documented in the `exception` module.
+
+## Modules
+
+### [application module](application.html)
+- `version_info()`
+- `version()`
+- `engine_computations_status()`
+- `enable_engine_computations()`
+- `disable_engine_computations()`
+- `close()`
+
+### [async_utils module](async_utils.html)
+- `StopSource`
+  - `StopSource.request_stop()`
+  - `StopSource.stop_requested()`
+
+### [baking module](baking.html)
+- `BakingStatus`
+- `CurvatureMethod`
+- `BakingParameters`
+  - `BakingParameters.from_texture_set()`
+  - `BakingParameters.from_texture_set_name()`
+  - `BakingParameters.texture_set()`
+  - `BakingParameters.common()`
+  - `BakingParameters.baker()`
+  - `BakingParameters.set()`
+  - `BakingParameters.get_curvature_method()`
+  - `BakingParameters.set_curvature_method()`
+  - `BakingParameters.is_baker_enabled()`
+  - `BakingParameters.set_baker_enabled()`
+  - `BakingParameters.get_enabled_bakers()`
+  - `BakingParameters.set_enabled_bakers()`
+  - `BakingParameters.is_textureset_enabled()`
+  - `BakingParameters.set_textureset_enabled()`
+  - `BakingParameters.is_uv_tile_enabled()`
+  - `BakingParameters.set_uv_tile_enabled()`
+  - `BakingParameters.get_enabled_uv_tiles()`
+  - `BakingParameters.set_enabled_uv_tiles()`
+- `set_linked_group()`
+- `set_linked_group_common_parameters()`
+- `unlink_all()`
+- `unlink_all_common_parameters()`
+- `get_link_group()`
+- `get_link_group_common_parameters()`
+- `get_linked_texture_sets()`
+- `get_linked_texture_sets_common_parameters()`
+- `bake_async()`
+- `bake_selected_textures_async()`
+
+### [colormanagement module](colormanagement.html)
+- `Color`
+  - `Color.convert()`
+  - `Color.value`
+  - `Color.sRGB`
+  - `Color.working`
+- ColorSpace Enums
+  - `GenericColorSpace`
+  - `LegacyColorSpace`
+  - `DataColorSpace`
+  - `NormalColorSpace`
+
+### [display module](display.html)
+- `ToneMappingFunction`
+- `get_environment_resource()`
+- `set_environment_resource()`
+- `get_color_lut_resource()`
+- `set_color_lut_resource()`
+- `get_tone_mapping()`
+- `set_tone_mapping()`
+- `CameraProjectionType`
+- `Camera`
+  - `Camera.get_default_camera()`
+  - `Camera.position`
+  - `Camera.rotation`
+  - `Camera.field_of_view`
+  - `Camera.focal_length`
+  - `Camera.focus_distance`
+  - `Camera.aperture`
+  - `Camera.orthographic_height`
+  - `Camera.projection_type`
+
+### [event module](event.html)
+- `Event`
+- Event dispatcher
+  - `DISPATCHER`
+  - `Dispatcher`
+    - `Dispatcher.connect()`
+    - `Dispatcher.connect_strong()`
+    - `Dispatcher.disconnect()`
+- Export events
+  - `ExportTexturesAboutToStart`
+  - `ExportTexturesEnded`
+- Project events
+  - `ProjectOpened`
+  - `ProjectCreated`
+  - `ProjectAboutToClose`
+  - `ProjectClosed`
+  - `ProjectAboutToSave`
+  - `ProjectSaved`
+  - `ProjectEditionEntered`
+  - `ProjectEditionLeft`
+  - `BusyStatusChanged`
+  - `TextureStateEvent`
+    - `TextureStateEvent.cache_key_invalidation_throttling_period()`
+    - `TextureStateEvent.set_cache_key_invalidation_throttling_period()`
+  - `TextureStateEventAction`
+- Shelf events
+  - `ShelfCrawlingStarted`
+  - `ShelfCrawlingEnded`
+- Baking events
+  - `BakingProcessAboutToStart`
+  - `BakingProcessProgress`
+  - `BakingProcessEnded`
+- Layer stack events
+  - `LayerStacksModelDataChanged`
+- Application wide events
+  - `EngineComputationsStatusChanged`
+- Display events
+  - `CameraPropertiesChanged`
+- Resources related events
+  - `ReloadResourcesStarted`
+  - `ReloadResourcesEnded`
+  - `ReloadedResourceResult`
+  - `ReloadedResourceError`
+
+### [exception module](exception.html)
+- `ProjectError`
+- `ResourceNotFoundError`
+- `ServiceNotFoundError`
+
+### [export module](export.html)
+- `ExportStatus`
+- Export Textures
+  - `list_project_textures()`
+  - `TextureExportResult`
+  - `export_project_textures()`
+  - `get_default_export_path()`
+  - `PredefinedExportPreset`
+    - `PredefinedExportPreset.list_output_maps()`
+  - `list_predefined_export_presets()`
+  - `ResourceExportPreset`
+    - `ResourceExportPreset.list_output_maps()`
+  - `list_resource_export_presets()`
+- Export Mesh
+  - `scene_is_triangulated()`
+  - `scene_has_tessellation()`
+  - `MeshExportOption`
+  - `MeshExportResult`
+  - `export_mesh()`
+
+### [js module](js.html)
+- `evaluate()`
+
+### [layerstack module](layerstack/index.html)
+- Layerstack navigation
+  - Get nodes
+    - `get_root_layer_nodes()`
+    - `get_node_by_uid()`
+  - Node Objects
+    - `Node`
+    - `LayerNode`
+    - `HierarchicalNode`
+    - `EffectNode`
+  - Enums
+    - `NodeType`
+    - `MaskBackground`
+    - `BlendingMode`
+    - `GeometryMaskType`
+- Layerstack edition
+  - Insertion
+    - `InsertPosition`
+    - `ScopedModification`
+    - `NodeStack`
+  - Deletion
+    - `delete_node()`
+- Layerstack selection
+  - Get selection
+    - `get_selected_nodes()`
+    - `get_selection_type()`
+  - Set selection
+    - `set_selected_nodes()`
+    - `set_selection_type()`
+  - Enums
+    - `SelectionType`
+- Layers and effects
+  - Paint layer and effect
+  - Fill layer and effect
+  - Generator effect
+  - Filter effect
+  - Levels effect
+  - Compare Mask effect
+  - Color Selection effect
+  - Group layer
+  - Instance layer
+  - Anchor point
+  - Smart mask
+  - Smart material
+
+### [logging module](logging.html)
+- `error()`
+- `info()`
+- `log()`
+- `warning()`
+
+### [project module](project.html)
+- `BoundingBox`
+- `execute_when_not_busy()`
+- `file_path()`
+- `get_scene_bounding_box()`
+- `get_uuid()`
+- `is_busy()`
+- `is_in_edition_state()`
+- `last_saved_substance_painter_version()`
+- `name()`
+- Creating a project
+  - `create()`
+  - `Settings`
+  - `UsdSettings`
+  - `GltfSettings`
+  - `NormalMapFormat`
+  - `TangentSpace`
+  - `ProjectWorkflow`
+- Opening and closing a project
+  - `is_open()`
+  - `open()`
+  - `close()`
+- Saving a project
+  - `needs_saving()`
+  - `save()`
+  - `save_as()`
+  - `save_as_copy()`
+  - `save_as_template()`
+  - `ProjectSaveMode`
+- Reloading a mesh
+  - `reload_mesh()`
+  - `last_imported_mesh_path()`
+  - `MeshReloadingSettings`
+  - `ReloadMeshStatus`
+    - `ReloadMeshStatus.ERROR`
+    - `ReloadMeshStatus.SUCCESS`
+- Project metadata
+  - `Metadata`
+    - `Metadata.list()`
+    - `Metadata.get()`
+    - `Metadata.set()`
+
+### [properties module](properties.html)
+- `Property`
+  - `Property.value()`
+  - `Property.name()`
+  - `Property.short_name()`
+  - `Property.label()`
+  - `Property.widget_type()`
+  - `Property.enum_values()`
+  - `Property.enum_value()`
+  - `Property.properties()`
+
+### [resource module](resource.html)
+- `Type`
+- `UpdateProjectError`
+- Resources
+  - `Resource`
+    - `Resource.identifier()`
+    - `Resource.location()`
+    - `Resource.retrieve()`
+    - `Resource.set_custom_preview()`
+    - `Resource.category()`
+    - `Resource.usages()`
+    - `Resource.gui_name()`
+    - `Resource.type()`
+    - `Resource.tags()`
+    - `Resource.internal_properties()`
+    - `Resource.children()`
+    - `Resource.parent()`
+    - `Resource.reset_preview()`
+    - `Resource.show_in_ui()`
+  - `ResourceID`
+    - `ResourceID.from_project()`
+    - `ResourceID.from_session()`
+    - `ResourceID.from_url()`
+    - `ResourceID.location()`
+    - `ResourceID.url()`
+    - `ResourceID.context`
+    - `ResourceID.name`
+    - `ResourceID.version`
+  - `ResourceLocation`
+  - `StandardQuery`
+  - `Usage`
+  - `search()`
+  - `list_project_resources()`
+  - `list_project_outdated_resources()`
+  - `replace_project_resources()`
+  - `UpdateProjectResult`
+  - `UpdateProjectStatus`
+  - `import_project_resource()`
+  - `import_session_resource()`
+  - `show_resources_in_ui()`
+  - `is_reload_modified_resources_running()`
+  - `reload_modified_resources_async()`
+  - Reload filters
+    - `AllResourcesFilter`
+    - `ProjectFilter`
+    - `ResourcesListFilter`
+    - `ResourcesUsedByProjectFilter`
+    - `SessionFilter`
+    - `ShelvesListFilter`
+- Shelves
+  - `Shelf`
+    - `Shelf.can_import_resources()`
+    - `Shelf.import_resource()`
+    - `Shelf.is_crawling()`
+    - `Shelf.name()`
+    - `Shelf.path()`
+    - `Shelf.refresh()`
+    - `Shelf.resources()`
+  - `Shelves`
+    - `Shelves.add()`
+    - `Shelves.all()`
+    - `Shelves.application_shelf()`
+    - `Shelves.exists()`
+    - `Shelves.refresh_all()`
+    - `Shelves.remove()`
+    - `Shelves.user_shelf()`
+
+### [source module](source/index.html)
+- SourceUniformColor
+  - `SourceUniformColor`
+    - `SourceUniformColor.get_color()`
+    - `SourceUniformColor.set_color()`
+    - `SourceUniformColor.uid()`
+- SourceBitmap
+  - `SourceBitmap`
+    - `SourceBitmap.resource_id`
+    - `SourceBitmap.get_color_space()`
+    - `SourceBitmap.set_color_space()`
+    - `SourceBitmap.reset_color_space()`
+    - `SourceBitmap.list_available_color_spaces()`
+    - `SourceBitmap.uid()`
+- SourceVectorial
+  - `SourceVectorial`
+    - `SourceVectorial.resource_id`
+    - `SourceVectorial.get_parameters()`
+    - `SourceVectorial.set_parameters()`
+    - `SourceVectorial.uid()`
+  - Params
+    - `SourceVectorialParams`
+  - Enums
+    - `VectorialResolutionMode`
+    - `CropAreaMode`
+- SourceFont
+  - `SourceFont`
+    - `SourceFont.resource_id`
+    - `SourceFont.get_parameters()`
+    - `SourceFont.set_parameters()`
+    - `SourceFont.uid()`
+  - Params
+    - `SourceFontParams`
+  - Enums
+    - `FontResolutionMode`
+    - `HorizontalAlignment`
+    - `VerticalAlignment`
+- SourceSubstance
+  - `SourceSubstance`
+    - `SourceSubstance.resource_id`
+    - `SourceSubstance.output_mapping`
+    - `SourceSubstance.active_output`
+    - `SourceSubstance.mask_output`
+    - `SourceSubstance.image_inputs`
+    - `SourceSubstance.image_outputs`
+    - `SourceSubstance.get_source()`
+    - `SourceSubstance.set_source()`
+    - `SourceSubstance.reset_source()`
+    - `SourceSubstance.remove_source()`
+    - `SourceSubstance.get_parameters()`
+    - `SourceSubstance.set_parameters()`
+    - `SourceSubstance.get_properties()`
+    - `SourceSubstance.get_preset_list()`
+    - `SourceSubstance.apply_preset()`
+  - `OutputMapping`
+- SourceReference
+  - `SourceReference`
+    - `SourceReference.channel_mapping`
+    - `SourceReference.referenced_channel`
+    - `SourceReference.anchor`
+    - `SourceReference.alpha_matte`
+    - `SourceReference.get_levels()`
+    - `SourceReference.set_levels()`
+  - `ChannelMapping`
+  - Enums
+    - `AlphaMatte`
+- Params
+  - `ResolutionOverride`
+- Enums
+  - `ResolutionMode`
+  - `SourceMode`
+
+### [textureset module](textureset/index.html)
+- Channel class
+  - `Channel`
+    - `Channel.format()`
+    - `Channel.label()`
+    - `Channel.is_color()`
+    - `Channel.is_floating()`
+    - `Channel.bit_depth()`
+    - `Channel.type()`
+    - `Channel.edit()`
+- Stack class
+  - `Stack`
+    - `Stack.from_name()`
+    - `Stack.name()`
+    - `Stack.material()`
+    - `Stack.all_channels()`
+    - `Stack.add_channel()`
+    - `Stack.remove_channel()`
+    - `Stack.edit_channel()`
+    - `Stack.has_channel()`
+    - `Stack.get_channel()`
+- UVTile class
+  - `UVTile`
+    - `UVTile.name`
+    - `UVTile.description`
+    - `UVTile.get_resolution()`
+    - `UVTile.set_resolution()`
+    - `UVTile.reset_resolution()`
+    - `UVTile.all_mesh_names()`
+- TextureSet class
+  - `TextureSet`
+    - `TextureSet.from_name()`
+    - `TextureSet.original_name`
+    - `TextureSet.name`
+    - `TextureSet.description`
+    - `TextureSet.is_layered_material()`
+    - `TextureSet.all_stacks()`
+    - `TextureSet.get_stack()`
+    - `TextureSet.get_resolution()`
+    - `TextureSet.set_resolution()`
+    - `TextureSet.has_uv_tiles()`
+    - `TextureSet.uv_tile()`
+    - `TextureSet.all_uv_tiles()`
+    - `TextureSet.get_uvtiles_resolution()`
+    - `TextureSet.set_uvtiles_resolution()`
+    - `TextureSet.reset_uvtiles_resolution()`
+    - `TextureSet.all_mesh_names()`
+    - `TextureSet.get_mesh_map_resource()`
+    - `TextureSet.set_mesh_map_resource()`
+- `ChannelFormat`
+- `ChannelType`
+- `MeshMapUsage`
+- `Resolution`
+- `all_texture_sets()`
+- `get_active_stack()`
+- `set_active_stack()`
+- `set_resolutions()`
+
+### [ui module](ui.html)
+- `UIMode`
+- `ApplicationMenu`
+- `show_main_window()`
+- `get_main_window()`
+- `get_layout()`
+- `get_layout_mode()`
+- `set_layout()`
+- `reset_layout()`
+- `add_dock_widget()`
+- `add_plugins_toolbar_widget()`
+- `add_menu()`
+- `add_toolbar()`
+- `add_action()`
+- `delete_ui_element()`
+- `get_current_mode()`
+- `switch_to_mode()`

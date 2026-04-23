@@ -1,0 +1,2 @@
+For proper functionality in version 10.1.0 and above, please install the plugin at: C:\Program Files\Adobe\Adobe Substance 3D Painter\resources\application_plugins (adjust the path if Substance Painter is installed in a different location).
+为了让插件在 10.1.0 及以上版本正常工作，请将插件安装到此路径：C:\Program Files\Adobe\Adobe Substance 3D Painter\resources\application_plugins（如果您将 SP 安装在其他路径，请自行调整）。
