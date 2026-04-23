@@ -51,16 +51,71 @@ Optional later: add `.ccx` packaging for CC-enabled users (not Phase 1).
 
 ---
 
-## 3. UDIM handling
+## 3. UDIM handling & file naming
 
-**One PSD per UDIM tile.** Output filename pattern:
+**One PSD per UDIM tile.** Each tile's PSD has an identical layer structure
+(same `rizum_sp_uid` on corresponding layers across tiles). Export progress
+UI reports per tile.
 
-```
-<MatName>_<StackName>_<Channel>.<UDIM>.psd
-```
+### 3.1 Filename pattern — follow user's SP export preset
 
-Each tile's PSD has an identical layer structure (same `rizum_sp_uid` on
-corresponding layers across tiles). Export progress UI reports per tile.
+The plugin does **not** invent its own `MatName_Channel.psd` naming scheme.
+Instead it reads the user's selected SP export preset (from
+`sp.export.list_resource_export_presets()`) and reuses the preset map's
+`fileName` pattern, replacing only the file extension with `.psd`.
+
+UI: a "Naming preset" dropdown in the export dialog, defaulting to the
+preset remembered from the user's last run (or SP's default if first run).
+Tokens SP resolves automatically: `$project`, `$mesh`, `$textureSet`,
+`$sceneMaterial`, `$udim`.
+
+### 3.2 UDIM token insertion
+
+If the selected preset's `fileName` pattern:
+- **already contains `$udim`** → use as-is; each tile writes to the tile-
+  resolved filename (e.g. `MetalDoor_BaseColor.1001.psd`,
+  `MetalDoor_BaseColor.1002.psd`)
+- **does not contain `$udim`** and the stack has UV tiles → plugin
+  auto-appends `.$udim` immediately before the extension
+  (`MetalDoor_BaseColor` → `MetalDoor_BaseColor.$udim`)
+- **does not contain `$udim`** and the stack has no UV tiles → use as-is
+
+This matches the convention Mari / Painter users already follow and keeps
+round-trip sync-back lookups deterministic.
+
+### 3.3 Export path — follow SP project default
+
+The plugin uses SP's **project-level** export path, fetched fresh at the
+moment of each export via `alg.mapexport.exportPath()` (JS bridge, see
+`analysis.md §2.1`). This path tracks whatever the user has configured in
+Painter's Export Textures dialog and updates dynamically if they change it.
+PSDs are written to `<exportPath>/<project>_photoshop_export/` (matching the
+v1.1.8 layout).
+
+The Python-side `sp.export.get_default_export_path()` returns the
+**application** default, not the project-specific path — not suitable here.
+
+No UI option to override the export path. If the user wants a different
+destination they change it in Painter's normal export dialog.
+
+### 3.4 Padding & dilation
+
+UI exposes two knobs (same semantics as v1.1.8 but expanded range):
+
+| Knob | UI | Passed to `alg.mapexport.save` |
+|---|---|---|
+| **Padding** | Checkbox "Infinite padding" (default on) | `padding: "Infinite"` when on, `padding: "Transparent"` when off |
+| **Dilation** | Slider 0–64 px, enabled only when padding is off | `dilation: <n>` |
+
+Dilation hint in UI, right below the slider: *"Suggested: 2px for 512, 4px for 1K, 8px for 2K, 16px for 4K, 32px for 8K."*
+
+Range rationale: v1.1.8 capped at 10 which is insufficient for 4K+ work.
+64 covers 8K comfortably with headroom. Formula that matches the hints:
+`suggested_dilation ≈ resolution / 256`.
+
+Bit depth stays at whatever the channel format declares
+(`Channel.bit_depth()`) unless user explicitly forces 8/16 via a dropdown —
+same logic as v1.1.8.
 
 ---
 
