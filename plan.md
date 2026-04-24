@@ -1,10 +1,11 @@
 # Rizum PT-to-PS Bridge — Phase 1 Implementation Plan
 
-**Status**: draft. Must be refined after `analysis.md` is populated by a deep
-read of SP Python docs (`pt-python-doc-md/`) and UXP reference
-(`uxp-photoshop-main/reference-ps.js` + co).
+**Status**: prep docs complete. Plan refinement in progress (see handoff
+log §0 below). M0 (scaffolding) not yet started.
 
 **Dev branch**: `claude/refactor-sp-psd-export-Q3uVE`
+
+**Current refinement branch**: `claude/plan-refine-m0-m5`
 
 **Phase 1 scope**: feature parity with v1.1.8 + UDIM + color fidelity (A+B
 mixed default) + selective sync-back. UXP plugin shipped as unpacked folder
@@ -14,6 +15,93 @@ layer deletion.
 **Phase 2 (out of scope, noted for future)**: `.ccx` packaging, smart-object
 based live anchor refs, PS → SP layer deletion reconciliation, richer conflict
 resolution UI.
+
+---
+
+## 0. Session handoff log
+
+Read this first if you're a new agent picking up the project.
+
+### What's done
+
+- **`design.md`** (locked decisions): architecture split, UXP plugin
+  distribution via External folder installer (no CC required), UDIM one-PSD-
+  per-tile, naming follows user's SP export preset (auto-inserts `$udim`),
+  export path from `alg.mapexport.exportPath()`, color fidelity via PS
+  doc-level "Blend RGB Colors Using Gamma 1.0" toggle (method C rejected),
+  layer structure mapping incl. clipping groups for sub-effects, flattened
+  masks, anchor refs baked as normal raster, sync-back via file manifest
+  (user-triggered, selective, non-destructive), metadata via layer-name
+  suffix `‡<sp_uid>` + sidecar `<psdname>.rizum.json`.
+- **`analysis.md`** (API audit): every `design.md §5–6` claim mapped to a
+  real API call. SP Python covers everything except per-layer export,
+  which goes through JS fallback `alg.mapexport.save` +
+  `alg.mapexport.exportPath`. UXP covers most; three ops need `batchPlay`:
+  PNG placement, layer mask add/fill, blend-gamma-1.0 toggle. Blend-gamma
+  toggle is the color-fidelity win — validate at M3 start.
+- **`plan.md`**: M0–M5 drafted, M3 already rewritten around blend-gamma.
+  **This file's milestones are being refined right now** — pinning exact
+  API calls to each task and tightening verify criteria.
+
+### User's standing rules
+
+- Chat summaries in Chinese, all file content in English
+  (`rizum-claude.md`)
+- Develop on `claude/refactor-sp-psd-export-Q3uVE` (or a sub-branch for
+  isolated work). Merge to main when user says "commit to main"
+- Never push to main without explicit permission
+- `analysis.md`, `design.md`, `plan.md` are living — update when
+  implementation uncovers new facts
+- Update `- [x]` checkboxes in this file as tasks complete
+- Style: surgical changes, no speculative scope, minimum code
+
+### Key design choices you cannot silently change
+
+1. **UXP plugin, not ExtendScript** on PS side; ships as unpacked folder
+   copied to `%APPDATA%\Adobe\UXP\Plugins\External\` via installer scripts
+2. **Python first** on SP side; JS fallback only where Python is absent
+   (confirmed absences: `alg.mapexport.save`, `alg.mapexport.exportPath`)
+3. **One PSD per UDIM tile**; filename from user's SP preset
+4. **Color fidelity = blend-gamma 1.0 doc toggle** (primary) with per-mode
+   LUT as fallback if UXP can't set the toggle
+5. **Sub-effects inside a layer → PS clipping group**
+6. **Masks flatten on export**; sync-back preserves old mask stack as
+   hidden backup + new top mask
+7. **Anchor refs bake to normal raster** (no locked read-only layer, no
+   metadata)
+8. **Sync is user-triggered**: Push button in UXP + Apply dialog in SP.
+   Manifest JSON + PNGs in `<sp_project_dir>/_pt_sync_inbox/`
+9. **Metadata**: `‡<sp_uid>` layer-name suffix + sidecar JSON (no XMP per
+   layer — unreliable in UXP)
+10. **Minimum PS 23.3** (UXP manifest v5 requirement)
+
+### Where to resume
+
+The current task is **this file's refinement**. Each milestone below needs:
+- Specific API calls named (linking to `analysis.md §N.M`)
+- Verification criteria tight enough that a pass/fail is objective
+- Out-of-scope explicitly listed to prevent scope creep
+
+Milestones M2 and M4 should be split:
+- **M2a** minimal PSD build (pixel layers + blend mode + opacity + group
+  nesting + metadata suffix)
+- **M2b** masks + clipping sub-effects + sidecar JSON
+- **M4a** UXP push side (panel UI + manifest write)
+- **M4b** SP apply side (inbox watcher + diff dialog + resource import)
+
+If refinement isn't done yet, finish it. If it's done, start **M0** —
+scaffold the directory tree per §M0 and commit.
+
+### Files to reference while working
+
+- `design.md` — authoritative decisions
+- `analysis.md` §1 (SP Python), §2 (SP JS), §3 (UXP), §4 (gaps), §6
+  (color management), §7 (bake matrix), §8 (old-plugin patterns to port)
+- `ps-export_Rizum v1.1.8/ps-export-Rizum/` — old plugin; `photoshop.js`
+  + `footer.jsx` are the most useful references for action-descriptor
+  sequences
+- `pt-python-doc-md/substance_painter/` — SP Python docs
+- `uxp-photoshop-main/src/pages/ps_reference/` — UXP docs
 
 ---
 
