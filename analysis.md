@@ -601,11 +601,6 @@ UXP + batchPlay coverage.
 
 (Resolved ones deleted. Remaining:)
 
-- **PS blend-mode gamma behavior in UXP**: the per-layer method-B
-  pre-compensation formula needs empirical calibration. Plan: in M3, write
-  a test PSD with known SP exports for each blend mode, visually compare
-  against SP viewport, tune per-mode LUT. Documented in `plan.md M3`
-  already.
 - **batchPlay for mask insert + content fill**: the exact action
   descriptor sequence will be worked out at M2 using Photoshop's "Record
   Action Commands" developer mode. Low risk — well-documented path — but
@@ -616,3 +611,201 @@ UXP + batchPlay coverage.
 - **Panel UI behavior while `executeAsModal` is running**: per docs the
   panel stays responsive (events queue up). If we hit a blocking issue,
   split the long export into smaller modal scopes per UDIM tile.
+- **PSD "Blend RGB Colors Using Gamma 1.0" settability via UXP** — see
+  §6.3 below. Big potential payoff, verification needed at M3 start.
+
+---
+
+## 6. Color management deep dive (SP side)
+
+Source: `pt-python-doc-md/substance_painter/colormanagement.md` +
+`source/bitmap.md`.
+
+### 6.1 Color space model in SP
+
+| Space | When used | Enum |
+|---|---|---|
+| sRGB | Color-managed channels on output (BaseColor, Emissive, Diffuse, Specular, CoatColor, ScatterColor, SheenColor) | `GenericColorSpace.sRGB` |
+| Working (Linear sRGB in legacy) | **Layer blending happens here** | `GenericColorSpace.Working` |
+| Raw | Data channels (Roughness, Metallic, Height, Displacement, AO, Opacity, Glossiness, Anisotropy, IoR, Specularlevel, user channels) | `GenericColorSpace.Raw` / `DataColorSpace.Data` |
+| Normal | Normal channel, depends on project OpenGL/DirectX | `NormalColorSpace.NormalXYZRight` / `...Left` |
+
+When `alg.mapexport.save` writes a PNG:
+- Color-managed channel → PNG is **sRGB-encoded** (gamma ~2.2)
+- Data channel → PNG is **raw** (no conversion)
+- Normal channel → PNG is raw in the project's normal orientation
+
+### 6.2 The fundamental SP↔PS blend mismatch
+
+- **SP**: layers composite in *Working* (linear sRGB) space. Tonemap + sRGB
+  encode happens once at the end for display/export.
+- **PS**: by default, blends in *sRGB gamma-encoded* space. `Multiply` of
+  two sRGB values is not the same visual result as `Multiply` of their
+  linear-space equivalents.
+
+This is why `design.md §4 method B` (per-layer pre-compensation) is hard
+in general — there's no scalar correction that makes an sRGB-space
+multiply yield a linear-space multiply's result for arbitrary input.
+
+### 6.3 Key finding: PS's "Blend RGB Colors Using Gamma 1.0" toggle
+
+Photoshop supports document-level **"Blend RGB Colors Using Gamma 1.0"**
+(Edit → Color Settings → More Options → Custom). When enabled for a
+document:
+
+- PS decodes sRGB → linear → blends → re-encodes
+- This is **exactly what SP does**
+- Result: Multiply/Screen/LinearDodge/LinearBurn/Darken/Lighten/ColorBurn/
+  ColorDodge/Difference/Exclusion all produce SP-matching output **with
+  zero per-layer pre-compensation**
+
+If this setting is writable via UXP `batchPlay`, method B collapses from
+"approximate per-mode compensation LUT" to "one document-level toggle at
+PSD creation time". The action command is something along the lines of:
+
+```javascript
+// Not yet verified — M3 implementation will validate
+{ _obj: "set",
+  _target: [{_ref: "property", _property: "colorSettings"},
+            {_ref: "document", _enum: "ordinal"}],
+  to: { _obj: "colorSettings", rgbColorBlendGamma: 1.0 } }
+```
+
+**Action for M3**: verify this via "Record Action Commands" on a document
+where we toggle the setting manually. If it works:
+
+- Default export mode ("Bake unsupported modes") sets `rgbColorBlendGamma = 1.0`
+  on every PSD; no per-layer math needed for representable blend modes
+- "Preserve all layers" mode does the same; SP-only modes (Tint, Value,
+  SignedAddition, etc.) still map to closest PS equivalent with `[!]`
+  prefix
+
+If this setting is **not** writable via UXP:
+
+- Fall back to empirical per-mode compensation LUT calibrated in M3
+- Accept that Overlay/SoftLight/HardLight family will have residual drift
+
+### 6.4 Sync-back color space handling
+
+When UXP pushes a PNG back to SP, the PNG is sRGB-encoded (PS document is
+sRGB). SP's `import_project_resource(path, Usage.TEXTURE)` defaults the
+imported `SourceBitmap` color space based on context:
+
+- BaseColor (and other color-managed channels) → sRGB, correct by default
+- Roughness/Metallic/Height/etc. (data channels) → **need manual override**
+
+After `set_source(channel, resource_id)` returns a `SourceBitmap`:
+
+```python
+source_bitmap = node.set_source(channel, resource_id)
+if is_data_channel(channel):
+    source_bitmap.set_color_space(sp.colormanagement.GenericColorSpace.Raw)
+elif channel == ChannelType.Normal:
+    # match the project's normal map format
+    fmt = sp.project.NormalMapFormat.OpenGL  # or query from project
+    cs = (sp.colormanagement.NormalColorSpace.NormalXYZRight
+          if fmt == sp.project.NormalMapFormat.OpenGL
+          else sp.colormanagement.NormalColorSpace.NormalXYZLeft)
+    source_bitmap.set_color_space(cs)
+```
+
+`sync_inbox.py` must know the channel for each incoming PNG (already in the
+manifest) and apply the appropriate color-space override.
+
+### 6.5 OCIO / ACE projects
+
+Projects with `OCIO` or `PAINTER_ACE_CONFIG` env vars set use custom
+color management. `Working` means whatever the config defines — not
+guaranteed to be Linear sRGB.
+
+**Phase 1 scope**: assume Legacy color management (Linear sRGB working
+space). Document this assumption and emit a warning at export time if the
+project uses OCIO/ACE. Full OCIO support can come in Phase 2.
+
+---
+
+## 7. Effect-type bake-or-keep matrix
+
+For completeness. Each `NodeType` seen in `content_effects()` or
+`mask_effects()` decides a handler:
+
+| NodeType | In content stack | In mask stack | Handler |
+|---|---|---|---|
+| `FillEffect` | PS raster layer (clipping group) | Flattened into mask | Use `get_source()` to classify; if source is bitmap, export direct; if procedural/anchor, bake via `alg.mapexport.save(uid, channel)` |
+| `PaintEffect` | PS raster layer (clipping group) | Flattened into mask | Bake (strokes not Python-readable anyway) |
+| `FilterEffect` | Bake everything up to this effect | Bake into mask | Always bake |
+| `GeneratorEffect` | Bake | Bake | Always bake |
+| `LevelsEffect` | Bake | Bake | PS Levels differs from SP Levels |
+| `CompareMaskEffect` | (invalid per `edition.md` table) | Bake | Mask only |
+| `ColorSelectionEffect` | (invalid) | Bake | Mask only |
+| `AnchorPointEffect` | Bake in place | Bake in place | Per `design.md §5.4` |
+
+"Bake" means: call `alg.mapexport.save([effect_uid, channel], ...)` to get
+the effective contribution up to and including that effect, then emit a
+single PS raster layer with that PNG.
+
+"Instance layer" (`InstanceLayerNode`) is a top-level type — treat as a
+paint layer, bake its fully-resolved content to one raster.
+
+No further per-effect introspection needed at the `design.md` level; the
+exporter only needs the type enum + uid to dispatch.
+
+---
+
+## 8. Old plugin findings (v1.1.8) — reusable patterns
+
+Source: `ps-export_Rizum v1.1.8/ps-export-Rizum/`. The old plugin is
+JS/QML on the SP side and ExtendScript (.jsx) on the PS side. Several
+patterns translate cleanly to our new architecture.
+
+### 8.1 SP-side patterns worth porting
+
+From `photoshop.js` and `main.qml`:
+
+| Pattern | v1.1.8 source | Where it lives in v2 |
+|---|---|---|
+| Settings persisted in SP preferences (last checked material/stack/channel list, dilation, bit depth, padding, launch-PS) | `alg.settings.setValue(...)` | `sp_plugin/rizum_sp_to_ps/settings.py` using `QSettings` or project metadata (`sp.project.Metadata("Rizum")`) |
+| Material/stack/channel tree picker with "All"/"None" buttons + hierarchical check propagation | `ExportDialog.qml` | `ui.py` — PySide6 `QTreeWidget` with tri-state checkboxes |
+| Recursive layer-tree traversal (DFS) with per-leaf PNG export and per-folder group creation | `layersDFS()` in `photoshop.js` | `exporter.py` — use `GroupLayerNode.sub_layers()` + type switch |
+| Export path = `alg.mapexport.exportPath() + "/" + projectName + "_photoshop_export/"` | `photoshop.js:54` | Same, via JS bridge (§2.1). Preserved for compatibility with existing user workflows. |
+| Default normal-channel background = RGB(128, 128, 255) fill layer at the bottom | `photoshop.js:189-192` | `exporter.py` — emit a `fill` entry in `build_request.json` for the `normal` channel |
+| Bottom "snapshot" layer (full flattened channel export, hidden, at top of PSD) as visual reference | `photoshop.js:194-197` | Optional debug feature in v2; off by default. Useful for verifying the live stack matches the ground-truth composite |
+| Folder visibility set **after** children are added (gotcha: PS overrides to `true` otherwise) | `photoshop.js:242` comment | Note in `ps_plugin/src/build-psd.js` — set `group.visible` at the end of group processing, not at creation |
+| Rasterize-all at end of PSD build | `photoshop.js:185` | `ps_plugin/src/build-psd.js` — optional; off by default in v2 since we want editable layers |
+| Bit-depth dropdown: "TextureSet value" (−1) / "8 bits" / "16 bits" | `ConfigurePanel.qml:193-197` | `ui.py` — same three options. Value −1 means "use `Channel.bit_depth()`" |
+
+### 8.2 PS-side ExtendScript recipes → UXP `batchPlay` port targets
+
+`footer.jsx` contains pre-built action-descriptor sequences that solve
+exactly the problems UXP's high-level API leaves open. Port these
+directly to `action.batchPlay` format:
+
+| ExtendScript function | What it does | UXP port |
+|---|---|---|
+| `open_png(File)` | `Plc ` (placeEvent) action: places a PNG at origin, no free-transform | `batchPlay [{_obj: "placeEvent", null: {_path, _kind: "local"}, freeTransformCenterState: {_enum: "quadCenterState", _value: "QCSAverage"}, offset: {...zero...}}]` then `layer.rasterize()` |
+| `layerToMask()` | Turns the top layer (pixel content) into a layer mask of the layer below. Sequence: select all pixels → copy → delete layer → make new reveal-all user mask on target → select mask channel → paste → deselect | Direct port. 7 action descriptors, same ordering. Exact JS in old source can be translated mechanically. |
+| `applyLayerMask()` | `GrpL` action — commits the mask into the layer's pixels | `batchPlay [{_obj: "GrpL", null: {_ref: "layer", _enum: "ordinal", _value: "targetEnum"}}]`. Used only if user wants to bake masks. |
+| `fillSolidColour(R,G,B)` | Creates a `contentLayer`/`solidColorLayer` fill layer with given RGB | For the normal-channel background fill (`RGB 128,128,255`). Direct batchPlay port of the same descriptor tree. |
+| `Overlay_Normal()` | Hack: sets blend=linearLight @ 50% fill + linearBurn fill-effect layer at (255,255,128) to fake SP's NormalMapCombine | **Drop** — v2 bakes normal-map modes per `design.md §4`. Keep as reference if anyone wants to resurrect |
+| `del_bg()` / `rasterize_All()` / `send_backward()` / `center_layer()` / `new_layer()` | Small ExtendScript helpers | `del_bg` → `layer.delete()`; `rasterize_All` → `doc.rasterizeAllLayers()`; `send_backward` → `layer.move(other, ElementPlacement.PLACEAFTER)`; others not needed |
+
+### 8.3 Settings UI discrepancies vs. README
+
+- `ConfigurePanel.qml:156` declares `maxValue: 256` for the dilation
+  slider. The README claims 0–10. Neither is right for v2 (we use 0–64
+  per `design.md §3.4`), but worth noting: the v1.1.8 **behavior** was
+  0–256, only the README said 0–10.
+- The "Launch Photoshop after export" feature stores a path to
+  `photoshop.exe`. v2 drops this — plugin runs inside PS already; the
+  UXP panel's "Build from Painter" button replaces that launch step.
+
+### 8.4 Documented bugs to avoid regressing
+
+- Old plugin's blend-mode `switch` drops **`Darken`, `Lighten`, `Inverse
+  divide`, `Inverse Subtract`, `Tint`, `Value`, `Signed addition`** as
+  `blendingMode = ""` — i.e. silently omits the entire `blendMode` set
+  line, leaving PS at its default `NORMAL`. v2 handles all of these per
+  the mapping table in §3.6.
+- Old plugin mutates `app.preferences.rulerUnits`, `typeUnits`,
+  `displayDialogs` globally. In UXP this is moot — `executeAsModal`
+  provides isolation.

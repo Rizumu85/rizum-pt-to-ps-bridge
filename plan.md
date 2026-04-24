@@ -87,14 +87,23 @@ verification passes.
   visual result ≈ SP viewport for the "Bake unsupported modes" default
   policy. Manual visual diff is acceptable for this milestone.
 
-### M3 — Color handling (method-B compensation)
+### M3 — Color handling (blend-gamma + bake policy)
 
-- [ ] `compensation.py`: per-blend-mode pre-compensation LUT or formula
-- [ ] Apply to each kept-editable layer's PNG during M1 export
-- [ ] Bake path (method A) for unrepresentable modes in `exporter.py` (call
-      SP's flatten/export-at-node API)
-- [ ] "Preserve all layers" toggle in UI bypasses bake, marks drifted layers
-      with `[!]` prefix
+- [ ] At PSD creation in UXP, set document-level "Blend RGB Colors Using
+      Gamma 1.0" via `batchPlay` (see `analysis.md §6.3`). **Validate
+      first** that the action descriptor is honored by comparing a two-
+      layer Multiply test PSD before/after
+- [ ] If gamma toggle works: no per-layer pre-compensation needed for the
+      PS-representable blend-mode set. Skip `compensation.py`
+- [ ] If gamma toggle does not work: fall back to empirical per-mode
+      pre-compensation LUT in `compensation.py`, calibrated from captured
+      SP viewport vs PS output diffs
+- [ ] Bake path (method A) in `exporter.py` for SP-only modes
+      (SignedAddition/Tint/Value/NormalMap*/Inverse*), calling
+      `alg.mapexport.save([effect_uid, channel], ...)` via bridge
+- [ ] "Preserve all layers" toggle in UI bypasses bake; Tint→HUE,
+      Value→LUMINOSITY, SignedAddition→LINEARDODGE with `[!]` prefix in
+      the PS layer name
 - **Verify**: composite image diff between SP viewport and built PSD for a
   test project with every PS-representable blend mode. Max per-pixel ΔE
   < 1.0 for editable layers; exact match on baked layers. "Preserve all
@@ -123,9 +132,10 @@ verification passes.
 - [ ] Matching uninstallers
 - [ ] `README.md` with three-step install instructions, tested on a clean
       Windows and macOS VM without Creative Cloud app installed
-- **Verify**: on a machine with only Photoshop (no CC Desktop, no Adobe ID
-  logged in), run installer → start PS → plugin appears in Plugins panel →
-  full round-trip works
+- [ ] Manifest `host.minVersion = "23.3.0"` (UXP manifest v5 floor)
+- **Verify**: on a machine with only Photoshop ≥ 23.3 (no CC Desktop, no
+  Adobe ID logged in), run installer → start PS → plugin appears in
+  Plugins panel → full round-trip works
 
 ---
 

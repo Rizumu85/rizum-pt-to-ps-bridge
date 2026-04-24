@@ -121,30 +121,44 @@ same logic as v1.1.8.
 
 ## 4. Color fidelity strategy
 
-Default: **"Bake unsupported modes"** (A+B mixed).
+**Primary mechanism (new in v2)**: set the PSD's document-level
+**"Blend RGB Colors Using Gamma 1.0"** when building it. PS will then
+decode sRGB → linear → blend → re-encode, matching SP's linear
+compositing exactly. All PS-representable linear-friendly blend modes
+produce SP-identical output with **zero per-layer pre-compensation**. See
+`analysis.md §6.3` for details.
+
+**Fallback** if UXP cannot toggle this setting (to be verified at M3):
+empirical per-mode pre-compensation LUT. Some blend modes in the
+Overlay/SoftLight/HardLight family will have residual drift.
+
+### 4.1 Default: "Bake unsupported modes" (A+B hybrid)
 
 - PS-representable blend modes (Normal, Multiply, Screen, LinearDodge,
-  LinearBurn, Darken, Lighten, ColorBurn, ColorDodge, Difference, Exclusion,
-  Overlay, SoftLight, HardLight, VividLight, LinearLight, PinLight, Color,
-  Saturation, PassThrough[group-only]) → kept as editable PS layers with
-  per-layer gamma pre-compensation (method B) so PS's gamma-encoded blend
-  math reproduces SP's linear-space result.
-- SP-only modes (`SignedAddition`, `InverseDivide`, `InverseSubtract`, `Tint`,
-  `Value`, `NormalMapCombine`, `NormalMapDetail`, `NormalMapInverseDetail`,
-  `Replace`) → that layer **plus everything below it in its enclosing stack**
-  is baked to a single Normal raster layer (method A). Remaining layers
-  above stay editable.
+  LinearBurn, Darken, Lighten, ColorBurn, ColorDodge, Difference,
+  Exclusion, Overlay, SoftLight, HardLight, VividLight, LinearLight,
+  PinLight, Color, Saturation, PassThrough[group-only]) → kept as editable
+  PS layers. Accuracy comes from the gamma 1.0 toggle above.
+- SP-only modes (`SignedAddition`, `InverseDivide`, `InverseSubtract`,
+  `Tint`, `Value`, `NormalMapCombine`, `NormalMapDetail`,
+  `NormalMapInverseDetail`, `Replace`) → that layer **plus everything
+  below it in its enclosing stack** is baked to a single Normal raster
+  layer. Remaining layers above stay editable.
 
-Toggle: **"Preserve all layers"** (B-only).
+### 4.2 Toggle: "Preserve all layers" (B-only)
 
 - Every SP layer → exactly one PS layer, no baking.
-- Unrepresentable modes map to the closest PS equivalent and get a `[!]`
-  prefix in the PS layer name; entries logged to the export report.
+- Unrepresentable SP-only modes map to the closest PS equivalent (with
+  `[!]` prefix in the PS layer name): `Tint` → `HUE`, `Value` →
+  `LUMINOSITY`, `SignedAddition` → `LINEARDODGE`, etc. Full mapping in
+  `analysis.md §3.6`.
 - Explicitly accepts color drift on those specific layers.
 
-Option C (rewrite SP viewport shader) was considered and **rejected**: SP layer
-blending happens inside the Substance Engine, not in any user-controllable
-shader. The view shader sees already-composited channel textures.
+### 4.3 Rejected: option C (rewrite SP viewport shader)
+
+SP layer blending happens inside the Substance Engine, not in any
+user-controllable shader. The view shader sees already-composited channel
+textures. Impossible to rewrite from a plugin.
 
 ---
 
