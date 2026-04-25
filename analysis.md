@@ -3,15 +3,26 @@
 **Status**:
 - §1 SP Python API — **done**
 - §2 SP JS API fallback — **done**
-- §3 UXP Photoshop API — skeleton, not yet populated
-- §4 Gaps & decisions — partially filled from §1/§2; finalize after §3
-- §5 Open questions — alive
+- §3 UXP Photoshop API — **done from local docs; host-recorded descriptors still need validation**
+- §4 Gaps & decisions — **done**
+- §5 Open questions — implementation-validation only
 
-Populating this doc **must** happen before `plan.md` milestones start.
-Every design claim in `design.md §5–6` needs a line item here that points
-to a real API call — otherwise the design claim is unverified.
+This doc has now been populated from the API documentation included in this
+repo. Every design claim in `design.md §5–7` that is backed by documented API
+surface has a concrete API call or an explicit fallback listed here. The only
+remaining items are host-behavior validations that require running inside
+Photoshop or Substance Painter.
 
-## Summary of findings so far (SP side)
+## 0. Local API documentation coverage
+
+| Area | Included local source | Coverage status |
+|---|---|---|
+| Substance Painter Python API | `pt-python-doc-md/substance_painter/` | Covered for traversal, export, resources, UI, events, layer-stack mutation, color management, and JS bridge |
+| Legacy Painter JS API | `javascript-doc/` | Covered for the two required fallbacks: `alg.mapexport.save` and `alg.mapexport.exportPath` |
+| Photoshop DOM / UXP / Spectrum | `uxp-photoshop-main/src/pages/ps_reference/`, `uxp-photoshop-main/src/pages/uxp-api/`, `uxp-photoshop-main/src/pages/guides/` | Covered for PSD creation, layers, files, modal execution, panel UI, and `batchPlay` escape hatches |
+| Host-recorded Action Manager descriptors | Not included as ready-to-use project files | Must be recorded or validated in Photoshop for layer-mask pixel transfer and the RGB blend-gamma setting |
+
+## Summary of findings
 
 - Every capability in `design.md §5–6` that is SP-side has a Python API
   mapping, **except per-layer PNG export** — that requires one JS fallback
@@ -229,8 +240,12 @@ content or mask is legal.
 - Events we need: `ProjectOpened`, `ProjectEditionEntered`,
   `ProjectAboutToClose`, `ProjectClosed`, `ExportTexturesEnded`,
   `TextureStateEvent` (fires on texture changes; has
-  `tile_indices`, `channel_type`, `cache_key` — enough to detect per-layer
-  changes for dirty tracking on the SP side)
+  `tile_indices`, `channel_type`, `cache_key` — enough to detect that a
+  stack/channel/tile changed, **not** which SP layer changed)
+- `LayerStacksModelDataChanged` can signal that the layer-stack model changed,
+  but the docs do not expose a per-layer `last_modified` timestamp. Conflict
+  detection must therefore use coarse stack/channel cache keys or re-exported
+  hashes, not a nonexistent per-layer timestamp.
 - **QFileSystemWatcher** (Qt) is usable directly since PySide6 is available —
   that's how we watch `_pt_sync_inbox/` for new manifests
 
@@ -315,8 +330,11 @@ Entry point: `const { app, action, core, constants } = require('photoshop');`
 
 ### 3.1 Minimum Photoshop version
 
-Manifest v5 requires **Photoshop ≥ 23.3** (UXP ≥ 6.0). All methods we rely on
-are available at 23.3. Set `manifest.host.minVersion = "23.3.0"`.
+Manifest v5 requires **Photoshop ≥ 23.3** (UXP ≥ 6.0). Keep
+`manifest.host.minVersion = "23.3.0"`, but avoid DOM conveniences introduced
+after 23.3 unless guarded. In particular, `Document.createPixelLayer()` is
+documented as 24.1, so Phase 1 should use the older `Document.createLayer()`
+pixel-layer overload when it needs a blank raster layer.
 
 This revises `design.md §2` which said "PS ≥ 23"; update to 23.3.
 
@@ -324,26 +342,28 @@ This revises `design.md §2` which said "PS ≥ 23"; update to 23.3.
 
 | Need | API |
 |---|---|
-| New doc | `await app.createDocument({width, height, resolution, mode: "RGBColorMode", fill: "transparent"})` |
+| New doc | `await app.createDocument({width, height, resolution, depth, mode: "RGBColorMode", fill: "transparent"})` |
 | Open existing | `await app.open(fileEntry)` — takes UXP File entry |
-| Save PSD | `await doc.saveAs.psd(fileEntry, {embedColorProfile: true}, asCopy=false)` |
+| Save PSD | `await doc.saveAs.psd(fileEntry, {embedColorProfile: true}, false)` |
 | Save current | `await doc.save()` |
 | Close | `await doc.close(SaveOptions.DONOTSAVECHANGES)` |
 
-Color mode: `"RGBColorMode"` (default), bit depth via `doc.bitsPerChannel`.
+Color mode: `"RGBColorMode"` (default). Bit depth should be set at document
+creation with `DocumentCreateOptions.depth` (`8`, `16`, or `32`); `doc.bitsPerChannel`
+is also writable but setting the depth up front is cleaner.
 
 ### 3.3 Layer creation & arrangement — ✅ covered via high-level DOM
 
 | Need | API |
 |---|---|
-| New raster layer | `await doc.createPixelLayer({name, opacity, blendMode, fillNeutral})` |
+| New raster layer | `await doc.createLayer(constants.LayerKind.NORMAL, {name, opacity, blendMode})` (23.0); `doc.createPixelLayer()` exists but requires 24.1 |
 | New group | `await doc.createLayerGroup({name, opacity, blendMode, fromLayers})` |
 | Group existing | `await doc.groupLayers([layer1, layer2])` |
 | Duplicate / move across doc | `await layer.duplicate(targetDoc)` |
 | Reorder | `layer.move(relativeLayer, ElementPlacement.PLACEBEFORE\|PLACEAFTER\|PLACEINSIDE\|PLACEATBEGINNING\|PLACEATEND)` |
 | Delete | `layer.delete()` |
 | Visibility | `layer.visible = bool` |
-| Opacity / fill | `layer.opacity = 0–100`, `layer.fillOpacity = 0–100` (ints) |
+| Opacity / fill | `layer.opacity = 0–100`, `layer.fillOpacity = 0–100` (percent numbers) |
 | Name | `layer.name = str` |
 | Lock | `layer.allLocked = bool`, `.pixelsLocked`, `.positionLocked`, `.transparentPixelsLocked` |
 | **Clipping mask** (design.md §5.2) | `layer.isClippingMask = true` — clips to layer below |
@@ -358,7 +378,7 @@ UXP Layer has no direct "load PNG into this raster layer" call. Two routes:
 const pngDoc = await app.open(pngEntry);
 const ours = pngDoc.layers[0];
 await ours.duplicate(targetDoc);               // copies layer into our PSD
-await pngDoc.closeWithoutSaving();
+pngDoc.closeWithoutSaving();
 ```
 
 **Path B (surgical, via `batchPlay`):** the `placeEvent` action descriptor,
@@ -463,10 +483,12 @@ No modal blocking for the panel itself. Long operations wrap in
 
 ### 3.8 File I/O — ✅ covered
 
-`manifest.requiredPermissions.localFileSystem = "fullAccess"` gives us
-arbitrary read/write. Two interfaces:
+`manifest.requiredPermissions.localFileSystem = "fullAccess"` is the intended
+permission for arbitrary project-path access. The included manifest v5 docs
+state that `fullAccess` allows inspecting/modifying/deleting accessible files,
+with install/update consent.
 
-**Modern (token-based, UXP native):**
+Use the UXP native filesystem APIs:
 ```javascript
 const fs = require('uxp').storage.localFileSystem;
 const entry = await fs.getEntryWithUrl("file:" + absolutePath);   // needs fullAccess
@@ -474,17 +496,15 @@ await entry.write(data);
 // or getFileForOpening() / getFileForSaving() for user pickers
 ```
 
-**Node-style fs** (convenience shim in UXP):
-```javascript
-const fs = require('fs');
-await fs.writeFile(path, buffer);
-const data = await fs.readFile(path);
-const list = await fs.readdir(dir);
-```
-
-Use Node-style `fs` for the sync manifest + PNG I/O — simpler for our
-read-manifest / write-manifest flow. `getFileForOpening()` picker for the
-"pick a build_request.json" action on initial SP→PS build.
+The local docs do **not** document Node-style `require('fs')` as a Photoshop
+plugin API. Do not make it the primary implementation path. `getEntryWithUrl`
+is referenced in the local UXP changelog but its concrete generated reference
+page is not expanded in this repo, so M4 must validate it in-host. Use
+`getFileForOpening()` for the initial "pick a build_request.json" action and
+UXP File/Folder entry APIs for manifest and PNG I/O where possible. `.write()`
+is shown in the included guides; `.read()` and URL-based entry lookup should
+be validated in-host because their generated reference pages are placeholders
+in this repo.
 
 SHA1/hash: use Web Crypto `crypto.subtle.digest('SHA-1', buffer)`.
 
@@ -501,14 +521,17 @@ await require('photoshop').core.executeAsModal(async (ctx) => {
 per-UDIM-tile build in its own modal scope so cancelling mid-export stops
 cleanly between tiles.
 
-History suspension: `doc.suspendHistory(cb)` OR `ctx.hostControl.suspendHistory({documentID})`
-inside modal scope — collapses all our mutations into one undoable step.
+History suspension: `doc.suspendHistory(cb, historyStateName)` OR
+`ctx.hostControl.suspendHistory({documentID, name})` followed by
+`ctx.hostControl.resumeHistory(suspensionID, true)` inside modal scope —
+collapses all our mutations into one undoable step.
 
 ### 3.10 Metadata — ⚠ revised: layer-name suffix + sidecar JSON
 
-UXP exposes `require('uxp').xmp` for **document-level** XMP. Per-layer XMP
-is not exposed in the high-level API. `batchPlay` can poke layer metadata
-but it's fragile across PS versions.
+The local docs mention XMP support in the UXP changelog, but the generated
+XMP reference pages in this repo are placeholders. Per-layer XMP is not
+exposed in the high-level Photoshop DOM. `batchPlay` can potentially poke
+layer metadata, but that path is fragile across PS versions.
 
 **Revised schema** (replaces `design.md §7`):
 
@@ -523,9 +546,14 @@ but it's fragile across PS versions.
   {
     "rizum_version": "2.0.0",
     "sp_project_path": "C:/.../project.spp",
-    "sp_project_uuid": "<from sp.project.get_uuid()>",
+    "sp_project_uuid": "<str(sp.project.get_uuid())>",
     "baseline_timestamp": "ISO-8601",
+    "texture_set": "Body",
+    "stack": "",
+    "channel": "BaseColor",
     "udim": 1001,
+    "normal_map_format": "OpenGL",
+    "baseline_cache_key": 123456789,
     "layers": [
       {"sp_uid": "a3f7", "sp_kind": "layer", "sync_direction": "both",
        "ps_name": "DiffuseBase ‡a3f7"},
@@ -536,7 +564,9 @@ but it's fragile across PS versions.
   }
   ```
 - On sync-back, UXP parses the suffix from each layer's name as primary
-  key; sidecar JSON is cross-reference to detect renames/duplicates.
+  key; sidecar JSON is cross-reference to detect renames/duplicates and to
+  carry channel/UDIM/normal-orientation context that is not recoverable from
+  an arbitrary edited PSD layer.
 
 **Design revision required**: update `design.md §7`.
 
@@ -572,6 +602,7 @@ one-off "scan" step (a few seconds for a typical PSD).
 | UXP has no high-level layer-mask manipulation | `batchPlay` with `make new channel mask` + open+copy for mask content (§3.5) |
 | UXP has no reliable per-layer XMP metadata | Layer-name suffix `‡<sp_uid>` + sidecar JSON (§3.10) |
 | UXP has no per-layer dirty event | Hash-on-demand when user clicks Push (§3.11) |
+| SP Python has no per-layer `last_modified` timestamp | Use channel/tile cache-key comparison or re-exported hashes for conservative conflict warnings |
 
 ### 4.2 JS fallback scope (SP side)
 
@@ -605,14 +636,20 @@ UXP + batchPlay coverage.
   descriptor sequence will be worked out at M2 using Photoshop's "Record
   Action Commands" developer mode. Low risk — well-documented path — but
   not pre-verified here.
-- **UXP `getEntryWithUrl("file:...")` with `fullAccess`**: documented but
-  not hands-on verified. Node-style `fs` is a safer fallback; if the
-  token-based approach has quirks, `fs.readFile`/`writeFile` covers us.
+- **UXP `getEntryWithUrl("file:...")` with `fullAccess`**: referenced by the
+  local UXP changelog and implied by the manifest v5 permission model, but
+  the generated reference page is not expanded in this repo. Validate in-host
+  before relying on path-only sidecar writes.
 - **Panel UI behavior while `executeAsModal` is running**: per docs the
   panel stays responsive (events queue up). If we hit a blocking issue,
   split the long export into smaller modal scopes per UDIM tile.
 - **PSD "Blend RGB Colors Using Gamma 1.0" settability via UXP** — see
   §6.3 below. Big potential payoff, verification needed at M3 start.
+- **Current Painter normal-map orientation getter**: `NormalMapFormat` is
+  documented for project creation settings, but no direct getter for the
+  currently opened project was found in the local `project.md`. Store the
+  value when known, infer from existing normal sources if possible, or expose
+  a user setting before Normal-channel sync-back.
 
 ---
 
@@ -701,8 +738,10 @@ source_bitmap = node.set_source(channel, resource_id)
 if is_data_channel(channel):
     source_bitmap.set_color_space(sp.colormanagement.GenericColorSpace.Raw)
 elif channel == ChannelType.Normal:
-    # match the project's normal map format
-    fmt = sp.project.NormalMapFormat.OpenGL  # or query from project
+    # match the project's normal map format. The local project docs expose
+    # NormalMapFormat at project creation time, but no direct getter was found;
+    # store it in our export manifest or ask the user if it cannot be inferred.
+    fmt = manifest["normal_map_format"]
     cs = (sp.colormanagement.NormalColorSpace.NormalXYZRight
           if fmt == sp.project.NormalMapFormat.OpenGL
           else sp.colormanagement.NormalColorSpace.NormalXYZLeft)

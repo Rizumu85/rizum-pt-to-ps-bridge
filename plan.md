@@ -1,8 +1,16 @@
 # Rizum PT-to-PS Bridge — Phase 1 Implementation Plan
 
-**Status**: draft. Must be refined after `analysis.md` is populated by a deep
-read of SP Python docs (`pt-python-doc-md/`) and UXP reference
-(`uxp-photoshop-main/reference-ps.js` + co).
+**Status**: API-doc intake complete. This plan has been revised against the
+local API docs listed in `analysis.md §0`:
+
+- SP Python docs: `pt-python-doc-md/substance_painter/`
+- Legacy SP JS docs: `javascript-doc/`
+- Photoshop UXP docs: `uxp-photoshop-main/src/pages/ps_reference/`,
+  `uxp-photoshop-main/src/pages/uxp-api/`, and
+  `uxp-photoshop-main/src/pages/guides/`
+
+The remaining unknowns are live-host validations, mainly Photoshop
+`batchPlay` descriptors for mask transfer and the RGB blend-gamma setting.
 
 **Dev branch**: `claude/refactor-sp-psd-export-Q3uVE`
 
@@ -33,7 +41,7 @@ verification passes.
     ui.py                 # PySide6 export dialog + settings panel
     exporter.py           # traverse stack → emit PNGs + PSD-build request
     blend_map.py          # SP BlendingMode → PS + bake decision matrix
-    compensation.py       # method-B gamma pre-compensation per blend mode
+    compensation.py       # optional LUT fallback if PS blend-gamma toggle fails
     udim.py               # UDIM tile enumeration
     metadata.py           # rizum_sp_uid schema + sidecar JSON IO
     sync_inbox.py         # QFileSystemWatcher + manifest apply
@@ -65,7 +73,8 @@ verification passes.
 - [ ] Decide per layer: kept-editable vs baked (per §4 of `design.md`)
 - [ ] Emit one request bundle per (material, stack, channel, UDIM tile):
       - directory of PNGs (`uid_<uid>.png`, `uid_<uid>_mask.png`, `baked_<uid>.png`)
-      - `build_request.json` describing PS layer tree
+      - `build_request.json` describing PS layer tree plus texture-set,
+        stack, channel, UDIM, normal-map format, and baseline cache key
 - **Verify**: run on an SP project with ≥ 3 layers (one Normal, one Multiply,
   one SignedAddition), 2 UDIM tiles, at least one sub-effect stack;
   inspect the emitted `build_request.json` + PNG set; confirm schema matches
@@ -81,7 +90,7 @@ verification passes.
       - clipping-group sub-effects
       - blend mode + opacity
       - layer mask from grayscale PNG
-      - `rizum_sp_uid` metadata write (XMP + sidecar JSON)
+      - layer-name suffix metadata + sidecar JSON
 - [ ] Save PSD at path specified by request
 - **Verify**: run M1 bundle through M2; open resulting PSD in a human PS;
   visual result ≈ SP viewport for the "Bake unsupported modes" default
@@ -115,7 +124,8 @@ verification passes.
 - [ ] UXP writes manifest + PNGs to `<sp_project_dir>/_pt_sync_inbox/`
 - [ ] SP `sync_inbox.py` watches inbox, shows toast, diff dialog, applies
       via embedded resource import + layer-stack mutation
-- [ ] Conflict detection (baseline timestamp compare)
+- [ ] Conflict detection (baseline stack/channel/UDIM cache-key compare,
+      with conservative warning when SP changed since export)
 - **Verify**: end-to-end test:
   1. Export SP → build PSD
   2. Edit 2 layers in PS (one content, one apply-mask)
@@ -133,6 +143,9 @@ verification passes.
 - [ ] `README.md` with three-step install instructions, tested on a clean
       Windows and macOS VM without Creative Cloud app installed
 - [ ] Manifest `host.minVersion = "23.3.0"` (UXP manifest v5 floor)
+- [ ] Validate the direct `Plugins/External` + `plugins.json` registration
+      path because the included UXP docs cover UXP Developer Tool loading and
+      packaging, not this installer mechanism.
 - **Verify**: on a machine with only Photoshop ≥ 23.3 (no CC Desktop, no
   Adobe ID logged in), run installer → start PS → plugin appears in
   Plugins panel → full round-trip works
@@ -153,19 +166,33 @@ Run at the end of each milestone:
 
 ---
 
-## Open tasks before starting M0
+## API-doc intake checklist
 
-Before writing any implementation code:
+- [x] Deep-read SP Python modules (`layerstack`, `textureset`, `export`,
+      `resource`, `ui`, `event`, `js`, `colormanagement`) and map the
+      required design capabilities to concrete APIs in `analysis.md §1`.
+- [x] Deep-read the legacy SP JS docs and keep the fallback surface to
+      `alg.mapexport.save` plus `alg.mapexport.exportPath` only.
+- [x] Deep-read Photoshop UXP docs for PSD creation, layer add/group/clip,
+      blend modes, file I/O, modal execution, panel UI, sidecar metadata, and
+      `batchPlay` escape hatches.
+- [x] Resolve metadata storage to layer-name suffix plus sidecar JSON.
+- [x] Resolve sync-back persistence to embedded project resources, not
+      session resources.
+- [x] Update `analysis.md`, `design.md`, and `plan.md` so M0 can begin from
+      current API-backed assumptions.
 
-1. Populate `analysis.md` — deep-read SP Python modules (`layerstack`,
-   `textureset`, `export`, `resource`, `ui`, `event`, `js`) and confirm every
-   capability in `design.md §5–6` has a concrete API call
-2. Deep-read `uxp-photoshop-main/reference-ps.js` for: PSD creation, layer
-   add/group/clip, mask set, blend-mode enum, XMP read/write, file I/O,
-   modal scope
-3. For every capability that turns out to be missing, decide JS-fallback
-   (SP side) or reject-scope (PS side)
-4. Refine this plan: collapse or split milestones as needed, pin specific
-   API calls to each task
+## Live validation gates
 
-Only after step 4 does M0 start.
+These happen during implementation, not before M0:
+
+- [ ] M2: Record or port the Photoshop `batchPlay` sequence for layer-mask
+      creation and grayscale mask content transfer.
+- [ ] M3: Validate whether `batchPlay` can set "Blend RGB Colors Using Gamma
+      1.0" on the PSD. If yes, skip `compensation.py`; if no, implement the
+      LUT fallback.
+- [ ] M4: Validate `fullAccess` filesystem behavior in Photoshop UXP,
+      especially `localFileSystem.getEntryWithUrl("file:...")`, reading picked
+      request files, and writing sidecar/PNG transport files through UXP entries.
+- [ ] M1/M4: Decide how to populate `normal_map_format` for already-open
+      Painter projects because the local docs do not expose a direct getter.

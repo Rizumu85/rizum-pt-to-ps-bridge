@@ -1,8 +1,22 @@
 # Rizum PT-to-PS Bridge — Design Decisions
 
+## Project goal
+
+Build a two-plugin bridge between Substance 3D Painter and Photoshop that turns
+Painter texture stacks into editable PSDs while preserving as much layer
+structure, blend behavior, channel context, UDIM layout, and color fidelity as
+the two hosts allow. The bridge should also support selective, non-destructive
+Photoshop-to-Painter sync-back by moving PNG payloads and JSON manifests through
+a file-based inbox, with all applied data embedded back into the `.spp` project.
+
 Source of truth for design choices agreed in the pre-implementation discussion.
 Subject to revision only if `analysis.md` later reveals an API constraint that
 makes one of these infeasible — otherwise these are locked.
+
+API-doc status: revised against the local SP Python docs, legacy SP JS docs,
+and Photoshop UXP docs listed in `analysis.md §0`. The remaining uncertainties
+are host-recorded `batchPlay` descriptors and live host validation, not missing
+documentation in the repo.
 
 ---
 
@@ -33,6 +47,12 @@ Method: unpacked UXP plugin folder written directly into
 `%APPDATA%\Adobe\UXP\Plugins\External\` (Windows) or
 `~/Library/Application Support/Adobe/UXP/Plugins/External/` (macOS), with
 `plugins.json` patched to register the plugin.
+
+API-doc caveat: the local UXP docs emphasize loading development plugins via
+the UXP Developer Tool and packaging/distribution workflows. They do not
+document the `Plugins/External` + `plugins.json` registration path. Keep this
+installer approach as a Phase 1 requirement, but validate it on target
+Photoshop versions before treating it as guaranteed.
 
 Ship a `.zip` release containing:
 
@@ -105,13 +125,13 @@ UI exposes two knobs (same semantics as v1.1.8 but expanded range):
 | Knob | UI | Passed to `alg.mapexport.save` |
 |---|---|---|
 | **Padding** | Checkbox "Infinite padding" (default on) | `padding: "Infinite"` when on, `padding: "Transparent"` when off |
-| **Dilation** | Slider 0–64 px, enabled only when padding is off | `dilation: <n>` |
+| **Dilation** | Slider 0-64 px, enabled only when padding is off | `dilation: <n>` |
 
 Dilation hint in UI, right below the slider: *"Suggested: 2px for 512, 4px for 1K, 8px for 2K, 16px for 4K, 32px for 8K."*
 
 Range rationale: v1.1.8 capped at 10 which is insufficient for 4K+ work.
 64 covers 8K comfortably with headroom. Formula that matches the hints:
-`suggested_dilation ≈ resolution / 256`.
+`suggested_dilation ~= resolution / 256`.
 
 Bit depth stays at whatever the channel format declares
 (`Channel.bit_depth()`) unless user explicitly forces 8/16 via a dropdown —
@@ -228,10 +248,11 @@ User checks what to push + clicks **Push to Painter**. UXP writes to
 
 Python plugin watches the inbox with `QFileSystemWatcher`. New manifest →
 non-blocking toast. User opens the diff dialog, reviews each update with
-old/new thumbnails, clicks Apply. Python imports PNGs as **embedded
-session resources** (`resource.import_session_resource(...)` or equivalent)
-and mutates the layer stack accordingly. Manifest renamed to
-`manifest.applied.json`; PNGs left on disk.
+old/new thumbnails, clicks Apply. Python imports PNGs as **embedded project
+resources** (`resource.import_project_resource(..., Usage.TEXTURE)`) and
+mutates the layer stack accordingly. Manifest renamed to
+`manifest.applied.json`; PNGs may remain on disk for audit/debugging, but the
+applied data lives inside the `.spp`.
 
 **PNGs are transport only.** Once applied, data lives inside `.spp`. Deleting
 the inbox folder is always safe.
@@ -272,15 +293,22 @@ Avoids the double-mask pitfall.
 {
   "psd_file": "absolute/path/to.psd",
   "timestamp": "ISO-8601",
+  "texture_set": "Body",
+  "stack": "",
+  "channel": "BaseColor",
   "udim": 1001,
+  "normal_map_format": "OpenGL",
+  "baseline_cache_key": 123456789,
   "baseline_export_timestamp": "ISO-8601",
   "layers": [
     {
       "uid": "<sp_uid>",
+      "channel": "BaseColor",
       "png": "uid_<sp_uid>.png",
       "mode": "update",
       "ps_name": "…",
       "ps_hash": "sha1:…",
+      "baseline_cache_key": 123456789,
       "mask_applied_in_ps": false,
       "include_mask": false
     }
@@ -306,8 +334,11 @@ Avoids the double-mask pitfall.
 3. PS → SP deletion is **not** supported in Phase 1. `deleted_uids` stays
    empty. User deletes in SP manually if wanted.
 4. Mask sync-back is implicit & non-destructive per §6.3
-5. Conflict detection: if SP's layer `last_modified` > manifest's
-   `baseline_export_timestamp`, dialog asks: use PS / keep SP / keep both
+5. Conflict detection: SP Python docs do not expose per-layer
+   `last_modified`. Store baseline `TextureStateEvent.cache_key` values per
+   stack/channel/UDIM tile when exporting; if the current cache key differs
+   at apply time, show a conservative conflict warning for affected incoming
+   layers and ask: use PS / keep SP / keep both.
 
 ---
 
@@ -333,9 +364,14 @@ Next to the PSD, one file per PSD: `<psdname>.rizum.json`.
 {
   "rizum_version": "2.0.0",
   "sp_project_path": "C:/.../project.spp",
-  "sp_project_uuid": "<from sp.project.get_uuid()>",
+  "sp_project_uuid": "<str(sp.project.get_uuid())>",
   "baseline_timestamp": "ISO-8601",
+  "texture_set": "Body",
+  "stack": "",
+  "channel": "BaseColor",
   "udim": 1001,
+  "normal_map_format": "OpenGL",
+  "baseline_cache_key": 123456789,
   "layers": [
     {
       "sp_uid": "a3f7",
@@ -365,6 +401,11 @@ renders them as "cannot sync" entries.
 originally built. On Push to Painter, UXP computes the current hash of each
 layer's rendered pixels and compares to detect changes.
 
+`texture_set`, `stack`, `channel`, `udim`, and `normal_map_format` travel in
+both the PSD sidecar and the push manifest because an edited Photoshop layer
+name alone cannot reliably recover Painter channel context or normal-map
+orientation.
+
 ### 7.3 Sync-back matching
 
 1. UXP reads every PS layer, matches suffix regex → gets `sp_uid`
@@ -375,17 +416,27 @@ layer's rendered pixels and compares to detect changes.
 
 ---
 
-## 8. Open design questions
+## 8. Remaining validation questions
 
-Revisit as `analysis.md` gets filled in. Current list:
+These are no longer blocked on missing local API docs. They require live host
+validation during implementation:
 
-- B-method pre-compensation formula: needs to be validated against each PS
-  blend mode's actual gamma behavior. Known-clean for Multiply/Screen/linear
-  ops; uncertain for Overlay/SoftLight/HardLight.
-- Where exactly to write metadata on PS side: PSD XMP packet vs layer
-  XMP vs sidecar-only. Depends on UXP API coverage.
-- SP Python API surface for layer-stack mutation (creating paint layers,
-  inserting effects, setting mask-effect visibility) — assumed present,
-  must confirm in `analysis.md §1`.
-- Whether `substance_painter.export` can target a single sub-effect or only
-  full channels. Affects how we render per-layer PNGs.
+- Confirm the exact `batchPlay` descriptor for enabling Photoshop's
+  document-level "Blend RGB Colors Using Gamma 1.0" setting. If it works,
+  no per-layer compensation LUT is needed for PS-representable blend modes.
+- Record or port the exact `batchPlay` sequence for converting a temporary
+  grayscale layer into a target layer mask. The old ExtendScript descriptor
+  sequence in `ps-export_Rizum v1.1.8/ps-export-Rizum/footer.jsx` is the
+  starting point.
+- Verify `fullAccess` file handling in the user's Photoshop UXP runtime,
+  especially `localFileSystem.getEntryWithUrl("file:...")` for sidecar paths.
+  The local docs do not document Node-style `require('fs')` as a Photoshop
+  plugin API, so the primary path is UXP File/Folder entries.
+- Decide how the exporter records `normal_map_format`: no direct getter for
+  an already-open Painter project's normal orientation was found in the local
+  API docs. Prefer storing it when known or asking once in the export UI.
+- Validate the direct unpacked-plugin installer path (`Plugins/External` plus
+  `plugins.json`) because the included UXP docs cover UXP Developer Tool and
+  packaging workflows, not that registration mechanism.
+- Warn and defer full fidelity support for OCIO/ACE Painter projects. Phase 1
+  assumes legacy color management with a linear sRGB working space.
