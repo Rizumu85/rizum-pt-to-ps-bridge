@@ -1,0 +1,46 @@
+{
+  "asset_dir": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0004_M_body_stack_User2\\png",
+  "assets_exported": true,
+  "baseline_cache_key": null,
+  "bit_depth": 16,
+  "build_request_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0004_M_body_stack_User2\\build_request.json",
+  "channel": "User2",
+  "channel_format": "RGB16",
+  "channel_identifier": "user2",
+  "export_settings": {
+    "bit_depth": 16,
+    "dilation": 0,
+    "keep_alpha": true,
+    "padding": "Transparent",
+    "resolution": [
+      4096,
+      4096
+    ]
+  },
+  "generated_at": "2026-04-26T02:28:57.260561+00:00",
+  "is_color": true,
+  "layers": [],
+  "normal_map_format": "OpenGL",
+  "project": {
+    "name": "Wuwu",
+    "path": "E:/Onedrive/Working/Projects3D/Zz.Commisions.Zz/Wuwu/Wuwu.v02.spp",
+    "uuid": "eb592fba-d7d4-4d3d-8011-8eeaba32a0fb"
+  },
+  "psd_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0004_M_body_stack_User2\\M_body_stack_User2.psd",
+  "request_type": "build",
+  "schema_version": 1,
+  "stack": "",
+  "texture_set": "M_body",
+  "udim": 1001,
+  "uv_tile": {
+    "is_udim": false,
+    "name": "1001",
+    "resolution": {
+      "height": 4096,
+      "width": 4096
+    },
+    "u": 0,
+    "udim": 1001,
+    "v": 0
+  }
+}

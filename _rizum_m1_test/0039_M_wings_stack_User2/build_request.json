@@ -1,0 +1,1288 @@
+{
+  "asset_dir": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png",
+  "assets_exported": true,
+  "baseline_cache_key": null,
+  "bit_depth": 16,
+  "build_request_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\build_request.json",
+  "channel": "User2",
+  "channel_format": "RGB16",
+  "channel_identifier": "user2",
+  "export_settings": {
+    "bit_depth": 16,
+    "dilation": 0,
+    "keep_alpha": true,
+    "padding": "Transparent",
+    "resolution": [
+      4096,
+      4096
+    ]
+  },
+  "generated_at": "2026-04-26T02:28:57.260561+00:00",
+  "is_color": true,
+  "layers": [
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_45a7.png",
+        "uid": 17831,
+        "uid_hex": "45a7"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": false,
+      "kind": "FillLayer",
+      "mask_background": null,
+      "mask_effects": [],
+      "mask_enabled": false,
+      "name": "LC_BaseOpacity",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 17831,
+      "uid_hex": "45a7",
+      "visible": true,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_edde.png",
+        "uid": 60894,
+        "uid_hex": "edde"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": true,
+      "kind": "FillLayer",
+      "mask_asset": {
+        "channel": "mask",
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_edde_mask.png",
+        "uid": 60894,
+        "uid_hex": "edde"
+      },
+      "mask_background": "Black",
+      "mask_effects": [
+        {
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "mask": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Subtract",
+              "ps_blend_mode": "SUBTRACT",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "mask": "Subtract"
+          },
+          "has_blending": true,
+          "kind": "FillEffect",
+          "name": "Fill",
+          "opacity": {
+            "mask": 1.0
+          },
+          "ps_blend_mode": "SUBTRACT",
+          "sync_direction": "both",
+          "uid": 548759,
+          "uid_hex": "85f97",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "mask": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Subtract",
+              "ps_blend_mode": "SUBTRACT",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "mask": "Subtract"
+          },
+          "has_blending": true,
+          "kind": "FillEffect",
+          "name": "Fill",
+          "opacity": {
+            "mask": 1.0
+          },
+          "ps_blend_mode": "SUBTRACT",
+          "sync_direction": "both",
+          "uid": 526444,
+          "uid_hex": "8086c",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "mask": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Subtract",
+              "ps_blend_mode": "SUBTRACT",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "mask": "Subtract"
+          },
+          "has_blending": true,
+          "kind": "FillEffect",
+          "name": "Fill",
+          "opacity": {
+            "mask": 1.0
+          },
+          "ps_blend_mode": "SUBTRACT",
+          "sync_direction": "both",
+          "uid": 472533,
+          "uid_hex": "735d5",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "mask": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Multiply",
+              "ps_blend_mode": "MULTIPLY",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "mask": "Multiply"
+          },
+          "has_blending": true,
+          "kind": "FillEffect",
+          "name": "Fill",
+          "opacity": {
+            "mask": 1.0
+          },
+          "ps_blend_mode": "MULTIPLY",
+          "sync_direction": "both",
+          "uid": 439941,
+          "uid_hex": "6b685",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "mask": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "mask": "Normal"
+          },
+          "has_blending": true,
+          "kind": "FillEffect",
+          "name": "Fill",
+          "opacity": {
+            "mask": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 383087,
+          "uid_hex": "5d86f",
+          "visible": true,
+          "warnings": []
+        }
+      ],
+      "mask_enabled": true,
+      "name": "MaskOut",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 60894,
+      "uid_hex": "edde",
+      "visible": false,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_ef8e.png",
+        "uid": 61326,
+        "uid_hex": "ef8e"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": true,
+      "kind": "FillLayer",
+      "mask_asset": {
+        "channel": "mask",
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_ef8e_mask.png",
+        "uid": 61326,
+        "uid_hex": "ef8e"
+      },
+      "mask_background": "Black",
+      "mask_effects": [],
+      "mask_enabled": true,
+      "name": "Locator",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 61326,
+      "uid_hex": "ef8e",
+      "visible": false,
+      "warnings": []
+    },
+    {
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "children": [
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_9bd5f.png",
+            "uid": 638303,
+            "uid_hex": "9bd5f"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": false,
+          "kind": "PaintLayer",
+          "mask_background": null,
+          "mask_effects": [],
+          "mask_enabled": false,
+          "name": "Layer 1",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 638303,
+          "uid_hex": "9bd5f",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d76e.png",
+            "uid": 382830,
+            "uid_hex": "5d76e"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": true,
+          "kind": "PaintLayer",
+          "mask_asset": {
+            "channel": "mask",
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d76e_mask.png",
+            "uid": 382830,
+            "uid_hex": "5d76e"
+          },
+          "mask_background": "Black",
+          "mask_effects": [
+            {
+              "bake_policy": "no_blending",
+              "blend_decisions": {},
+              "blend_mode": null,
+              "has_blending": false,
+              "kind": "AnchorPointEffect",
+              "name": "5 mask",
+              "opacity": null,
+              "ps_blend_mode": null,
+              "sync_direction": "none",
+              "uid": 548845,
+              "uid_hex": "85fed",
+              "visible": true,
+              "warnings": []
+            }
+          ],
+          "mask_enabled": true,
+          "name": "5",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 382830,
+          "uid_hex": "5d76e",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d68e.png",
+            "uid": 382606,
+            "uid_hex": "5d68e"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": true,
+          "kind": "PaintLayer",
+          "mask_asset": {
+            "channel": "mask",
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d68e_mask.png",
+            "uid": 382606,
+            "uid_hex": "5d68e"
+          },
+          "mask_background": "Black",
+          "mask_effects": [
+            {
+              "bake_policy": "no_blending",
+              "blend_decisions": {},
+              "blend_mode": null,
+              "has_blending": false,
+              "kind": "AnchorPointEffect",
+              "name": "4 mask",
+              "opacity": null,
+              "ps_blend_mode": null,
+              "sync_direction": "none",
+              "uid": 526441,
+              "uid_hex": "80869",
+              "visible": true,
+              "warnings": []
+            }
+          ],
+          "mask_enabled": true,
+          "name": "4",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 382606,
+          "uid_hex": "5d68e",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d556.png",
+            "uid": 382294,
+            "uid_hex": "5d556"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": true,
+          "kind": "PaintLayer",
+          "mask_asset": {
+            "channel": "mask",
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d556_mask.png",
+            "uid": 382294,
+            "uid_hex": "5d556"
+          },
+          "mask_background": "Black",
+          "mask_effects": [
+            {
+              "bake_policy": "no_blending",
+              "blend_decisions": {},
+              "blend_mode": null,
+              "has_blending": false,
+              "kind": "AnchorPointEffect",
+              "name": "3 mask",
+              "opacity": null,
+              "ps_blend_mode": null,
+              "sync_direction": "none",
+              "uid": 472530,
+              "uid_hex": "735d2",
+              "visible": true,
+              "warnings": []
+            }
+          ],
+          "mask_enabled": true,
+          "name": "3",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 382294,
+          "uid_hex": "5d556",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d448.png",
+            "uid": 382024,
+            "uid_hex": "5d448"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": true,
+          "kind": "PaintLayer",
+          "mask_asset": {
+            "channel": "mask",
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d448_mask.png",
+            "uid": 382024,
+            "uid_hex": "5d448"
+          },
+          "mask_background": "Black",
+          "mask_effects": [
+            {
+              "bake_policy": "no_blending",
+              "blend_decisions": {},
+              "blend_mode": null,
+              "has_blending": false,
+              "kind": "AnchorPointEffect",
+              "name": "2 mask",
+              "opacity": null,
+              "ps_blend_mode": null,
+              "sync_direction": "none",
+              "uid": 439938,
+              "uid_hex": "6b682",
+              "visible": true,
+              "warnings": []
+            }
+          ],
+          "mask_enabled": true,
+          "name": "2",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 382024,
+          "uid_hex": "5d448",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_6a6c6.png",
+            "uid": 435910,
+            "uid_hex": "6a6c6"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": false,
+          "kind": "PaintLayer",
+          "mask_background": null,
+          "mask_effects": [],
+          "mask_enabled": false,
+          "name": "1+",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 435910,
+          "uid_hex": "6a6c6",
+          "visible": true,
+          "warnings": []
+        },
+        {
+          "asset": {
+            "channel": null,
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d36a.png",
+            "uid": 381802,
+            "uid_hex": "5d36a"
+          },
+          "bake_policy": "keep_editable",
+          "blend_decisions": {
+            "BaseColor": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "Opacity": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User1": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            },
+            "User2": {
+              "bake_policy": "keep_editable",
+              "painter_mode": "Normal",
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "warnings": []
+            }
+          },
+          "blend_mode": {
+            "BaseColor": "Normal",
+            "Opacity": "Normal",
+            "User1": "Normal",
+            "User2": "Normal"
+          },
+          "content_effects": [],
+          "has_blending": true,
+          "has_mask": true,
+          "kind": "PaintLayer",
+          "mask_asset": {
+            "channel": "mask",
+            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d36a_mask.png",
+            "uid": 381802,
+            "uid_hex": "5d36a"
+          },
+          "mask_background": "Black",
+          "mask_effects": [
+            {
+              "bake_policy": "no_blending",
+              "blend_decisions": {},
+              "blend_mode": null,
+              "has_blending": false,
+              "kind": "AnchorPointEffect",
+              "name": "1 mask",
+              "opacity": null,
+              "ps_blend_mode": null,
+              "sync_direction": "none",
+              "uid": 381944,
+              "uid_hex": "5d3f8",
+              "visible": true,
+              "warnings": []
+            }
+          ],
+          "mask_enabled": true,
+          "name": "1",
+          "opacity": {
+            "BaseColor": 1.0,
+            "Opacity": 1.0,
+            "User1": 1.0,
+            "User2": 1.0
+          },
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "uid": 381802,
+          "uid_hex": "5d36a",
+          "visible": true,
+          "warnings": []
+        }
+      ],
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": false,
+      "kind": "GroupLayer",
+      "mask_background": null,
+      "mask_effects": [],
+      "mask_enabled": false,
+      "name": "Working",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 381790,
+      "uid_hex": "5d35e",
+      "visible": true,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5c130.png",
+        "uid": 377136,
+        "uid_hex": "5c130"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Overlay",
+          "ps_blend_mode": "OVERLAY",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Overlay",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": true,
+      "kind": "PaintLayer",
+      "mask_asset": {
+        "channel": "mask",
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5c130_mask.png",
+        "uid": 377136,
+        "uid_hex": "5c130"
+      },
+      "mask_background": "White",
+      "mask_effects": [],
+      "mask_enabled": true,
+      "name": "Lighten",
+      "opacity": {
+        "BaseColor": 0.550000011920929,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": null,
+      "sync_direction": "both",
+      "uid": 377136,
+      "uid_hex": "5c130",
+      "visible": true,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5bad0.png",
+        "uid": 375504,
+        "uid_hex": "5bad0"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Color",
+          "ps_blend_mode": "COLOR",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Color",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": true,
+      "kind": "PaintLayer",
+      "mask_asset": {
+        "channel": "mask",
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5bad0_mask.png",
+        "uid": 375504,
+        "uid_hex": "5bad0"
+      },
+      "mask_background": "White",
+      "mask_effects": [],
+      "mask_enabled": true,
+      "name": "Recolor",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": null,
+      "sync_direction": "both",
+      "uid": 375504,
+      "uid_hex": "5bad0",
+      "visible": true,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5ce70.png",
+        "uid": 380528,
+        "uid_hex": "5ce70"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": false,
+      "kind": "FillLayer",
+      "mask_background": null,
+      "mask_effects": [],
+      "mask_enabled": false,
+      "name": "Tex_wuwu_Wings_1",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 380528,
+      "uid_hex": "5ce70",
+      "visible": true,
+      "warnings": []
+    },
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_3a7f.png",
+        "uid": 14975,
+        "uid_hex": "3a7f"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "Opacity": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "Opacity": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": false,
+      "kind": "FillLayer",
+      "mask_background": null,
+      "mask_effects": [],
+      "mask_enabled": false,
+      "name": "LC_BaseTextures",
+      "opacity": {
+        "BaseColor": 1.0,
+        "Opacity": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 14975,
+      "uid_hex": "3a7f",
+      "visible": true,
+      "warnings": []
+    }
+  ],
+  "normal_map_format": "OpenGL",
+  "project": {
+    "name": "Wuwu",
+    "path": "E:/Onedrive/Working/Projects3D/Zz.Commisions.Zz/Wuwu/Wuwu.v02.spp",
+    "uuid": "eb592fba-d7d4-4d3d-8011-8eeaba32a0fb"
+  },
+  "psd_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\M_wings_stack_User2.psd",
+  "request_type": "build",
+  "schema_version": 1,
+  "stack": "",
+  "texture_set": "M_wings",
+  "udim": 1001,
+  "uv_tile": {
+    "is_udim": false,
+    "name": "1001",
+    "resolution": {
+      "height": 4096,
+      "width": 4096
+    },
+    "u": 0,
+    "udim": 1001,
+    "v": 0
+  }
+}

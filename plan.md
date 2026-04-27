@@ -1,198 +1,144 @@
-# Rizum PT-to-PS Bridge — Phase 1 Implementation Plan
+# Rizum PT-to-PS Bridge Phase 1 Plan
 
-**Status**: API-doc intake complete. This plan has been revised against the
-local API docs listed in `analysis.md §0`:
+This plan follows the current Rizum Guidelines structure: high-level directions
+first, concrete implementation steps second. Technical findings live in
+`analysis.md`; user-facing behavior and workflow design live in `design.md`.
 
-- SP Python docs: `pt-python-doc-md/substance_painter/`
-- Legacy SP JS docs: `javascript-doc/`
-- Photoshop UXP docs: `uxp-photoshop-main/src/pages/ps_reference/`,
-  `uxp-photoshop-main/src/pages/uxp-api/`, and
-  `uxp-photoshop-main/src/pages/guides/`
+## Working Agreement
 
-The remaining unknowns are live-host validations, mainly Photoshop
-`batchPlay` descriptors for mask transfer and the RGB blend-gamma setting.
+- Rizum Guidelines are active for this project/thread until the user says otherwise.
+- Karpathy Guidelines are active for this project/thread until the user says otherwise.
 
-**Dev branch**: `claude/refactor-sp-psd-export-Q3uVE`
+Working mode:
 
-**Phase 1 scope**: feature parity with v1.1.8 + UDIM + color fidelity (A+B
-mixed default) + selective sync-back. UXP plugin shipped as unpacked folder
-with installer scripts. No `.ccx`, no smart objects, no live sync, no PS→SP
-layer deletion.
+- Work in the local tree only. Do not create or switch branches unless the user
+  asks.
+- Write project files, code comments, and technical docs in English.
+- Summaries in chat should be in Chinese.
+- Do not run syntax, build, or test commands by default. Run checks only when
+  the user asks, or when debugging feedback makes the check necessary.
+- Leave Photoshop and Substance Painter functional testing to the user unless
+  the user explicitly asks the agent to perform it.
 
-**Phase 2 (out of scope, noted for future)**: `.ccx` packaging, smart-object
-based live anchor refs, PS → SP layer deletion reconciliation, richer conflict
-resolution UI.
+## Direction 1: Painter Export Request
 
----
+Goal: Painter creates a reliable `build_request.json` bundle with PNG payloads
+that Photoshop can consume to build an editable PSD.
 
-## Milestones
+- [x] Keep the repository loadable from Painter's Python plugin directory with
+      root loader shims and root `plugin.json`.
+- [x] Keep Painter startup project-agnostic so the plugin can load when no
+      Painter project is open.
+- [x] Traverse texture sets, stacks, channels, layer trees, groups, content
+      effects, mask effects, blend modes, opacity, visibility, and UV tiles.
+- [x] Use the legacy Painter JS `alg.mapexport.save` fallback for per-layer,
+      per-effect, and per-mask PNG export because the Python export API only
+      exports full channels.
+- [x] Emit one bundle per texture set / stack / channel / UV tile containing
+      `build_request.json`, layer PNGs, mask PNGs, and baked PNGs.
+- [x] Omit the user-facing `1001` suffix for non-UDIM projects while retaining
+      internal default tile metadata.
+- [x] Keep the Painter smoke-test UI minimal and user-triggered.
+- [ ] Host-test Painter export on representative projects: non-UDIM,
+      multi-UDIM, grouped layers, masks, anchor references, and at least one
+      unsupported blend/effect that must bake.
+- [ ] Decide how to populate `normal_map_format` for already-open Painter
+      projects, because the local docs do not expose a direct getter.
 
-Each milestone ends with a verifiable artifact. Do not advance until the
-verification passes.
+## Direction 2: Photoshop PSD Build
 
-### M0 — Scaffolding
+Goal: Photoshop consumes Painter bundles and builds editable PSDs that preserve
+as much Painter structure, mask data, blend behavior, and file naming as the
+hosts allow.
 
-- [ ] Create branch `claude/refactor-sp-psd-export-Q3uVE`
-- [ ] Directory skeleton:
-  ```
-  sp_plugin/rizum_sp_to_ps/
-    __init__.py           # entry + UI registration
-    plugin.json           # SP plugin manifest
-    ui.py                 # PySide6 export dialog + settings panel
-    exporter.py           # traverse stack → emit PNGs + PSD-build request
-    blend_map.py          # SP BlendingMode → PS + bake decision matrix
-    compensation.py       # optional LUT fallback if PS blend-gamma toggle fails
-    udim.py               # UDIM tile enumeration
-    metadata.py           # rizum_sp_uid schema + sidecar JSON IO
-    sync_inbox.py         # QFileSystemWatcher + manifest apply
-  ps_plugin/
-    manifest.json         # UXP plugin manifest
-    src/
-      main.js             # panel entry
-      build-psd.js        # consume SP request → build PSD
-      sync-back.js        # push-to-painter panel
-      blend_map.js        # mirror of sp-side map for sync-back
-      metadata.js         # rizum_sp_uid read/write
-  installers/
-    install-ps-plugin-windows.bat
-    install-ps-plugin-mac.sh
-    uninstall-ps-plugin-windows.bat
-    uninstall-ps-plugin-mac.sh
-  README.md               # end-user install instructions
-  ```
-- **Verify**: `ls` returns the tree; `git log --oneline -1` on branch shows
-  the scaffolding commit.
+- [x] Load the UXP plugin separately from Painter; Photoshop does not discover
+      plugins from Painter's Python plugin directory.
+- [x] Use a robust plain-HTML panel shell that works in the user's offline
+      Photoshop 2025 setup.
+- [x] Provide `Build from Painter` to choose and validate a
+      `build_request.json`.
+- [x] Create a Photoshop document at the requested size and resolution.
+- [x] Resolve request-path PSD saving through UXP file entries.
+- [x] Place top-level raster PNGs and group child PNGs into the target PSD.
+- [x] Preserve layer/group visibility, opacity, and per-channel Photoshop blend
+      mode where representable.
+- [x] Remove Photoshop's empty default `Layer 1` without deleting real Painter
+      layers named `Layer 1`.
+- [x] Attach flattened mask PNGs to placed Photoshop raster layers.
+- [x] Add readable ` [rz:<uid>]` suffixes and write a `.rizum.json` sidecar for
+      provenance and possible future automation.
+- [x] Record request nodes that are intentionally not placed as separate
+      Photoshop layers.
+- [x] Keep document blend-gamma mutation disabled in normal builds because the
+      host can show a blocking "Set is not currently available" modal error.
+- [ ] Host-test remaining PSD fidelity gaps: clipping behavior, nested groups,
+      baked unsupported modes, color-layer behavior, and normal-channel output.
+- [ ] Validate whether a recorded `batchPlay` descriptor can safely set
+      document-level "Blend RGB Colors Using Gamma 1.0" without host modal
+      errors. Keep it off by default until proven safe.
 
-### M1 — SP-side document traversal & export request generation
+## Direction 3: Manual Photoshop Return Export
 
-- [ ] `exporter.py` walks texture sets × stacks × channels × layer tree
-      using Python API (JS fallback only where proven necessary per
-      `analysis.md`)
-- [ ] Per layer record: uid, name, kind, blend mode, opacity, visibility,
-      mask presence, sub-effect list, UDIM tile list
-- [ ] Decide per layer: kept-editable vs baked (per §4 of `design.md`)
-- [ ] Emit one request bundle per (material, stack, channel, UDIM tile):
-      - directory of PNGs (`uid_<uid>.png`, `uid_<uid>_mask.png`, `baked_<uid>.png`)
-      - `build_request.json` describing PS layer tree plus texture-set,
-        stack, channel, UDIM, normal-map format, and baseline cache key
-- **Verify**: run on an SP project with ≥ 3 layers (one Normal, one Multiply,
-  one SignedAddition), 2 UDIM tiles, at least one sub-effect stack;
-  inspect the emitted `build_request.json` + PNG set; confirm schema matches
-  what `build-psd.js` will consume.
+Goal: Photoshop-to-Painter return data is simple and manual: the user selects
+Photoshop layers, exports PNG files, and imports or places them in Painter
+manually.
 
-### M2 — UXP plugin: consume request → build PSD
+- [x] Deprecate the automatic `_pt_sync_inbox` / manifest / Painter resource
+      import path after user testing showed 4K thumbnail stalls, viewport
+      slowdown, and crash risk.
+- [x] Remove the active `Push to Painter` UI path from the Photoshop panel.
+- [x] Add `Export Selected (Applied Mask)` for one PNG per selected Photoshop
+      layer with the current mask applied.
+- [x] Add `Export Selected + Masks` for a layer PNG plus a separate grayscale
+      mask PNG when the selected layer has a user mask.
+- [x] Use a user-chosen export folder through UXP local file storage.
+- [x] Keep filenames human-readable and order-prefixed so users can inspect
+      them before manually importing to Painter.
+- [ ] Host-test applied-mask export in Photoshop: select one or more raster
+      layers, export, and confirm the PNGs open correctly.
+- [ ] Host-test separate layer/mask export in Photoshop: select a masked layer,
+      confirm `_layer.png` and `_mask.png` are written, and confirm whether
+      temporarily setting `layerMaskDensity = 0` produces the intended
+      unmasked layer content in Photoshop 2025.
+- [ ] If `layerMaskDensity = 0` does not reliably export unmasked content,
+      revise the separate export path to a safer Photoshop-supported method or
+      clearly label the layer PNG as mask-applied.
 
-- [ ] UXP panel with one button: "Build from Painter" (opens file dialog to
-      `build_request.json`)
-- [ ] Parse request → create PSD → for each entry:
-      - raster layer (from PNG)
-      - group (with mask)
-      - clipping-group sub-effects
-      - blend mode + opacity
-      - layer mask from grayscale PNG
-      - layer-name suffix metadata + sidecar JSON
-- [ ] Save PSD at path specified by request
-- **Verify**: run M1 bundle through M2; open resulting PSD in a human PS;
-  visual result ≈ SP viewport for the "Bake unsupported modes" default
-  policy. Manual visual diff is acceptable for this milestone.
+## Direction 4: Local Installation And Distribution
 
-### M3 — Color handling (blend-gamma + bake policy)
+Goal: The project can be loaded locally by Painter and Photoshop without
+branching, Creative Cloud dependency, or manual file copying by the user.
 
-- [ ] At PSD creation in UXP, set document-level "Blend RGB Colors Using
-      Gamma 1.0" via `batchPlay` (see `analysis.md §6.3`). **Validate
-      first** that the action descriptor is honored by comparing a two-
-      layer Multiply test PSD before/after
-- [ ] If gamma toggle works: no per-layer pre-compensation needed for the
-      PS-representable blend-mode set. Skip `compensation.py`
-- [ ] If gamma toggle does not work: fall back to empirical per-mode
-      pre-compensation LUT in `compensation.py`, calibrated from captured
-      SP viewport vs PS output diffs
-- [ ] Bake path (method A) in `exporter.py` for SP-only modes
-      (SignedAddition/Tint/Value/NormalMap*/Inverse*), calling
-      `alg.mapexport.save([effect_uid, channel], ...)` via bridge
-- [ ] "Preserve all layers" toggle in UI bypasses bake; Tint→HUE,
-      Value→LUMINOSITY, SignedAddition→LINEARDODGE with `[!]` prefix in
-      the PS layer name
-- **Verify**: composite image diff between SP viewport and built PSD for a
-  test project with every PS-representable blend mode. Max per-pixel ΔE
-  < 1.0 for editable layers; exact match on baked layers. "Preserve all
-  layers" mode shows `[!]` prefixes only on SP-only modes.
+- [x] Keep this checkout usable directly inside Painter's Python plugin folder.
+- [x] Provide a Windows Photoshop installer that copies `ps_plugin/` into
+      `%APPDATA%\Adobe\UXP\Plugins\External\com.rizum.pt-to-ps-bridge`.
+- [x] Register the Photoshop UXP plugin in
+      `%APPDATA%\Adobe\UXP\PluginsInfo\v1\PS.json` using UTF-8 without BOM.
+- [x] Make the Windows installer clean this plugin's target directory before
+      copying files so removed source files do not linger in Photoshop's UXP
+      External folder.
+- [ ] Host-validate the Windows offline installer after a full Photoshop
+      restart whenever the manifest version or installed files change.
+- [ ] Add matching uninstall support for the Windows offline path.
+- [ ] Add and validate a macOS installer path only after the Windows local
+      workflow is stable.
+- [ ] Update README instructions whenever the tested install flow changes.
 
-### M4 — Sync-back (PS → SP)
+## Direction 5: Documentation Hygiene
 
-- [ ] UXP panel: "Push to Painter" list + diff preview + mask-applied detection
-- [ ] UXP writes manifest + PNGs to `<sp_project_dir>/_pt_sync_inbox/`
-- [ ] SP `sync_inbox.py` watches inbox, shows toast, diff dialog, applies
-      via embedded resource import + layer-stack mutation
-- [ ] Conflict detection (baseline stack/channel/UDIM cache-key compare,
-      with conservative warning when SP changed since export)
-- **Verify**: end-to-end test:
-  1. Export SP → build PSD
-  2. Edit 2 layers in PS (one content, one apply-mask)
-  3. Push to Painter, apply in SP
-  4. Delete the inbox folder → reload `.spp` → content is still embedded and
-     intact
-  5. Modify the same layer in SP then push again from PS → conflict dialog appears
+Goal: Keep `analysis.md`, `design.md`, and `plan.md` useful for future agents
+without turning them into noisy line-by-line logs.
 
-### M5 — Distribution
-
-- [ ] `install-ps-plugin-windows.bat`: locate `%APPDATA%\Adobe\UXP\Plugins\External\`,
-      copy `ps_plugin/` into it, patch `plugins.json`
-- [ ] `install-ps-plugin-mac.sh`: equivalent for macOS
-- [ ] Matching uninstallers
-- [ ] `README.md` with three-step install instructions, tested on a clean
-      Windows and macOS VM without Creative Cloud app installed
-- [ ] Manifest `host.minVersion = "23.3.0"` (UXP manifest v5 floor)
-- [ ] Validate the direct `Plugins/External` + `plugins.json` registration
-      path because the included UXP docs cover UXP Developer Tool loading and
-      packaging, not this installer mechanism.
-- **Verify**: on a machine with only Photoshop ≥ 23.3 (no CC Desktop, no
-  Adobe ID logged in), run installer → start PS → plugin appears in
-  Plugins panel → full round-trip works
-
----
-
-## Cross-cutting checks
-
-Run at the end of each milestone:
-
-- **Code volume**: does any single file exceed ~400 lines? If so, audit for
-  speculative abstractions per `rizum-claude.md §2`
-- **Behavioral parity**: does this milestone regress any v1.1.8 feature?
-  (UDIM is added, nothing is subtracted)
-- **Dependencies**: no new pip packages beyond what SP Python ships with; no
-  npm packages in UXP plugin beyond what `uxp-photoshop-main` shows as
-  idiomatic
-
----
-
-## API-doc intake checklist
-
-- [x] Deep-read SP Python modules (`layerstack`, `textureset`, `export`,
-      `resource`, `ui`, `event`, `js`, `colormanagement`) and map the
-      required design capabilities to concrete APIs in `analysis.md §1`.
-- [x] Deep-read the legacy SP JS docs and keep the fallback surface to
-      `alg.mapexport.save` plus `alg.mapexport.exportPath` only.
-- [x] Deep-read Photoshop UXP docs for PSD creation, layer add/group/clip,
-      blend modes, file I/O, modal execution, panel UI, sidecar metadata, and
-      `batchPlay` escape hatches.
-- [x] Resolve metadata storage to layer-name suffix plus sidecar JSON.
-- [x] Resolve sync-back persistence to embedded project resources, not
-      session resources.
-- [x] Update `analysis.md`, `design.md`, and `plan.md` so M0 can begin from
-      current API-backed assumptions.
-
-## Live validation gates
-
-These happen during implementation, not before M0:
-
-- [ ] M2: Record or port the Photoshop `batchPlay` sequence for layer-mask
-      creation and grayscale mask content transfer.
-- [ ] M3: Validate whether `batchPlay` can set "Blend RGB Colors Using Gamma
-      1.0" on the PSD. If yes, skip `compensation.py`; if no, implement the
-      LUT fallback.
-- [ ] M4: Validate `fullAccess` filesystem behavior in Photoshop UXP,
-      especially `localFileSystem.getEntryWithUrl("file:...")`, reading picked
-      request files, and writing sidecar/PNG transport files through UXP entries.
-- [ ] M1/M4: Decide how to populate `normal_map_format` for already-open
-      Painter projects because the local docs do not expose a direct getter.
+- [x] Record Rizum and Karpathy activation in `AGENTS.md`.
+- [x] Make `AGENTS.md` prefer loading local skills, with merged guideline text
+      as fallback for agents that cannot load skills.
+- [x] Keep `design.md` starting with `Project Goal`.
+- [x] Clarify that `analysis.md` owns technical findings, `design.md` owns
+      user-facing workflow/design, and `plan.md` owns directions plus concrete
+      steps.
+- [x] Revise the plan from historical milestones into Direction sections with
+      concrete implementation steps.
+- [ ] Update docs only when direction, implementation approach, API findings,
+      or meaningful plan status changes.
+- [ ] When user testing is needed, provide a short handoff with what changed,
+      exact test steps, expected result, and what feedback to send back.

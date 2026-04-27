@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 5,
+  "id": "com.rizum.pt-to-ps-bridge",
+  "name": "Rizum PT-to-PS Bridge",
+  "version": "0.1.47",
+  "main": "index.html",
+  "host": {
+    "app": "PS",
+    "minVersion": "23.3.0"
+  },
+  "entrypoints": [
+    {
+      "type": "command",
+      "id": "rizumDiagnostics",
+      "label": {
+        "default": "Rizum Diagnostics"
+      }
+    },
+    {
+      "type": "panel",
+      "id": "rizumBridge",
+      "label": {
+        "default": "Rizum PT Bridge"
+      },
+      "minimumSize": {
+        "width": 280,
+        "height": 560
+      },
+      "preferredDockedSize": {
+        "width": 320,
+        "height": 720
+      },
+      "preferredFloatingSize": {
+        "width": 380,
+        "height": 760
+      }
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess",
+    "clipboard": "readAndWrite"
+  },
+  "featureFlags": {
+    "enableAlerts": true
+  }
+}

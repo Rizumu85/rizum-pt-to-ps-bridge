@@ -1,0 +1,103 @@
+{
+  "asset_dir": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0023_M_hair_back_stack_User2\\png",
+  "assets_exported": true,
+  "baseline_cache_key": null,
+  "bit_depth": 16,
+  "build_request_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0023_M_hair_back_stack_User2\\build_request.json",
+  "channel": "User2",
+  "channel_format": "RGB16",
+  "channel_identifier": "user2",
+  "export_settings": {
+    "bit_depth": 16,
+    "dilation": 0,
+    "keep_alpha": true,
+    "padding": "Transparent",
+    "resolution": [
+      4096,
+      4096
+    ]
+  },
+  "generated_at": "2026-04-26T02:28:57.260561+00:00",
+  "is_color": true,
+  "layers": [
+    {
+      "asset": {
+        "channel": null,
+        "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0023_M_hair_back_stack_User2\\png\\uid_38be.png",
+        "uid": 14526,
+        "uid_hex": "38be"
+      },
+      "bake_policy": "keep_editable",
+      "blend_decisions": {
+        "BaseColor": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User1": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        },
+        "User2": {
+          "bake_policy": "keep_editable",
+          "painter_mode": "Normal",
+          "ps_blend_mode": "NORMAL",
+          "sync_direction": "both",
+          "warnings": []
+        }
+      },
+      "blend_mode": {
+        "BaseColor": "Normal",
+        "User1": "Normal",
+        "User2": "Normal"
+      },
+      "content_effects": [],
+      "has_blending": true,
+      "has_mask": false,
+      "kind": "PaintLayer",
+      "mask_background": null,
+      "mask_effects": [],
+      "mask_enabled": false,
+      "name": "Layer 1",
+      "opacity": {
+        "BaseColor": 1.0,
+        "User1": 1.0,
+        "User2": 1.0
+      },
+      "ps_blend_mode": "NORMAL",
+      "sync_direction": "both",
+      "uid": 14526,
+      "uid_hex": "38be",
+      "visible": true,
+      "warnings": []
+    }
+  ],
+  "normal_map_format": "OpenGL",
+  "project": {
+    "name": "Wuwu",
+    "path": "E:/Onedrive/Working/Projects3D/Zz.Commisions.Zz/Wuwu/Wuwu.v02.spp",
+    "uuid": "eb592fba-d7d4-4d3d-8011-8eeaba32a0fb"
+  },
+  "psd_file": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0023_M_hair_back_stack_User2\\M_hair_back_stack_User2.psd",
+  "request_type": "build",
+  "schema_version": 1,
+  "stack": "",
+  "texture_set": "M_hair_back",
+  "udim": 1001,
+  "uv_tile": {
+    "is_udim": false,
+    "name": "1001",
+    "resolution": {
+      "height": 4096,
+      "width": 4096
+    },
+    "u": 0,
+    "udim": 1001,
+    "v": 0
+  }
+}
