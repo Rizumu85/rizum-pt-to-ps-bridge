@@ -36,6 +36,18 @@
         color: #111;
       }
 
+      input {
+        box-sizing: border-box;
+        min-height: 30px;
+        display: block;
+        width: 100%;
+        margin: 0 0 10px;
+        padding: 5px 7px;
+        color: #111;
+        background: #fff;
+        border: 1px solid #777;
+      }
+
       #rizum-status {
         margin: 0;
         font-weight: 700;
@@ -67,7 +79,12 @@
       <button id="rizum-export-separate-button" type="button">Export Selected + Masks</button>
       <button id="rizum-copy-button" type="button">Copy Details</button>
       <p id="rizum-status">Rizum HTML runtime loaded</p>
-      <textarea id="rizum-details" readonly spellcheck="false">Rizum PT Bridge 0.1.47
+      <input id="rizum-request-path" type="text" placeholder="Paste build_request.json path">
+      <button id="rizum-paste-path-button" type="button">Paste Request Path</button>
+      <button id="rizum-build-path-button" type="button">Build Request Path</button>
+      <button id="rizum-build-folder-button" type="button">Build Request Folder</button>
+      <button id="rizum-build-list-button" type="button">Build Export List</button>
+      <textarea id="rizum-details" readonly spellcheck="false">Rizum PT Bridge 0.1.59
 Build from Painter creates a PSD. Export Selected writes Photoshop layers as PNGs for manual Painter import.</textarea>
     </section>
   </body>

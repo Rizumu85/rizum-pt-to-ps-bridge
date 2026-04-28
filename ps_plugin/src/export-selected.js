@@ -29,6 +29,7 @@ async function exportSelectedLayers(options = {}) {
     documentName: document.name || "(active document)",
     selectedCount: selectedLayers.length,
     exported: [],
+    layers: [],
     errors: []
   };
 
@@ -58,18 +59,32 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
   }
 
   const baseName = uniqueBaseName(layer.name || `Layer ${index + 1}`, index);
+  const layerResult = {
+    name: layer.name || `Layer ${index + 1}`,
+    files: [],
+    maskDetected: false,
+    maskExported: false
+  };
+  result.layers.push(layerResult);
+
   if (mode === "separate") {
     let mask = await getLayerMaskIfPresent(imaging, document, layer);
+    layerResult.maskDetected = Boolean(mask);
     try {
-      await exportLayerPixels(app, imaging, document, layer, folder, `${baseName}_layer.png`, {
+      const layerFilename = `${baseName}_layer.png`;
+      await exportLayerPixels(app, imaging, document, layer, folder, layerFilename, {
         disableMask: Boolean(mask)
       });
-      result.exported.push(`${baseName}_layer.png`);
+      layerResult.files.push(layerFilename);
+      result.exported.push(layerFilename);
 
       if (mask) {
-        await exportMaskPixels(app, imaging, document, folder, `${baseName}_mask.png`, mask);
+        const maskFilename = `${baseName}_mask.png`;
+        await exportMaskPixels(app, imaging, document, folder, maskFilename, mask);
         mask = null;
-        result.exported.push(`${baseName}_mask.png`);
+        layerResult.files.push(maskFilename);
+        layerResult.maskExported = true;
+        result.exported.push(maskFilename);
       }
     } finally {
       disposePixels(mask);
@@ -77,10 +92,17 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
     return;
   }
 
-  await exportLayerPixels(app, imaging, document, layer, folder, `${baseName}.png`, {
+  let mask = await getLayerMaskIfPresent(imaging, document, layer);
+  layerResult.maskDetected = Boolean(mask);
+  disposePixels(mask);
+  mask = null;
+
+  const filename = `${baseName}.png`;
+  await exportLayerPixels(app, imaging, document, layer, folder, filename, {
     disableMask: false
   });
-  result.exported.push(`${baseName}.png`);
+  layerResult.files.push(filename);
+  result.exported.push(filename);
 }
 
 async function exportLayerPixels(app, imaging, document, layer, folder, filename, options = {}) {
@@ -277,7 +299,9 @@ function safeFileName(name) {
 
 function isEmptyImageRegionError(error) {
   const message = error && error.message ? error.message : String(error);
-  return message.toLowerCase().includes("invalid empty image region");
+  const normalized = message.toLowerCase();
+  return normalized.includes("invalid empty image region")
+    || normalized.includes("no pixels in the requested area");
 }
 
 function disposePixels(pixels) {

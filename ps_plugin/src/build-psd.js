@@ -27,7 +27,110 @@ async function buildPsdFromRequest(options = {}) {
   return result;
 }
 
+async function buildPsdFromPath(path, options = {}) {
+  const cleanPath = cleanUserPath(path);
+  if (!cleanPath) {
+    throw new Error("Paste a build_request.json path first.");
+  }
+
+  const file = await getExistingFileEntryForPath(cleanPath);
+  return buildPsdFromRequest({
+    ...options,
+    file
+  });
+}
+
+async function buildPsdFromFolder(options = {}) {
+  let folder = options.folder;
+  if (!folder) {
+    const { storage } = require("uxp");
+    folder = await storage.localFileSystem.getFolder();
+  }
+  if (!folder) {
+    return {
+      cancelled: true,
+      message: "No request folder selected."
+    };
+  }
+
+  const files = await findBuildRequestFiles(folder);
+  const result = {
+    cancelled: false,
+    folderName: folder.name || "selected folder",
+    folderPath: folder.nativePath || null,
+    requestCount: files.length,
+    built: [],
+    errors: []
+  };
+
+  for (const file of files) {
+    try {
+      const buildResult = await buildPsdFromRequest({
+        ...options,
+        file,
+        closeAfterSave: options.closeAfterSave !== false
+      });
+      result.built.push(buildResult);
+    } catch (error) {
+      result.errors.push({
+        fileName: file.name || "build_request.json",
+        nativePath: file.nativePath || null,
+        error: error && error.message ? error.message : String(error)
+      });
+    }
+  }
+
+  return result;
+}
+
+async function buildPsdFromExportList(options = {}) {
+  const file = options.file || await pickJsonFile("No export list selected.");
+  if (!file) {
+    return {
+      cancelled: true,
+      message: "No export list selected."
+    };
+  }
+
+  const list = await readExportListFile(file);
+  validateExportList(list);
+  const paths = exportListRequestPaths(list);
+  const result = {
+    cancelled: false,
+    fileName: file.name || "_last_export.json",
+    nativePath: file.nativePath || null,
+    list,
+    requestCount: paths.length,
+    built: [],
+    errors: []
+  };
+
+  for (const path of paths) {
+    try {
+      const requestFile = await getExistingFileEntryForPath(path);
+      const buildResult = await buildPsdFromRequest({
+        ...options,
+        file: requestFile,
+        closeAfterSave: options.closeAfterSave !== false
+      });
+      result.built.push(buildResult);
+    } catch (error) {
+      result.errors.push({
+        fileName: basename(path) || "build_request.json",
+        nativePath: path,
+        error: error && error.message ? error.message : String(error)
+      });
+    }
+  }
+
+  return result;
+}
+
 async function pickBuildRequestFile() {
+  return pickJsonFile();
+}
+
+async function pickJsonFile() {
   const { storage } = require("uxp");
   const fs = storage.localFileSystem;
   const file = await fs.getFileForOpening({
@@ -38,12 +141,51 @@ async function pickBuildRequestFile() {
   return Array.isArray(file) ? file[0] : file;
 }
 
+async function findBuildRequestFiles(folder) {
+  const files = [];
+  await collectBuildRequestFiles(folder, files);
+  files.sort((left, right) => entrySortKey(left).localeCompare(entrySortKey(right)));
+  return files;
+}
+
+async function collectBuildRequestFiles(folder, files) {
+  if (!folder || typeof folder.getEntries !== "function") {
+    return;
+  }
+
+  const entries = await folder.getEntries();
+  for (const entry of entries || []) {
+    if (isFolderEntry(entry)) {
+      await collectBuildRequestFiles(entry, files);
+    } else if (String(entry.name || "").toLowerCase() === "build_request.json") {
+      files.push(entry);
+    }
+  }
+}
+
+function isFolderEntry(entry) {
+  return Boolean(entry && (entry.isFolder || typeof entry.getEntries === "function"));
+}
+
+function entrySortKey(entry) {
+  return String(entry && (entry.nativePath || entry.name) || "");
+}
+
 async function readBuildRequestFile(file) {
   const text = await file.read();
   try {
     return JSON.parse(text);
   } catch (error) {
     throw new Error(`Selected file is not valid JSON: ${error.message}`);
+  }
+}
+
+async function readExportListFile(file) {
+  const text = await file.read();
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Selected export list is not valid JSON: ${error.message}`);
   }
 }
 
@@ -74,13 +216,47 @@ function validateBuildRequest(request) {
   }
 }
 
+function validateExportList(list) {
+  if (!list || typeof list !== "object") {
+    throw new Error("Export list must be a JSON object.");
+  }
+  if (list.schema_version !== 1) {
+    throw new Error(`Unsupported export list schema_version: ${list.schema_version}`);
+  }
+  if (list.request_type !== "build_list") {
+    throw new Error(`Expected request_type "build_list", got "${list.request_type}"`);
+  }
+  if (!Array.isArray(list.build_requests)) {
+    throw new Error("Export list field build_requests must be an array.");
+  }
+}
+
+function exportListRequestPaths(list) {
+  return (list.build_requests || [])
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry;
+      }
+      return entry && (entry.path || entry.build_request_file || entry.absolute_path);
+    })
+    .map((path) => cleanUserPath(path))
+    .filter(Boolean);
+}
+
 function summarizeBuildRequest(request) {
   const assets = collectAssets(request.layers);
   const unplacedNodes = collectUnplacedNodes(request);
+  const unplacedCounts = summarizeUnplacedNodes(unplacedNodes);
   return {
     textureSet: request.texture_set,
     stack: request.stack || "",
     channel: request.channel,
+    channelLabel: request.channel_label || channelLabel(request.channel),
+    channelRole: request.channel_role || inferChannelRole(request.channel, request.is_color),
+    channelFormat: request.channel_format || "unknown",
+    bitDepth: request.bit_depth || null,
+    isColor: request.is_color === true,
+    normalMapFormat: request.normal_map_format || null,
     udim: request.udim,
     usesUdim: requestUsesUdim(request),
     resolution: request.uv_tile && request.uv_tile.resolution
@@ -91,7 +267,11 @@ function summarizeBuildRequest(request) {
     assetCount: assets.length,
     maskAssetCount: assets.filter((asset) => asset.kind === "mask").length,
     bakedAssetCount: assets.filter((asset) => asset.kind === "baked").length,
+    emptyLayerAssetsRemoved: request.empty_layer_assets_removed || 0,
     unplacedNodeCount: unplacedNodes.length,
+    unplacedKnownBakedCount: unplacedCounts.known_baked,
+    unplacedUnsupportedCount: unplacedCounts.unsupported,
+    unplacedNeedsAttentionCount: unplacedCounts.needs_attention,
     unplacedMaskEffectCount: unplacedNodes.filter((node) => node.stack === "mask_effects").length,
     unplacedContentEffectCount: unplacedNodes.filter((node) => node.stack === "content_effects").length
   };
@@ -134,8 +314,9 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     savePath: request.psd_file || null,
     topLevelAssetCount: countBuildItemRasterLayers(buildItems),
     topLevelMaskAssetCount: countBuildItemMasks(buildItems),
-    topLevelGroupCount: buildItems.filter((item) => item.kind === "group").length,
+    groupCount: countBuildItemGroups(buildItems),
     unplacedNodes,
+    unplacedNodeCounts: summarizeUnplacedNodes(unplacedNodes),
     placedLayerCount: 0,
     placedLayers: [],
     placedGroups: [],
@@ -153,6 +334,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     blendGammaSet: false,
     blendGammaError: "Skipped automatic rgbColorBlendGamma Set command because Photoshop can show a host modal error.",
     saved: false,
+    closed: false,
     saveError: null
   };
 
@@ -181,6 +363,11 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
       } catch (error) {
         build.saveError = error && error.message ? error.message : String(error);
       }
+    }
+
+    if (options.closeAfterSave && build.saved) {
+      await closeTemporaryDocument(document);
+      build.closed = true;
     }
   }, {
     commandName: "Rizum Build Top-Level PNG Layers"
@@ -222,6 +409,7 @@ async function placeTopLevelBuildItems(app, targetDocument, items, build) {
         layer: placed
       });
       build.placedLayers.push(placedLayerSummary(item, item.node, placed, build.channel, null, mask));
+      await placeContentEffectLayers(app, targetDocument, item, build, null, placed);
     } catch (error) {
       build.placementErrors.push({
         order: item.order,
@@ -294,11 +482,15 @@ function isDefaultEmptyLayer(layer) {
 }
 
 async function placeGroupNode(app, targetDocument, item, build, topLevelPlacements) {
+  return placeGroupBuildItem(app, targetDocument, item, build, topLevelPlacements, null, null);
+}
+
+async function placeGroupBuildItem(app, targetDocument, item, build, topLevelPlacements, parentGroup, parentPath) {
   const { constants } = require("photoshop");
   const groupName = makeLayerName(item.node);
-  const taggedGroupName = makeTaggedLayerName(item.node);
+  const groupPath = parentPath ? `${parentPath}/${groupName}` : groupName;
   const options = {
-    name: taggedGroupName
+    name: groupName
   };
   const opacity = layerOpacityPercent(item.node, build.channel);
   if (opacity !== null) {
@@ -312,11 +504,20 @@ async function placeGroupNode(app, targetDocument, item, build, topLevelPlacemen
   }
 
   const group = await targetDocument.createLayerGroup(options);
+  if (parentGroup) {
+    await group.move(parentGroup, constants.ElementPlacement.PLACEINSIDE);
+  }
+
   const reversedChildren = [...item.children].reverse();
   for (const childItem of reversedChildren) {
     try {
+      if (childItem.kind === "group") {
+        await placeGroupBuildItem(app, targetDocument, childItem, build, topLevelPlacements, group, groupPath);
+        continue;
+      }
+
       const placed = await placeRasterNode(app, targetDocument, childItem.node, build.channel, group);
-      const childName = `${groupName}/${makeLayerName(childItem.node)}`;
+      const childName = `${groupPath}/${makeLayerName(childItem.node)}`;
       const mask = await applyMaskAssetToPlacedLayer(
         app,
         targetDocument,
@@ -325,21 +526,22 @@ async function placeGroupNode(app, targetDocument, item, build, topLevelPlacemen
         build,
         childName,
         childItem.order,
-        item.sourceIndex
+        childItem.sourceIndex
       );
-      build.placedLayers.push(placedLayerSummary(childItem, childItem.node, placed, build.channel, groupName, mask));
+      build.placedLayers.push(placedLayerSummary(childItem, childItem.node, placed, build.channel, groupPath, mask));
+      await placeContentEffectLayers(app, targetDocument, childItem, build, groupPath, placed, group);
     } catch (error) {
       build.placementErrors.push({
         order: childItem.order,
-        sourceIndex: item.sourceIndex,
-        name: `${groupName}/${makeLayerName(childItem.node)}`,
+        sourceIndex: childItem.sourceIndex,
+        name: `${groupPath}/${makeLayerName(childItem.node)}`,
         path: childItem.node.asset && childItem.node.asset.path,
         error: error && error.message ? error.message : String(error)
       });
     }
   }
 
-  group.name = taggedGroupName;
+  group.name = groupName;
   group.visible = item.node.visible !== false;
   if (opacity !== null) {
     group.opacity = opacity;
@@ -353,24 +555,53 @@ async function placeGroupNode(app, targetDocument, item, build, topLevelPlacemen
     group,
     item.node,
     build,
-    groupName,
+    groupPath,
     item.order,
     item.sourceIndex
   );
-  await moveGroupToTopLevelOrder(group, item, topLevelPlacements, constants);
+  if (!parentGroup) {
+    await moveGroupToTopLevelOrder(group, item, topLevelPlacements, constants);
+  }
 
   build.placedGroups.push({
     order: item.order,
     sourceIndex: item.sourceIndex,
     name: groupName,
     psName: group.name,
+    groupName: parentPath || null,
+    path: groupPath,
     spUid: nodeUidHex(item.node),
     spKind: nodeKind(item.node),
     blendMode: layerBlendModeName(item.node, build.channel),
     maskPath: groupMask && groupMask.path ? groupMask.path : null,
     maskApplied: groupMask ? groupMask.applied === true : false,
-    childLayerCount: item.children.length
+    childLayerCount: countBuildItemRasterLayers(item.children),
+    childGroupCount: item.children.filter((child) => child.kind === "group").length
   });
+}
+
+async function placeContentEffectLayers(app, targetDocument, item, build, groupName, baseLayer, parentGroup) {
+  const effects = item.contentEffects || directContentEffectItems(item.node, item.sourceIndex, item.order);
+  for (const effectItem of effects) {
+    try {
+      const placed = await placeRasterNode(app, targetDocument, effectItem.node, build.channel, parentGroup, {
+        clippingMask: true
+      });
+      build.placedLayers.push(placedLayerSummary(effectItem, effectItem.node, placed, build.channel, groupName, null, {
+        clipped: true,
+        clippedTo: baseLayer && baseLayer.name ? baseLayer.name : null
+      }));
+    } catch (error) {
+      const parentName = groupName ? `${groupName}/${makeLayerName(item.node)}` : makeLayerName(item.node);
+      build.placementErrors.push({
+        order: effectItem.order,
+        sourceIndex: item.sourceIndex,
+        name: `${parentName}#content/${makeLayerName(effectItem.node)}`,
+        path: effectItem.node.asset && effectItem.node.asset.path,
+        error: error && error.message ? error.message : String(error)
+      });
+    }
+  }
 }
 
 async function moveGroupToTopLevelOrder(group, item, topLevelPlacements, constants) {
@@ -400,7 +631,7 @@ function nearestTopLevelPlacement(placements, sourceIndex, direction) {
   return candidates[0] || null;
 }
 
-function placedLayerSummary(item, node, placed, channel, groupName, mask) {
+function placedLayerSummary(item, node, placed, channel, groupName, mask, options = {}) {
   return {
     order: item.order,
     sourceIndex: item.sourceIndex,
@@ -410,13 +641,15 @@ function placedLayerSummary(item, node, placed, channel, groupName, mask) {
     spUid: nodeUidHex(node),
     spKind: nodeKind(node),
     blendMode: layerBlendModeName(node, channel),
+    clipped: options.clipped === true,
+    clippedTo: options.clippedTo || null,
     maskPath: mask && mask.path ? mask.path : null,
     maskApplied: mask ? mask.applied === true : false,
     path: node.asset.path
   };
 }
 
-async function placeRasterNode(app, targetDocument, node, channel, parentGroup) {
+async function placeRasterNode(app, targetDocument, node, channel, parentGroup, options = {}) {
   const pngEntry = await getExistingFileEntryForPath(node.asset.path);
   const pngDocument = await app.open(pngEntry);
 
@@ -427,7 +660,7 @@ async function placeRasterNode(app, targetDocument, node, channel, parentGroup) 
       throw new Error("Opened PNG document has no duplicateable layer");
     }
 
-    const targetName = makeTaggedLayerName(node);
+    const targetName = makeLayerName(node);
     const duplicated = await sourceLayer.duplicate(targetDocument, undefined, targetName);
     if (parentGroup) {
       await duplicated.move(parentGroup, constants.ElementPlacement.PLACEINSIDE);
@@ -443,6 +676,9 @@ async function placeRasterNode(app, targetDocument, node, channel, parentGroup) 
     const blendMode = layerBlendMode(node, channel, constants);
     if (blendMode !== null) {
       duplicated.blendMode = blendMode;
+    }
+    if (options.clippingMask) {
+      duplicated.isClippingMask = true;
     }
 
     return duplicated;
@@ -660,7 +896,7 @@ function loadPixelHashModule() {
 
 function buildSidecarPayload(request, build) {
   return {
-    rizum_version: "0.1.47",
+    rizum_version: "0.1.59",
     schema_version: 1,
     created_at: new Date().toISOString(),
     build_request_file: request.build_request_file || null,
@@ -668,6 +904,11 @@ function buildSidecarPayload(request, build) {
     texture_set: request.texture_set || "",
     stack: request.stack || "",
     channel: request.channel || "",
+    channel_label: request.channel_label || channelLabel(request.channel),
+    channel_role: request.channel_role || inferChannelRole(request.channel, request.is_color),
+    channel_format: request.channel_format || null,
+    bit_depth: request.bit_depth || null,
+    is_color: request.is_color === true,
     channel_identifier: request.channel_identifier || null,
     udim: request.udim,
     uses_udim: requestUsesUdim(request),
@@ -696,7 +937,8 @@ function sidecarGroupRecord(group) {
     ps_kind: "group",
     ps_name: group.psName,
     display_name: group.name,
-    group: null,
+    group: group.groupName || null,
+    path: group.path || group.name,
     sync_direction: "both",
     blend_mode: group.blendMode || null,
     mask_path: group.maskPath || null,
@@ -716,6 +958,8 @@ function sidecarLayerRecord(layer) {
     group: layer.groupName || null,
     sync_direction: "both",
     blend_mode: layer.blendMode || null,
+    clipped: layer.clipped === true,
+    clipped_to: layer.clippedTo || null,
     asset_path: layer.path || null,
     mask_path: layer.maskPath || null,
     baseline_hash: layer.baselineHash || null,
@@ -733,6 +977,7 @@ function sidecarUnplacedNodeRecord(node) {
     stack: node.stack,
     parent: node.parent || null,
     reason: node.reason,
+    category: node.category || "known_baked",
     sync_direction: node.syncDirection,
     bake_policy: node.bakePolicy || null
   };
@@ -745,51 +990,75 @@ function topLevelRasterNodes(request) {
 
 function topLevelBuildItems(request) {
   return (request.layers || [])
-    .map((node, sourceIndex) => ({
-      kind: topLevelItemKind(node),
-      node,
+    .map((node, sourceIndex) => buildItemFromNode(node, {
       sourceIndex,
-      order: sourceIndex * 1000,
-      children: directRasterChildItems(node, sourceIndex)
+      order: sourceIndex * 1000
     }))
-    .filter((item) => item.kind !== null);
+    .filter(Boolean);
 }
 
-function topLevelItemKind(node) {
+function buildItemFromNode(node, context) {
+  const kind = buildItemKind(node);
+  if (!kind) {
+    return null;
+  }
+
+  const item = {
+    kind,
+    node,
+    sourceIndex: context.sourceIndex,
+    order: context.order,
+    children: [],
+    contentEffects: directContentEffectItems(node, context.sourceIndex, context.order)
+  };
+
+  if (kind === "group") {
+    item.children = childBuildItems(node, context.sourceIndex, context.order);
+  }
+
+  return item;
+}
+
+function buildItemKind(node) {
   if (!node) {
     return null;
   }
   if (node.asset && node.asset.path) {
     return "raster";
   }
-  if (isGroupNode(node) && directRasterChildItems(node, 0).length > 0) {
+  if (isGroupNode(node) && childBuildItems(node, 0, 0).length > 0) {
     return "group";
   }
   return null;
 }
 
-function directRasterChildItems(node, sourceIndex) {
+function childBuildItems(node, sourceIndex, baseOrder) {
   if (!isGroupNode(node)) {
     return [];
   }
   return (node.children || [])
-    .map((child, childIndex) => ({
-      kind: "raster",
-      node: child,
+    .map((child, childIndex) => buildItemFromNode(child, {
       sourceIndex,
       childIndex,
-      order: sourceIndex * 1000 + childIndex + 1
+      order: baseOrder + childIndex * 100 + 1
     }))
-    .filter((item) => item.node && item.node.asset && item.node.asset.path);
+    .filter(Boolean);
+}
+
+function directContentEffectItems(node, sourceIndex, baseOrder) {
+  // Effect UIDs are not valid alg.mapexport.save targets in the tested Painter
+  // runtime. Keep content effects as sidecar/unplaced provenance until a real
+  // host-validated export strategy exists.
+  void node;
+  void sourceIndex;
+  void baseOrder;
+  return [];
 }
 
 function collectUnplacedNodes(request, buildItems = topLevelBuildItems(request)) {
   const placedUids = new Set();
   for (const item of buildItems || []) {
-    addPlacedUid(placedUids, item.node);
-    for (const child of item.children || []) {
-      addPlacedUid(placedUids, child.node);
-    }
+    markPlacedBuildItem(placedUids, item);
   }
 
   const records = [];
@@ -805,6 +1074,19 @@ function collectUnplacedNodes(request, buildItems = topLevelBuildItems(request))
     });
   }
   return records;
+}
+
+function markPlacedBuildItem(placedUids, item) {
+  if (!item) {
+    return;
+  }
+  addPlacedUid(placedUids, item.node);
+  for (const effect of item.contentEffects || []) {
+    addPlacedUid(placedUids, effect.node);
+  }
+  for (const child of item.children || []) {
+    markPlacedBuildItem(placedUids, child);
+  }
 }
 
 function visitUnplacedNode(node, context) {
@@ -823,6 +1105,7 @@ function visitUnplacedNode(node, context) {
       stack: context.stack,
       parent: context.parent,
       reason: unplacedNodeReason(node, context.stack),
+      category: unplacedNodeCategory(node, context.stack),
       syncDirection: unplacedNodeSyncDirection(node, context.stack),
       bakePolicy: node.bake_policy || null
     });
@@ -890,6 +1173,39 @@ function unplacedNodeReason(node, stack) {
   return "metadata_only";
 }
 
+function unplacedNodeCategory(node, stack) {
+  if (stack === "mask_effects") {
+    return "known_baked";
+  }
+  if (stack === "content_effects") {
+    return "unsupported";
+  }
+  if (node.asset && node.asset.path) {
+    return "needs_attention";
+  }
+  if (node.mask_asset && node.mask_asset.path) {
+    return "needs_attention";
+  }
+  return "known_baked";
+}
+
+function summarizeUnplacedNodes(nodes) {
+  const counts = {
+    known_baked: 0,
+    unsupported: 0,
+    needs_attention: 0
+  };
+  for (const node of nodes || []) {
+    const category = node.category || "known_baked";
+    if (counts[category] === undefined) {
+      counts.needs_attention += 1;
+    } else {
+      counts[category] += 1;
+    }
+  }
+  return counts;
+}
+
 function unplacedNodeSyncDirection(node, stack) {
   if (stack === "mask_effects") {
     return "sp_to_ps_only";
@@ -909,9 +1225,9 @@ function unplacedNodeSyncDirection(node, stack) {
 function countBuildItemRasterLayers(items) {
   return (items || []).reduce((total, item) => {
     if (item.kind === "group") {
-      return total + item.children.length;
+      return total + countBuildItemRasterLayers(item.children);
     }
-    return total + 1;
+    return total + 1 + (item.contentEffects || []).length;
   }, 0);
 }
 
@@ -919,12 +1235,16 @@ function countBuildItemMasks(items) {
   return (items || []).reduce((total, item) => {
     let count = item.node && item.node.mask_asset && item.node.mask_asset.path ? 1 : 0;
     if (item.kind === "group") {
-      count += (item.children || []).filter((child) => (
-        child.node && child.node.mask_asset && child.node.mask_asset.path
-      )).length;
+      count += countBuildItemMasks(item.children);
     }
     return total + count;
   }, 0);
+}
+
+function countBuildItemGroups(items) {
+  return (items || []).reduce((total, item) => (
+    total + (item.kind === "group" ? 1 + countBuildItemGroups(item.children) : 0)
+  ), 0);
 }
 
 function isGroupNode(node) {
@@ -954,12 +1274,6 @@ function makeLayerName(node) {
     ? String(node.name).trim()
     : "";
   return name || `Layer ${node && node.uid_hex ? node.uid_hex : "unknown"}`;
-}
-
-function makeTaggedLayerName(node) {
-  const uid = nodeUidHex(node);
-  const name = makeLayerName(node);
-  return uid ? `${name} [rz:${uid}]` : name;
 }
 
 function nodeUidHex(node) {
@@ -1140,6 +1454,42 @@ function requestUsesUdim(request) {
   return !(request.uv_tile && request.uv_tile.is_udim === false);
 }
 
+function inferChannelRole(channel, isColor) {
+  const normalized = String(channel || "").trim().toLowerCase();
+  if (normalized === "normal" || normalized === "normalmap") {
+    return "normal";
+  }
+  if (normalized === "opacity" || normalized === "alpha") {
+    return "opacity";
+  }
+  if (normalized.startsWith("user")) {
+    return "user";
+  }
+  if (isColor === true) {
+    return "color";
+  }
+  return "data";
+}
+
+function channelLabel(channel) {
+  const labels = {
+    BaseColor: "Base Color",
+    Diffuse: "Diffuse",
+    Opacity: "Opacity",
+    Normal: "Normal",
+    Height: "Height",
+    Roughness: "Roughness",
+    Metallic: "Metallic",
+    Metalness: "Metalness",
+    Specular: "Specular",
+    Glossiness: "Glossiness",
+    Emissive: "Emissive",
+    AmbientOcclusion: "Ambient Occlusion"
+  };
+  const text = String(channel || "").trim();
+  return labels[text] || text || "Unknown";
+}
+
 function basename(path) {
   const parts = String(path || "").split(/[\\/]/);
   return parts[parts.length - 1] || "";
@@ -1204,7 +1554,7 @@ async function getExistingFileEntryForPath(path) {
       // across hosts, but the user-facing error should stay concise.
     }
   }
-  throw new Error(`PNG asset not found: ${path}`);
+  throw new Error(`File not found through UXP: ${path}`);
 }
 
 function fileUrlCandidates(path) {
@@ -1219,7 +1569,16 @@ function fileUrlCandidates(path) {
   return [`file:${encoded}`];
 }
 
+function cleanUserPath(path) {
+  return String(path || "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+}
+
 module.exports = {
+  buildPsdFromExportList,
+  buildPsdFromFolder,
+  buildPsdFromPath,
   buildPsdFromRequest,
   collectAssets,
   collectUnplacedNodes,
@@ -1234,7 +1593,6 @@ module.exports = {
   layerOpacityPercent,
   makeDocumentName,
   makeLayerName,
-  makeTaggedLayerName,
   requestUsesUdim,
   readBuildRequestFile,
   sha1File,

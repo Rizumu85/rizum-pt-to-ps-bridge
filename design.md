@@ -33,6 +33,163 @@ texture-set, stack, layer, or export-path query belongs behind a user action or
 project-ready check, and the panel should show a no-project state until
 `substance_painter.project.is_open()` is true.
 
+The Painter panel must not run periodic timers, inbox watchers, automatic
+project scans, or background refresh while the user paints. User host feedback
+showed that even lightweight UI polling can correlate with brush-time freezes
+or crashes. Button state and project readiness should be checked only when the
+user clicks an action.
+
+The Painter dock now exposes three action buttons only: **Export**, **Bridge**,
+and **Settings**. The dock title comes from Painter's native dock title bar. A
+no-project message such as "Open a Painter project to export." appears only
+when no project is open; when a project is ready, the dock avoids extra status
+clutter.
+
+The **Export** action opens a focused export dialog. The scope selector has two
+display scopes only: the currently edited texture set/stack, or all stacks.
+This selector controls what the dialog shows, not a separate hidden export
+mode. The first implementation resolves **Current Stack** with
+`substance_painter.textureset.get_active_stack()` and falls back to the first
+available export target only if the host cannot report the active stack. The
+dialog keeps group/channel checkboxes, explicit **All** and **None** actions,
+and footer buttons with large rounded proportions matching Photoshop-style
+inner panels. **All** means "click to select all"; **None** means "click to
+deselect all". Do not include extra eye/filter icons until those actions have
+real behavior.
+
+Export dialog groups should not auto-expand on hover; expansion is an explicit
+row/arrow action. Bridge app layer rows should follow the desktop-reference
+behavior: rows and groups are visually quiet by default, with their rounded
+card container and remove control appearing only on hover or drag. Layer
+descriptions in the bridge app should use two lines, with the primary name
+above secondary metadata such as layer count, blend mode, opacity, or mask
+state. Masked layers should show a visible mask badge or paired thumbnail so
+the user can tell which rows have separate mask data.
+The export dialog uses the same hover hierarchy: hovering a stack shows the
+larger stack container, while hovering an individual channel also shows that
+channel's smaller row container.
+
+The desktop bridge app should not require one large outer card around both
+hosts. A transparent shell with two independent host cards is preferred because
+the Photoshop source list may be short while the Substance Painter target tree
+may be much taller. The insertion target should be a clear horizontal drop line
+inside the Painter card. Photoshop and Painter may therefore use different card
+heights in the same transfer view: the Photoshop source side can shrink after
+layers are moved, while the Painter target side can remain tall enough for a
+larger layer tree. Each host card header should use a compact logo plus two
+text lines: host name first, then the active PSD or texture-set/channel context.
+
+The settings panel should be quieter than the current draft: use section
+separators and compact controls rather than many nested outlined cards. If
+padding is set to Infinite, the dilation control should disappear because it is
+not applicable. Automatic Photoshop build should remain the default behavior
+for Workflow A when the Photoshop path is configured; it does not need a
+prominent visible setting in the first mockup.
+The first implemented Painter settings dialog stores machine-level settings via
+Qt `QSettings`: Photoshop executable path, infinite padding, and an optional
+8/16-bit export override. When bit depth is left as **Texture Set**, exports use
+the channel's native bit depth from Painter.
+Painter-wide UI scaling belongs in a separate helper plugin, not the PT Bridge
+settings panel. The bridge may coexist with that helper, but should not own
+global Painter UI scale experiments.
+
+The visual mockup should prefer MiSans when it is available on the user's
+machine. Most UI text should use 13px/600, Painter dock action labels should
+use 10px/500, secondary metadata should use 11px/400, and the mockup may expose
+a small live font-size control while the final type scale is being tuned.
+
+Painter build bundles should no longer default to the repository-local smoke
+test directory during normal use. The panel resolves Painter's project export
+path through the JS `alg.mapexport.exportPath()` fallback and writes bundles to
+`<exportPath>/<project>_photoshop_export/`. After export, the panel should let
+the user copy the last `build_request.json` path, copy the last export-list
+path, and open the output folder.
+
+The Photoshop panel should support both the file picker and a direct
+`build_request.json` path. The direct-path flow pairs with Painter's **Copy
+Last Request Path** button: the user can click **Paste Request Path** in
+Photoshop when UXP clipboard reading is available, or paste into the path field
+manually, then click **Build Request Path**.
+
+For larger Painter exports, the Photoshop panel should also provide **Build
+Request Folder**. The user chooses a folder such as `<project>_photoshop_export`;
+the panel recursively finds `build_request.json` files, builds them one by one,
+and closes each PSD only after it has saved successfully. Failures are reported
+per request and do not stop the remaining builds.
+
+For scoped Painter exports, the safer Photoshop batch path is **Build Export
+List**. Painter writes `_last_export.json` into the export root after each run;
+Photoshop reads that list and builds only the exact requests from the most
+recent export, avoiding stale bundle folders left from earlier broader exports.
+
+Workflow A can also offer a one-action **Export and Build in Photoshop** path
+after the user sets the Photoshop executable path in Painter. This should follow
+the old plugin's user-facing pattern but use the current UXP builder: Painter
+writes the build bundles and `_last_export.json`, writes a tiny generated
+`.psjs` launcher that builds that export list, then launches Photoshop with the
+launcher path if host validation confirms Photoshop accepts that command-line
+flow. If `.psjs` command-line launch is not reliable, keep **Build Export List**
+as the supported fallback rather than reintroducing a second JSX builder.
+
+Painter build requests should include channel semantics in addition to the raw
+channel enum: a display label, a role (`color`, `data`, `opacity`, `normal`, or
+`user`), format, bit depth, and color/data flag. Photoshop should show those
+fields in build summaries and sidecars before any channel-specific pixel
+behavior is introduced.
+
+The Painter target picker should show user channel labels when Painter exposes
+them, while keeping the raw enum channel as the internal export key. Layer PNGs
+that export as fully transparent should be pruned from the request, and a
+channel with no remaining layer PNGs should not write a build bundle. The
+target picker and request generator should first ask Painter's legacy JS
+`alg.mapexport.channelIdentifiers(stackPath)` for stack-level used channels so
+entire unused channels can be hidden/skipped before per-layer PNG export.
+The same resolved identifier should be written into `build_request.json` and
+passed to `alg.mapexport.save`; for user channels this may be the Painter label
+(`SCol`, `TNrm`, `SDF`) rather than the Python enum name (`User0`, `User1`).
+For user-channel exports, Painter may try several known identifier spellings
+and keep the first non-transparent result. Python `active_channels` should be
+used as a pre-export filter so layers that are not active on the requested
+channel do not produce misleading empty PNGs.
+The preferred channel identifier source is the same one used by the old plugin:
+`alg.mapexport.documentStructure().materials[].stacks[].channels`.
+User channel labels should also be used in generated bundle and PSD filenames
+so names such as `SCol`, `TNrm`, or `SDF` match the Painter UI.
+Because Painter can under-report used channels for Fill layers that reference
+external maps, `active_channels` from Python traversal is also treated as a
+positive target-discovery signal. JS used-channel data can hide clearly unused
+channels, but it should not suppress a channel that a layer explicitly marks
+active.
+The selected-stack export button should reuse the same refreshed channel list
+shown in the UI, rather than doing an unfiltered second scan. This keeps
+"Export Selected Target" and "Export Selected Stack" consistent when host
+channel discovery is imperfect.
+Host testing confirmed this target-discovery design for both single-channel
+and selected-stack export on the current Wings reference-map case.
+For per-layer user-channel PNG export, the request-level engine identifier is
+the primary export string, and documented fallbacks such as `user1`, `user 1`,
+and the custom channel label are tried only if the primary string produces an
+empty result or fails. This keeps old-plugin-compatible strings first without
+making the exporter depend on one user-channel spelling.
+
+Photoshop should leave PSDs open when building from `_last_export.json`, so the
+user can inspect the small scoped batch immediately after creation. Large
+recursive folder builds may still close after save to avoid opening too many
+documents.
+
+Phase 2 may add a desktop bridge app as a visual transfer queue. The app should
+connect to both host plugins through local interchange folders, show Photoshop
+and Painter layer trees side by side, and let the user drag selected exported
+layers onto a target group/layer insertion position. Hover feedback should show
+the target position clearly: group highlights for inserting into a group, and
+thin insertion indicators for placing before/after a layer. The app writes a
+manifest; the destination plugin applies it only after the user confirms.
+
+The desktop app should own path setup, recent projects, transfer presets, and
+manual placement decisions. It should not hide automatic background sync behind
+the UI. Partial export/import remains explicit: source plugin exports selected
+layers, desktop app maps them, target plugin applies the selected manifest.
+
 The Painter dock panel must also keep a module-level strong reference to its
 Python panel object. Painter owns the dock widget after `sp.ui.add_dock_widget`,
 but the Python object still owns timers, slots, and child-widget references; if
@@ -61,6 +218,40 @@ such calls kept explicit in `analysis.md §2`.
 
 **No sockets, no daemons, and no background polling in the active Phase 1
 workflow.** The user triggers every cross-boundary action.
+
+Painter exports should show an application-modal progress dialog while work is
+running. The dialog blocks normal Painter interaction to reduce brush/viewport
+operations during export, but keeps a Cancel button. Cancellation is checked
+between build requests and between PNG asset writes; an in-flight host export
+call may finish before cancellation takes effect.
+Export actions should only start when Painter reports the project is in edition
+state, not merely open. If the project is still loading or non-editable, the
+panel should report that state and wait for a later user retry.
+
+UDIM per-layer PNG export has a known API gap: the fast JS
+`alg.mapexport.save` path has no per-tile filter. Non-UDIM projects should keep
+that fast non-mutating path. If true per-tile per-layer UDIM output is needed,
+use a future opt-in Python solo-export fallback that temporarily isolates one
+node's visibility and calls Painter's normal texture export with a `uvTiles`
+filter. That fallback must wrap visibility changes and export work with both
+`ScopedModification` and `application.disable_engine_computations()` so Painter
+does not recompute thumbnails or viewport textures after each temporary
+visibility change.
+
+Project-level bridge choices should be stored in Painter `project.Metadata`
+when they belong to the current `.spp`, for example normal-map-format override,
+last export preset, and last scoped target. Machine-level choices, such as a
+Photoshop executable path for a future one-click build action, remain global.
+
+`TextureStateEvent.cache_key` is a future integrity signal, not an active sync
+requirement. If the bridge later needs to warn that a Painter stack changed
+after PSD export, it should store cache keys per stack/channel/tile instead of
+inventing a parallel dirty-state mechanism.
+
+Normal-map orientation should be treated as unknown until it can be inferred or
+set. Preferred future order: direct host setting if `alg.project.settings`
+exposes it, normal-source `SourceBitmap.get_color_space()` inference when
+available, then a user choice persisted in `project.Metadata`.
 
 ---
 
@@ -267,18 +458,21 @@ The current top-level raster placement slice applies per-channel blend mode to
 duplicated PNG layers only. `PASSTHROUGH` remains reserved for future group
 construction and is not assigned to raster layers.
 
-The current group slice creates only top-level Photoshop groups and places
-their direct PNG child layers inside. It does not recurse into nested groups or
-build masks/clipping sub-effects yet. Group `visible`, `opacity`, and
-per-channel blend mode are applied after direct child placement.
+The current group slice creates Photoshop groups recursively for any group that
+contains placeable raster descendants. Group `visible`, `opacity`, masks, and
+per-channel blend mode are applied after child placement. This keeps nested
+Painter folder hierarchy visible in Photoshop when descendants have exported
+PNG payloads.
 
 Photoshop can keep a newly-created group as the active insertion context, so
 top-level raster layers are placed before groups. Completed groups are then
 moved back to their Painter top-level position. This prevents unrelated
 top-level layers from being inserted inside the most recently created group.
-Direct PNG children of groups are first duplicated into the target Photoshop
-document and then moved into the group from inside the same document, because
-this UXP runtime rejects direct cross-document duplication into a group.
+PNG children of groups are first duplicated into the target Photoshop document
+and then moved into their parent group from inside the same document, because
+this UXP runtime rejects direct cross-document duplication into a group. Nested
+groups use the same pattern: create the group, move it into its parent group,
+then place its children.
 
 The PSD builder removes Photoshop's default empty `Layer 1` immediately after
 creating the Photoshop document and before placing requested layers/groups. It
@@ -295,8 +489,12 @@ pixel layer.
 
 ### 5.2 Sub-effects inside a layer's channel
 
-Each SP sub-effect (fill/paint) becomes its own PS layer inside a **clipping
-group** rooted at a base silhouette layer:
+For non-group raster nodes with direct `content_effects`, the desired PSD shape
+is still one clipped Photoshop layer per editable SP fill/paint effect above a
+base silhouette layer. Host validation showed that the current Painter JS
+export call cannot target effect UIDs directly, so this shape requires a future
+export strategy instead of the existing `alg.mapexport.save([uid, channel])`
+path.
 
 ```
 PS group "<sp_layer_name>"     (group mask = SP layer's combined mask)
@@ -308,6 +506,19 @@ PS group "<sp_layer_name>"     (group mask = SP layer's combined mask)
 
 Filter/generator/level sub-effects (non-fill/paint) → baked into a static
 raster sibling.
+
+Implementation scope for Phase 1: do not export effect UIDs as standalone PNG
+assets. Keep effect records in `build_request.json` and the Photoshop sidecar
+as provenance/unplaced nodes, while parent layer pixels and masks continue to
+use layer UID exports. Editable clipping reconstruction for Painter content
+effects is intentionally abandoned for Phase 1; dedicated wrapper groups,
+nested content-effect chains, and any future supported per-effect export remain
+later fidelity work.
+
+The Photoshop panel groups non-placed request nodes by severity. Expected baked
+mask/effect metadata is reported separately from unsupported editable content
+effects, and both are kept separate from true unplaced assets that need
+attention.
 
 ### 5.3 Sub-effects inside a mask
 
@@ -374,7 +585,7 @@ the local docs:
 The manual export path deliberately does not:
 
 - write a push manifest;
-- scan or write `_pt_sync_inbox`;
+- scan, apply, or write `_pt_sync_inbox`;
 - import resources into Painter;
 - mutate the Painter layer stack;
 - depend on `[rz:<uid>]` suffixes, sidecar matching, hash diffing, or layer
@@ -533,28 +744,19 @@ Avoids the double-mask pitfall.
 
 ## 7. Metadata schema
 
-UXP has no reliable per-layer XMP metadata API (see `analysis.md §3.10`),
-so metadata lives in two places with the **layer-name suffix as the primary
-key** and the sidecar JSON as the authoritative details lookup.
+UXP has no reliable per-layer XMP metadata API (see `analysis.md §3.10`), so
+Phase 1 keeps durable metadata in the sidecar JSON instead of visible Photoshop
+layer names.
 
-### 7.1 Per-layer key
+### 7.1 Photoshop layer names
 
-Every plugin-created PS layer's name ends with `‡<sp_uid>` (U+2021 double
-dagger + hex uid). Example: `DiffuseBase ‡a3f7`. The double dagger was
-picked because it's not on any keyboard, so user-typed text won't collide.
-Users can rename the prefix freely; the trailing `‡<uid>` is the stable
-anchor. Lookup regex: `‡([0-9a-f]+)$`.
+Plugin-created Photoshop layers and groups should use clean user-facing names,
+without visible ` [rz:<uid>]` suffixes. The earlier automatic sync-back
+prototype used layer-name suffixes for matching, but the active Phase 1 return
+workflow is manual PNG export and no longer needs that visible key.
 
-Implementation note for the current local build: use an ASCII suffix instead
-of the original double-dagger marker because this Windows checkout already
-shows mojibake for that character in Markdown. The implemented suffix is
-` [rz:<sp_uid_hex>]`, for example `DiffuseBase [rz:a3f7]`. Lookup regex:
-`\s\[rz:([0-9a-f]+)\]$`.
-
-Current Phase 1 manual return export does not depend on this suffix. The suffix
-and sidecar remain useful for build provenance and possible future automation,
-but users do not need to preserve them when they manually export selected
-Photoshop layers as PNGs.
+The sidecar remains the provenance record for `sp_uid`, source asset path,
+mask path, blend mode, clipping state, and other build metadata.
 
 ### 7.2 Sidecar JSON
 

@@ -1,7 +1,7 @@
 {
   "description": "Local root loader for Rizum PT-to-PS Bridge.",
   "url": "https://github.com/rizum/rizum-pt-to-ps-bridge",
-  "version": "0.1.47",
+  "version": "0.1.84",
   "license": "MIT",
   "min_api_version": "1.1.19"
 }

@@ -2,7 +2,7 @@
 
 const { entrypoints } = require("uxp");
 
-const PLUGIN_VERSION = "0.1.47";
+const PLUGIN_VERSION = "0.1.59";
 
 console.log(`[Rizum] main.js loaded ${PLUGIN_VERSION}`);
 scheduleStartupRender();
@@ -118,6 +118,24 @@ function renderDiagnosticPanel(rootNode, phase) {
   });
 
   const buildButton = makeButton("Build from Painter");
+  const pathInput = document.createElement("input");
+  pathInput.type = "text";
+  pathInput.placeholder = "Paste build_request.json path";
+  setStyles(pathInput, {
+    boxSizing: "border-box",
+    width: "100%",
+    minHeight: "30px",
+    margin: "0 0 8px",
+    padding: "5px 7px",
+    border: "1px solid #777777",
+    background: "#ffffff",
+    color: "#111111",
+    fontSize: "12px"
+  });
+  const pastePathButton = makeButton("Paste Request Path");
+  const buildPathButton = makeButton("Build Request Path");
+  const buildFolderButton = makeButton("Build Request Folder");
+  const buildListButton = makeButton("Build Export List");
   const exportAppliedButton = makeButton("Export Selected (Applied Mask)");
   const exportSeparateButton = makeButton("Export Selected + Masks");
   const copyButton = makeButton("Copy Details");
@@ -152,6 +170,11 @@ function renderDiagnosticPanel(rootNode, phase) {
   panel.appendChild(heading);
   panel.appendChild(status);
   panel.appendChild(buildButton);
+  panel.appendChild(pathInput);
+  panel.appendChild(pastePathButton);
+  panel.appendChild(buildPathButton);
+  panel.appendChild(buildFolderButton);
+  panel.appendChild(buildListButton);
   panel.appendChild(exportAppliedButton);
   panel.appendChild(exportSeparateButton);
   panel.appendChild(copyButton);
@@ -160,6 +183,18 @@ function renderDiagnosticPanel(rootNode, phase) {
 
   buildButton.addEventListener("click", () => {
     handleBuildFromPainter(buildButton, details);
+  });
+  pastePathButton.addEventListener("click", () => {
+    handlePasteRequestPath(pastePathButton, details, pathInput);
+  });
+  buildPathButton.addEventListener("click", () => {
+    handleBuildRequestPath(buildPathButton, details, pathInput);
+  });
+  buildFolderButton.addEventListener("click", () => {
+    handleBuildRequestFolder(buildFolderButton, details);
+  });
+  buildListButton.addEventListener("click", () => {
+    handleBuildExportList(buildListButton, details);
   });
   exportAppliedButton.addEventListener("click", () => {
     handleExportSelected(exportAppliedButton, details, "applied");
@@ -172,6 +207,108 @@ function renderDiagnosticPanel(rootNode, phase) {
   });
 
   console.log("[Rizum] panel rendered plain HTML", describeNode(rootNode));
+}
+
+async function handlePasteRequestPath(button, details, pathInput) {
+  console.log(`[Rizum] Paste request path clicked ${PLUGIN_VERSION}`);
+  const originalLabel = button.textContent;
+  button.disabled = true;
+
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      throw new Error("navigator.clipboard.readText is not available");
+    }
+    const clipboardValue = await navigator.clipboard.readText();
+    const text = normalizeClipboardText(clipboardValue).trim();
+    if (!text) {
+      setDetailsText(details, "Clipboard did not contain text. Use Ctrl+V in the path field instead.");
+      button.textContent = "No Text";
+      return;
+    }
+    pathInput.value = text;
+    setDetailsText(details, "Pasted build_request.json path.\n\nClick Build Request Path to create the PSD.");
+    button.textContent = "Pasted";
+  } catch (error) {
+    console.log("[Rizum] Paste request path failed", error && error.stack ? error.stack : error);
+    setDetailsText(details, `Could not read clipboard text:\n${error.message || error}\n\nUse Ctrl+V in the path field instead.`);
+    button.textContent = "Paste Failed";
+  } finally {
+    button.disabled = false;
+    setTimeout(() => {
+      button.textContent = originalLabel;
+    }, 1600);
+  }
+}
+
+async function handleBuildRequestPath(button, details, pathInput) {
+  console.log(`[Rizum] Build request path clicked ${PLUGIN_VERSION}`);
+  button.disabled = true;
+  const path = pathInput && pathInput.value ? pathInput.value.trim() : "";
+  setDetailsText(details, "Resolving pasted build_request.json path...");
+
+  try {
+    const { buildPsdFromPath } = loadBuildPsdModule();
+    const result = await buildPsdFromPath(path, {
+      createSkeleton: true,
+      placeTopLevelAssets: true
+    });
+    setDetailsText(details, formatRequestSummary(result));
+  } catch (error) {
+    console.log("[Rizum] Build request path failed", error && error.stack ? error.stack : error);
+    setDetailsText(details, `Could not build pasted build_request.json path:\n${error.message || error}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleBuildRequestFolder(button, details) {
+  console.log(`[Rizum] Build request folder clicked ${PLUGIN_VERSION}`);
+  button.disabled = true;
+  setDetailsText(details, "Choose a folder containing build_request.json files...");
+
+  try {
+    const { buildPsdFromFolder } = loadBuildPsdModule();
+    const result = await buildPsdFromFolder({
+      createSkeleton: true,
+      placeTopLevelAssets: true,
+      closeAfterSave: true
+    });
+    if (result.cancelled) {
+      setDetailsText(details, result.message);
+      return;
+    }
+    setDetailsText(details, formatFolderBuildSummary(result));
+  } catch (error) {
+    console.log("[Rizum] Build request folder failed", error && error.stack ? error.stack : error);
+    setDetailsText(details, `Could not build request folder:\n${error.message || error}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleBuildExportList(button, details) {
+  console.log(`[Rizum] Build export list clicked ${PLUGIN_VERSION}`);
+  button.disabled = true;
+  setDetailsText(details, "Choose _last_export.json from Painter...");
+
+  try {
+    const { buildPsdFromExportList } = loadBuildPsdModule();
+    const result = await buildPsdFromExportList({
+      createSkeleton: true,
+      placeTopLevelAssets: true,
+      closeAfterSave: false
+    });
+    if (result.cancelled) {
+      setDetailsText(details, result.message);
+      return;
+    }
+    setDetailsText(details, formatExportListBuildSummary(result));
+  } catch (error) {
+    console.log("[Rizum] Build export list failed", error && error.stack ? error.stack : error);
+    setDetailsText(details, `Could not build Painter export list:\n${error.message || error}`);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function handleBuildFromPainter(button, details) {
@@ -249,6 +386,16 @@ async function handleCopyDetails(button, details) {
   }, 1600);
 }
 
+function normalizeClipboardText(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value && typeof value === "object") {
+    return value["text/plain"] || value.text || "";
+  }
+  return "";
+}
+
 function loadBuildPsdModule() {
   try {
     return require("./src/build-psd.js");
@@ -265,6 +412,89 @@ function loadExportSelectedModule() {
     console.log("[Rizum] root-relative export-selected require failed", rootRelativeError.message || rootRelativeError);
     return require("./export-selected.js");
   }
+}
+
+function formatFolderBuildSummary(result) {
+  return formatBatchBuildSummary(result, {
+    title: "Build Request Folder result.",
+    sourceLabel: "Folder",
+    source: result.folderPath || result.folderName,
+    countLabel: "build_request.json files found"
+  });
+}
+
+function formatExportListBuildSummary(result) {
+  return formatBatchBuildSummary(result, {
+    title: "Build Export List result.",
+    sourceLabel: "Export list",
+    source: result.nativePath || result.fileName,
+    countLabel: "build requests listed"
+  });
+}
+
+function formatBatchBuildSummary(result, labels) {
+  const built = result.built || [];
+  const errors = result.errors || [];
+  const saved = built.filter((entry) => entry.build && entry.build.saved).length;
+  const closed = built.filter((entry) => entry.build && entry.build.closed).length;
+  const placementErrors = built.reduce((total, entry) => (
+    total + ((entry.build && entry.build.placementErrors && entry.build.placementErrors.length) || 0)
+  ), 0);
+  const maskErrors = built.reduce((total, entry) => (
+    total + ((entry.build && entry.build.maskErrors && entry.build.maskErrors.length) || 0)
+  ), 0);
+  const needsAttention = built.reduce((total, entry) => {
+    const counts = entry.build && entry.build.unplacedNodeCounts;
+    return total + (counts && counts.needs_attention || 0);
+  }, 0);
+
+  const lines = [
+    labels.title,
+    "",
+    `${labels.sourceLabel}: ${labels.source}`,
+    `${labels.countLabel}: ${result.requestCount}`,
+    `Built: ${built.length}`,
+    `Saved: ${saved}`,
+    `Closed after save: ${closed}`,
+    `Failed requests: ${errors.length}`,
+    `Placement errors: ${placementErrors}`,
+    `Mask errors: ${maskErrors}`,
+    `Unplaced nodes needing attention: ${needsAttention}`
+  ];
+
+  if (built.length > 0) {
+    lines.push(
+      "",
+      "Built PSDs:",
+      ...built.map((entry) => formatFolderBuildEntry(entry))
+    );
+  }
+  if (errors.length > 0) {
+    lines.push(
+      "",
+      "Failed requests:",
+      ...errors.map((entry) => `- ${entry.nativePath || entry.fileName}: ${entry.error}`)
+    );
+  }
+  return lines.join("\n");
+}
+
+function formatFolderBuildEntry(entry) {
+  const summary = entry.summary || {};
+  const build = entry.build || {};
+  const counts = build.unplacedNodeCounts || categorizeUnplacedNodes(build.unplacedNodes);
+  const status = build.saved ? "saved" : "not saved";
+  const closed = build.closed ? ", closed" : "";
+  const placementErrors = build.placementErrors && build.placementErrors.length || 0;
+  const maskErrors = build.maskErrors && build.maskErrors.length || 0;
+  const channel = summary.channelLabel || summary.channel || "unknown";
+  const role = summary.channelRole ? `, ${summary.channelRole}` : "";
+  return [
+    `- ${summary.textureSet || "unknown"} / ${channel}${role} / ${summary.usesUdim ? summary.udim : "no UDIM"}: ${status}${closed}`,
+    `  PSD: ${summary.psdFile || "(no PSD path)"}`,
+    `  Groups: ${build.placedGroups ? build.placedGroups.length : 0}/${build.groupCount || 0}, PNG layers: ${build.placedLayerCount || 0}/${build.topLevelAssetCount || 0}, masks: ${build.appliedMaskCount || 0}/${build.topLevelMaskAssetCount || 0}`,
+    `  Unplaced: ${formatUnplacedCounts(counts)}, placement errors: ${placementErrors}, mask errors: ${maskErrors}`
+  ].join("\n");
 }
 
 function formatExportSelectedSummary(result) {
@@ -284,6 +514,18 @@ function formatExportSelectedSummary(result) {
   if (result.exported.length > 0) {
     lines.push("", "Exported files:", ...result.exported.map((file) => `- ${file}`));
   }
+  if (result.layers && result.layers.length > 0) {
+    lines.push(
+      "",
+      "Selected layer details:",
+      ...result.layers.map((layer) => {
+        const mask = layer.maskDetected ? "yes" : "no";
+        const maskExport = layer.maskExported ? "yes" : "no";
+        const files = layer.files && layer.files.length > 0 ? layer.files.join(", ") : "(none)";
+        return `- ${layer.name}: mask detected=${mask}, mask exported=${maskExport}, files=${files}`;
+      })
+    );
+  }
   if (result.errors.length > 0) {
     lines.push("", "Export errors:", ...result.errors.map((entry) => `- ${entry.layer}: ${entry.error}`));
   }
@@ -299,14 +541,18 @@ function formatRequestSummary(result) {
     `Path: ${result.nativePath || "not exposed by host"}`,
     `Texture set: ${summary.textureSet}`,
     `Stack: ${summary.stack || "(default)"}`,
-    `Channel: ${summary.channel}`,
+    `Channel: ${summary.channelLabel || summary.channel}`,
+    `Channel role: ${summary.channelRole || "unknown"}`,
+    `Channel format: ${summary.channelFormat || "unknown"}, ${summary.bitDepth || "unknown"} bit, ${summary.isColor ? "color" : "data"}`,
+    `Normal map format: ${summary.channelRole === "normal" ? (summary.normalMapFormat || "unknown") : "(not normal)"}`,
     `UDIM: ${summary.usesUdim ? summary.udim : "(none)"}`,
     `Resolution: ${summary.resolution}`,
     `Top-level layers: ${summary.topLevelLayers}`,
     `PNG assets: ${summary.assetCount}`,
     `Mask assets: ${summary.maskAssetCount}`,
     `Baked assets: ${summary.bakedAssetCount}`,
-    `Unplaced request nodes: ${summary.unplacedNodeCount || 0}`,
+    `Empty layer PNGs removed: ${summary.emptyLayerAssetsRemoved || 0}`,
+    `Unplaced request nodes: ${formatUnplacedCounts(summary)}`,
     `PNG files exported: ${result.request.assets_exported === false ? "no (JSON-only bundle)" : "yes/unknown"}`,
     "",
     `Output PSD: ${summary.psdFile}`,
@@ -320,10 +566,10 @@ function formatRequestSummary(result) {
       `Size: ${result.build.width}x${result.build.height}`,
       `Resolution: ${result.build.resolution} ppi`,
       `PNG files exported: ${result.build.assetsExported ? "yes/unknown" : "no (JSON-only bundle)"}`,
-      `Top-level groups created: ${result.build.placedGroups ? result.build.placedGroups.length : 0} of ${result.build.topLevelGroupCount || 0}`,
+      `Groups created: ${result.build.placedGroups ? result.build.placedGroups.length : 0} of ${result.build.groupCount || 0}`,
       `PNG layers placed: ${result.build.placedLayerCount || 0} of ${result.build.topLevelAssetCount || 0}`,
       `Layer masks applied: ${result.build.appliedMaskCount || 0} of ${result.build.topLevelMaskAssetCount || 0}`,
-      `Unplaced request nodes recorded: ${result.build.unplacedNodes ? result.build.unplacedNodes.length : 0}`,
+      `Unplaced request nodes recorded: ${formatUnplacedCounts(result.build.unplacedNodeCounts || categorizeUnplacedNodes(result.build.unplacedNodes))}`,
       `Baseline hashes written: ${result.build.baselineHashCount || 0} of ${result.build.placedLayerCount || 0}`,
       `Blend gamma command: ${result.build.blendGammaAttempted ? (result.build.blendGammaSet ? "set" : "failed") : "skipped"}`,
       `Top-level Layer 1 removed: ${result.build.removedResidualDefaultLayer ? "yes" : "no"}`,
@@ -355,7 +601,9 @@ function formatRequestSummary(result) {
         ...result.build.placedGroups.map((group) => {
           const blend = group.blendMode ? ` [${group.blendMode}]` : "";
           const mask = group.maskPath ? `, mask ${group.maskApplied ? "applied" : "failed"}` : "";
-          return `- ${group.psName || group.name}${blend} (${group.childLayerCount} direct PNG layers${mask})`;
+          const path = group.groupName ? `${group.groupName}/` : "";
+          const childGroups = group.childGroupCount ? `, ${group.childGroupCount} child groups` : "";
+          return `- ${path}${group.psName || group.name}${blend} (${group.childLayerCount} PNG layers${childGroups}${mask})`;
         })
       );
     }
@@ -367,7 +615,7 @@ function formatRequestSummary(result) {
           const blend = layer.blendMode ? ` [${layer.blendMode}]` : "";
           const group = layer.groupName ? `${layer.groupName}/` : "";
           const lines = [
-            `- ${group}${layer.psName || layer.name}${blend}`,
+            `- ${group}${layer.psName || layer.name}${blend}${layer.clipped ? " [clipped]" : ""}`,
             `  ${layer.path || "(no source path)"}`
           ];
           if (layer.maskPath) {
@@ -378,11 +626,7 @@ function formatRequestSummary(result) {
       );
     }
     if (result.build.unplacedNodes && result.build.unplacedNodes.length > 0) {
-      lines.push(
-        "",
-        "Unplaced request nodes:",
-        ...result.build.unplacedNodes.map((node) => `- ${node.path} [${node.spKind}] ${node.reason}`)
-      );
+      appendUnplacedNodeSections(lines, result.build.unplacedNodes);
     }
     if (result.build.maskErrors && result.build.maskErrors.length > 0) {
       lines.push(
@@ -418,6 +662,62 @@ function formatRequestSummary(result) {
   }
 
   return lines.join("\n");
+}
+
+function appendUnplacedNodeSections(lines, nodes) {
+  const groups = {
+    needs_attention: [],
+    unsupported: [],
+    known_baked: []
+  };
+  for (const node of nodes || []) {
+    const category = node.category || "known_baked";
+    if (groups[category]) {
+      groups[category].push(node);
+    } else {
+      groups.needs_attention.push(node);
+    }
+  }
+
+  appendUnplacedGroup(lines, "Unplaced assets needing attention:", groups.needs_attention);
+  appendUnplacedGroup(lines, "Unsupported editable effects recorded as provenance:", groups.unsupported);
+  appendUnplacedGroup(lines, "Known baked request nodes:", groups.known_baked);
+}
+
+function appendUnplacedGroup(lines, title, nodes) {
+  if (!nodes || nodes.length === 0) {
+    return;
+  }
+  lines.push("", title, ...nodes.map((node) => `- ${node.path} [${node.spKind}] ${node.reason}`));
+}
+
+function formatUnplacedCounts(source) {
+  const counts = source && source.known_baked !== undefined
+    ? source
+    : {
+        known_baked: source.unplacedKnownBakedCount || 0,
+        unsupported: source.unplacedUnsupportedCount || 0,
+        needs_attention: source.unplacedNeedsAttentionCount || 0
+      };
+  const total = counts.known_baked + counts.unsupported + counts.needs_attention;
+  return `${total} (known baked ${counts.known_baked}, unsupported ${counts.unsupported}, needs attention ${counts.needs_attention})`;
+}
+
+function categorizeUnplacedNodes(nodes) {
+  const counts = {
+    known_baked: 0,
+    unsupported: 0,
+    needs_attention: 0
+  };
+  for (const node of nodes || []) {
+    const category = node.category || "known_baked";
+    if (counts[category] === undefined) {
+      counts.needs_attention += 1;
+    } else {
+      counts[category] += 1;
+    }
+  }
+  return counts;
 }
 
 function hasMissingPngErrors(errors) {

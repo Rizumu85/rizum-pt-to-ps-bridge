@@ -17,7 +17,7 @@
       4096
     ]
   },
-  "generated_at": "2026-04-26T02:28:57.260561+00:00",
+  "generated_at": "2026-04-28T00:02:33.428723+00:00",
   "is_color": true,
   "layers": [
     {
@@ -405,71 +405,6 @@
         {
           "asset": {
             "channel": null,
-            "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_9bd5f.png",
-            "uid": 638303,
-            "uid_hex": "9bd5f"
-          },
-          "bake_policy": "keep_editable",
-          "blend_decisions": {
-            "BaseColor": {
-              "bake_policy": "keep_editable",
-              "painter_mode": "Normal",
-              "ps_blend_mode": "NORMAL",
-              "sync_direction": "both",
-              "warnings": []
-            },
-            "Opacity": {
-              "bake_policy": "keep_editable",
-              "painter_mode": "Normal",
-              "ps_blend_mode": "NORMAL",
-              "sync_direction": "both",
-              "warnings": []
-            },
-            "User1": {
-              "bake_policy": "keep_editable",
-              "painter_mode": "Normal",
-              "ps_blend_mode": "NORMAL",
-              "sync_direction": "both",
-              "warnings": []
-            },
-            "User2": {
-              "bake_policy": "keep_editable",
-              "painter_mode": "Normal",
-              "ps_blend_mode": "NORMAL",
-              "sync_direction": "both",
-              "warnings": []
-            }
-          },
-          "blend_mode": {
-            "BaseColor": "Normal",
-            "Opacity": "Normal",
-            "User1": "Normal",
-            "User2": "Normal"
-          },
-          "content_effects": [],
-          "has_blending": true,
-          "has_mask": false,
-          "kind": "PaintLayer",
-          "mask_background": null,
-          "mask_effects": [],
-          "mask_enabled": false,
-          "name": "Layer 1",
-          "opacity": {
-            "BaseColor": 1.0,
-            "Opacity": 1.0,
-            "User1": 1.0,
-            "User2": 1.0
-          },
-          "ps_blend_mode": "NORMAL",
-          "sync_direction": "both",
-          "uid": 638303,
-          "uid_hex": "9bd5f",
-          "visible": true,
-          "warnings": []
-        },
-        {
-          "asset": {
-            "channel": null,
             "path": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-to-ps-bridge\\_rizum_m1_test\\0039_M_wings_stack_User2\\png\\uid_5d76e.png",
             "uid": 382830,
             "uid_hex": "5d76e"
@@ -511,7 +446,116 @@
             "User1": "Normal",
             "User2": "Normal"
           },
-          "content_effects": [],
+          "content_effects": [
+            {
+              "bake_policy": "keep_editable",
+              "blend_decisions": {
+                "BaseColor": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "Opacity": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "User1": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "User2": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                }
+              },
+              "blend_mode": {
+                "BaseColor": "Normal",
+                "Opacity": "Normal",
+                "User1": "Normal",
+                "User2": "Normal"
+              },
+              "has_blending": true,
+              "kind": "PaintEffect",
+              "name": "Paint",
+              "opacity": {
+                "BaseColor": 1.0,
+                "Opacity": 1.0,
+                "User1": 1.0,
+                "User2": 1.0
+              },
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "uid": 652387,
+              "uid_hex": "9f463",
+              "visible": true,
+              "warnings": []
+            },
+            {
+              "bake_policy": "keep_editable",
+              "blend_decisions": {
+                "BaseColor": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "Opacity": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "User1": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                },
+                "User2": {
+                  "bake_policy": "keep_editable",
+                  "painter_mode": "Normal",
+                  "ps_blend_mode": "NORMAL",
+                  "sync_direction": "both",
+                  "warnings": []
+                }
+              },
+              "blend_mode": {
+                "BaseColor": "Normal",
+                "Opacity": "Normal",
+                "User1": "Normal",
+                "User2": "Normal"
+              },
+              "has_blending": true,
+              "kind": "FillEffect",
+              "name": "Fill",
+              "opacity": {
+                "BaseColor": 1.0,
+                "Opacity": 1.0,
+                "User1": 1.0,
+                "User2": 1.0
+              },
+              "ps_blend_mode": "NORMAL",
+              "sync_direction": "both",
+              "uid": 652365,
+              "uid_hex": "9f44d",
+              "visible": true,
+              "warnings": []
+            }
+          ],
           "has_blending": true,
           "has_mask": true,
           "kind": "PaintLayer",

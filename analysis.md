@@ -21,6 +21,162 @@ Current active direction:
 - Checks are not run by default under the active Rizum Guidelines. Run syntax,
   static, build, or host checks only when requested or when debugging feedback
   makes them necessary.
+- User host feedback showed Painter can freeze or crash while painting when the
+  plugin is enabled, but not when it is disabled. The only active background
+  behavior found in the Painter side is a 1-second `QTimer` in the dock panel
+  that polls `substance_painter.project.is_open()` to refresh button state.
+  Even though that timer does not mutate the project, it violates the current
+  no-background-polling design and may interfere with Painter's main UI/event
+  loop during brush strokes. The Painter panel should therefore use only
+  user-triggered project checks and no periodic refresh.
+- User host feedback also confirmed that `alg.mapexport.save([effectUid,
+  channel], ...)` is not a valid export target in this runtime. Painter reports
+  `ExportError: Error while searching object: The given Uid doesn't reference
+  any layer`. Treat direct `content_effects` and `mask_effects` as metadata or
+  as data baked through their parent layer/mask export, not as independently
+  exportable PNG assets.
+- Phase 1 explicitly abandons editable Photoshop clipping reconstruction for
+  Painter content effects. The exporter should keep those effects as
+  provenance and rely on parent layer/mask PNGs. A future version can revisit
+  clipping only if Adobe exposes or we validate a real per-effect export path.
+- The Painter exporter already supports `texture_sets`, `stacks`, and
+  `channels` filters. The UI now exposes those filters as larger manual export
+  scopes: one selected texture-set/stack/channel, all channels for the selected
+  texture-set/stack, the selected channel across the project, or all targets.
+  This keeps batch export user-triggered while avoiding the old all-or-one
+  workflow.
+- The Painter panel no longer exposes `_pt_sync_inbox` scan/apply controls.
+  That code can remain as inert historical support, but Phase 1 UI should not
+  send users back to the deprecated automatic Photoshop-to-Painter path.
+- Scoped exports still write bundle folders into the shared
+  `<project>_photoshop_export` root. Because older bundle folders can remain
+  there, Photoshop folder-build can accidentally build stale requests. Painter
+  now writes `_last_export.json` after each export with the exact
+  `build_request.json` paths from that run, and Photoshop can build that list
+  directly through **Build Export List**.
+- Painter requests now carry lightweight channel semantics:
+  `channel_label`, `channel_role`, `channel_format`, `bit_depth`, and
+  `is_color`. Photoshop reports those fields and stores them in the sidecar.
+  This is metadata/reporting only for now; it does not yet change pixel
+  construction for opacity, normal, or user channels.
+- User channel labels come from `Channel.label()` when available, so Painter UI
+  can show user-facing names such as `SCol`, `TNrm`, or `SDF` while requests
+  still keep the stable enum channel (`User0`, `User1`, etc.).
+- User channel labels are also used for bundle and PSD filenames when present,
+  while standard channels keep their Painter enum names.
+- After PNG export, Painter removes layer assets whose exported PNG alpha is
+  fully transparent. If an entire channel request has no remaining layer PNGs,
+  that build bundle is skipped. This is based on actual exported pixels rather
+  than guessing from layer metadata.
+- Before PNG export, Painter now asks the legacy JS map-export API for the
+  stack's used channel identifiers and filters empty stack channels out of the
+  target picker/build list. The transparent-PNG prune remains a layer-level
+  fallback for host ambiguity and per-layer empty payloads.
+- User channel PNG export must use the resolved JS map-export channel
+  identifier, not only the Python enum name. For user channels, identifiers can
+  be labels such as `SCol`, `TNrm`, or `SDF`; exporting with `User1`/`User2`
+  can produce transparent payloads even when layers use that channel.
+- Painter Python exposes `active_channels` on fill/effect-style nodes. Use it
+  to avoid annotating/exporting nodes that are not active for the current
+  request channel. Paint stroke pixels are still not readable from Python, and
+  Python's texture export API exports full final textures rather than isolated
+  layer PNGs, so per-layer PNG writing still relies on the JS map-export path.
+- Because user-channel identifier behavior differs between Python enum names,
+  user labels, and JS resolved identifiers, user-channel layer PNG export now
+  tries multiple channel identifier candidates and keeps the first non-empty
+  result.
+- The old v1.1.8 plugin did not use Python channels for export. It read
+  `alg.mapexport.documentStructure().materials[].stacks[].channels` and reused
+  those exact strings for both full-channel snapshots and per-layer
+  `alg.mapexport.save([layer.uid, channel], ...)`. The current exporter should
+  prefer that legacy document-structure channel list when deciding target
+  channels and channel identifiers, with `channelIdentifiers(stackPath)` as a
+  fallback.
+- User testing showed `documentStructure()` / `channelIdentifiers(stackPath)`
+  can under-report channels on a stack that uses Fill layers with externally
+  referenced maps. The target filter therefore treats Python `active_channels`
+  as a second positive signal: if JS does not list a channel but a traversed
+  layer/effect explicitly marks that channel active, the exporter keeps the
+  channel instead of filtering it out.
+- User testing also showed single-channel export could succeed while the
+  selected-stack/all-channel button did not produce the same channel set. The
+  Painter UI now passes the refreshed target's explicit `channels` list into
+  selected-stack export so the batch path uses the same discovered targets as
+  the single-channel path.
+- User host testing then confirmed both single-channel and selected-stack
+  exports are working for the current Wings reference-map case.
+- Painter export actions should require both `project.is_open()` and
+  `project.is_in_edition_state()`. The Python docs define edition state as
+  "ready to work with"; exporting while the project is still loading or
+  otherwise non-editable risks host errors.
+- The local JS docs state `channelIdentifiers(stackPath)` returns only used
+  channels with resolved user channels. Valid user-channel names for
+  `alg.mapexport.save([uid, channel])` include lowercase compact names such as
+  `user1`, lowercase spaced names such as `user 1`, and custom labels such as
+  `SCol`. The exporter now keeps resolved engine strings first, but also tries
+  the documented compact and spaced spellings before treating an export as
+  unavailable.
+- `alg.mapexport.save` `MapInfo` has no UV-tile or UDIM parameter. It supports
+  export settings such as padding, dilation, resolution, bit depth, and alpha,
+  but not per-tile filtering. If a future UDIM workflow requires true per-tile
+  per-layer PNG assets, the known fallback is a Python visibility-isolation
+  export using `Node.set_visible()`, `ScopedModification`, and
+  `export_project_textures(... filter.uvTiles ...)`. That fallback must remain
+  opt-in until host performance is measured because it temporarily mutates
+  Painter visibility and may trigger recomputation.
+- If the Python visibility-isolation fallback is implemented, wrap the
+  visibility mutation/export block in `substance_painter.application
+  .disable_engine_computations()` as well as `ScopedModification`. The local
+  Python docs define this context manager as the way to pause texture/viewport
+  computation during bulk edits, which directly addresses the thumbnail-refresh
+  risk seen during the deprecated inbox/apply path.
+- Project-scoped preferences should use `substance_painter.project.Metadata`
+  when they belong to the `.spp` file, such as normal-map-format override,
+  last export preset, or last scoped target. Global preferences such as a
+  Photoshop executable path can stay global.
+- `TextureStateEvent.cache_key` is persistent across sessions and can become a
+  future baseline fingerprint for stack/channel/tile state. It is not needed
+  for the active manual Photoshop return workflow, but it is the right API if
+  the bridge later wants to report whether Painter changed since a PSD export.
+- No direct Python getter for an already-open project's normal-map format has
+  been found. Candidate inference paths are an unchecked JS
+  `alg.project.settings` namespace, or reading a normal source's
+  `SourceBitmap.get_color_space()` and mapping
+  `NormalXYZRight`/`NormalXYZLeft` to OpenGL/DirectX. Fall back to a user
+  setting stored in `project.Metadata`.
+- `SourceBitmap.get_color_space()` can also support future color/data role
+  classification for custom channels. Phase 1 keeps the current name-based
+  channel role heuristic because it covers standard PBR channels.
+- `ProjectWorkflow` distinguishes default projects, legacy texture-set-per-UV
+  tile projects, and modern UV-tile UDIM projects. Store it in future request
+  metadata if UDIM solo-export decisions need more precision than
+  `texture_set.has_uv_tiles()`.
+- `project.execute_when_not_busy()` and `async_utils.StopSource` are useful
+  future primitives for deferred/asynchronous export, but the current
+  user-triggered synchronous progress dialog remains simpler and adequate for
+  Phase 1.
+- Painter exports now run behind an application-modal progress dialog. This
+  blocks normal UI interaction during export while still allowing cancellation
+  between build requests and between PNG asset writes.
+- Photoshop **Build Export List** now leaves built PSDs open after saving,
+  because scoped export lists are small enough for inspection.
+- The old v1.1.8 "no Photoshop click" path did not trigger a Photoshop plugin.
+  Painter generated a `photoshopScript.jsx`, stored the user's Photoshop
+  executable path in Painter settings, then launched Photoshop with that script
+  path as an argument. For the current UXP build path, the closest small
+  automation candidate is a generated `.psjs` launcher that runs the existing
+  build-list logic. This needs host validation because local UXP docs document
+  `.psjs` through File > Scripts > Browse, drag/drop, and Actions, but do not
+  clearly guarantee the old `Photoshop.exe script.jsx` command-line behavior for
+  `.psjs`.
+- A future desktop bridge can act as a visual transfer queue between the two
+  host plugins. It should not mutate Photoshop or Painter directly. Instead,
+  each host plugin exports selected layers plus a layer-tree snapshot into a
+  local interchange folder; the desktop app lets the user drag exported items
+  onto target insertion positions and writes an explicit transfer manifest.
+  The target host plugin applies that manifest only when the user clicks Apply.
+  This keeps the workflow manual and inspectable while enabling partial-layer
+  transfers and user-chosen placement.
 
 **Status**:
 - §1 SP Python API — **done**
@@ -40,7 +196,7 @@ Photoshop or Substance Painter.
 | Area | Included local source | Coverage status |
 |---|---|---|
 | Substance Painter Python API | `pt-python-doc-md/substance_painter/` | Covered for traversal, export, resources, UI, events, layer-stack mutation, color management, and JS bridge |
-| Legacy Painter JS API | `javascript-doc/` | Covered for the two required fallbacks: `alg.mapexport.save` and `alg.mapexport.exportPath` |
+| Legacy Painter JS API | `javascript-doc/` | Covered for the required map-export fallbacks: `alg.mapexport.save`, `alg.mapexport.exportPath`, and `alg.mapexport.channelIdentifiers` |
 | Photoshop DOM / UXP / Spectrum | `uxp-photoshop-main/src/pages/ps_reference/`, `uxp-photoshop-main/src/pages/uxp-api/`, `uxp-photoshop-main/src/pages/guides/` | Covered for PSD creation, layers, files, modal execution, panel UI, and `batchPlay` escape hatches |
 | Host-recorded Action Manager descriptors | Not included as ready-to-use project files | Must be recorded or validated in Photoshop for layer-mask pixel transfer and the RGB blend-gamma setting |
 
@@ -119,6 +275,16 @@ The Windows installer should therefore copy `ps_plugin/` into
 matching enabled entry into `PluginsInfo\v1\PS.json`. This is a host-discovered
 offline registration path, not a local-docs-backed API contract, so user-side
 Photoshop validation is still required.
+
+The matching Windows uninstaller should be the inverse operation:
+
+- read `ps_plugin/manifest.json` to get the plugin ID;
+- remove only `%APPDATA%\Adobe\UXP\Plugins\External\<pluginId>`;
+- remove only registry entries whose `pluginId` matches from
+  `%APPDATA%\Adobe\UXP\PluginsInfo\v1\PS.json`;
+- write `PS.json` back as UTF-8 without BOM;
+- verify the resolved target path stays inside Adobe's UXP External plugin
+  folder before deleting anything.
 
 ### 0.4 Photoshop panel blank-content correction
 
@@ -335,6 +501,13 @@ clipboard access through `navigator.clipboard.setContent({ "text/plain": text })
 and require `"clipboard": "readAndWrite"` in Manifest v5. The next panel slice
 should switch diagnostics to a readonly selectable `<textarea>` and add a
 `Copy Details` button.
+
+The same clipboard permission can be used for a small **Paste Request Path**
+helper in the Photoshop panel. UXP runtimes may expose clipboard text as either
+a plain string from `navigator.clipboard.readText()` or a keyed object such as
+`{ "text/plain": "..." }`, so the panel normalizes both. If clipboard reading
+is unavailable in a given Photoshop runtime, the direct path input remains
+usable through manual Ctrl+V.
 
 Version `0.1.12` implements that copy-friendly diagnostics slice and was
 installed through the Windows External-plugin installer. The installed manifest
@@ -931,13 +1104,81 @@ The relevant local Photoshop/UXP docs support this simpler path:
   UXP pattern in this project for writing image data to PNG.
 
 Version `0.1.47` implements this manual selected-layer export in the Photoshop
-panel and treats the automatic push/inbox path as deprecated.
+panel and treats the automatic push/inbox path as deprecated. Version `0.1.48`
+keeps the same manual workflow and adds the empty-pixel export fix for
+Photoshop's `No pixels in the requested area` response.
+
+The applied-mask export mode should also populate `maskDetected` in the panel
+details. It still exports only one applied PNG per selected layer, but it should
+probe and dispose the user mask so the diagnostics are consistent across both
+manual export modes. Version `0.1.49` applies this reporting-only refinement.
+
+The next manual-export refinement should improve diagnostics without changing
+the workflow: record per-selected-layer export details in the panel result.
+Each layer should report the original Photoshop layer name, whether a user mask
+was detected, and which PNG files were written. This makes user host testing
+easier without reintroducing manifests, sidecars, or automatic Painter import.
+
+User validation of the separate layer/mask export found that Photoshop can
+return `No pixels in the requested area` for a selected layer that still has a
+detectable mask. Treat this the same as the existing empty-region case: export
+a transparent full-document PNG for the layer instead of failing the whole
+layer entry, then continue exporting the separate mask PNG if one exists.
+
+User feedback after `0.1.50` confirmed that visible `[rz:<uid>]` suffixes are
+no longer desirable now that Photoshop-to-Painter return is manual. Remove the
+suffix from Photoshop layer/group names and keep UID/provenance only in the
+sidecar. The old suffix-based matching notes remain historical context for the
+deprecated automatic push path.
+
+The attempted direct content-effect clipping slice exposed a Painter export
+constraint. Request nodes carry `content_effects`, but `alg.mapexport.save`
+accepts layer UIDs for channel/mask exports in this runtime and rejects effect
+UIDs. The exporter must therefore not annotate `FillEffect`, `PaintEffect`,
+or other effect nodes as independent PNG assets. Content/mask effects remain
+metadata or are baked into their parent layer/mask export until a supported
+per-effect export strategy is found and host-validated.
+
+Nested group reconstruction can be implemented without a new Painter export
+primitive because nested groups only need hierarchy and already-exported
+descendant layer PNGs. The Photoshop builder should recurse through group
+children, create a Photoshop group for every placeable Painter group, move
+nested groups into their parent group, and keep nested asset nodes out of the
+unplaced report once created.
+
+Nested content-effect chains and filter/generator-specific reconstruction
+remain later fidelity work. A fuller future slice may wrap layers into a
+dedicated Photoshop group with the parent mask on the group, but it first needs
+a valid source PNG for each effect.
+
+The Photoshop panel should not present all non-placed request nodes as equal
+problems. Split them into:
+
+- `known_baked`: expected metadata already represented by a parent raster or
+  mask PNG, especially mask-stack effects;
+- `unsupported`: known fidelity work that is recorded for provenance but not
+  editable yet, especially content effects after the effect-UID export failure;
+- `needs_attention`: a request node with an asset or mask asset that the build
+  tree did not place.
+
+This keeps normal baked mask/effect provenance from looking like a failed PSD
+build while still surfacing true missing asset coverage.
+
+For multi-channel or multi-texture-set exports, Photoshop can reduce repeated
+manual file picking by accepting a folder and recursively finding
+`build_request.json` files. Batch build should remain conservative: process
+requests sequentially, report per-request failures, keep going after failures,
+and close a document only after its PSD save succeeds. This avoids leaving
+dozens of 4K PSDs open while still preserving failed documents for inspection
+when saving did not complete.
 
 ## Summary of findings
 
 - Every capability in `design.md §5–6` that is SP-side has a Python API
-  mapping, **except per-layer PNG export** — that requires one JS fallback
-  (`alg.mapexport.save`) via `substance_painter.js.evaluate`.
+  mapping except map-export gaps: per-layer PNG export still needs
+  `alg.mapexport.save`, project export path uses `alg.mapexport.exportPath`,
+  and stack-level used-channel filtering uses `alg.mapexport.channelIdentifiers`
+  via `substance_painter.js.evaluate`.
 - `design.md §4` (color fidelity bake vs pre-compensation), `§5` (layer
   structure mapping), and `§7` (metadata schema) remain feasible for the
   SP-to-PS build path.
@@ -1075,8 +1316,8 @@ alg.mapexport.save(["M1", "base color"], "c:/file.jpg",
 ```
 
 **Decision**: keep using `alg.mapexport.save` via `substance_painter.js.evaluate`
-for per-layer + per-effect + per-mask export. This is the only JS fallback in
-the SP side of the plugin. Logged in §4.2.
+for per-layer and per-mask export. This is one of the small map-export JS
+fallbacks in the SP side of the plugin. Logged in §4.2.
 
 Still useful Python APIs:
 - `sp.export.list_project_textures(config)` — dry run / preview
@@ -1521,10 +1762,13 @@ one-off "scan" step (a few seconds for a typical PSD).
 
 ### 4.2 JS fallback scope (SP side)
 
-Exactly two JS calls are wrapped by `bridge.py`:
+Exactly three JS calls are wrapped by `bridge.py`:
 
 - `alg.mapexport.save(path, filepath, opts)` — per-layer PNG export
 - `alg.mapexport.exportPath()` — project texture export path
+- `alg.mapexport.channelIdentifiers(stackPath)` — stack-level used channel
+  identifiers, including resolved user-channel labels where the host reports
+  them
 
 Nothing else. All traversal, blend modes, effects, masks, layer-stack
 mutation, UI, events, and logging are Python-native.
@@ -1768,8 +2012,16 @@ directly to `action.batchPlay` format:
   per `design.md §3.4`), but worth noting: the v1.1.8 **behavior** was
   0–256, only the README said 0–10.
 - The "Launch Photoshop after export" feature stores a path to
-  `photoshop.exe`. v2 drops this — plugin runs inside PS already; the
-  UXP panel's "Build from Painter" button replaces that launch step.
+  `photoshop.exe` and calls `alg.subprocess.startDetached([photoshopPath,
+  photoshopScript.jsx])`. That is why old exports can enter Photoshop without a
+  Photoshop-side button click. This was an ExtendScript execution path, not a
+  Photoshop plugin invocation.
+- For the current UXP architecture, test the same user-facing idea as a
+  generated `.psjs` build launcher instead of porting the builder back to JSX.
+  Local UXP docs say standalone `.psjs` files can run through File > Scripts >
+  Browse, drag/drop onto Photoshop, and Actions. They do not clearly guarantee
+  that `Photoshop.exe path/to/build.psjs` works the same way as old `.jsx`, so
+  the exact launch path remains a host-validation item.
 
 ### 8.4 Documented bugs to avoid regressing
 
@@ -1882,7 +2134,8 @@ texture-set/stack/channel/UDIM request:
 
 Painter-side PNG writing is implemented behind the JS bridge wrapper and can be
 disabled with `export_pngs=False` for local/static validation. When enabled in
-Painter, the only host call used is still `alg.mapexport.save`.
+Painter, PNG payloads are written with `alg.mapexport.save`; target discovery
+may also use `alg.mapexport.channelIdentifiers` to hide unused stack channels.
 
 `build_request.json` keeps the Python-facing channel name (for example
 `BaseColor`) and also stores `channel_identifier` (for example `basecolor`) for

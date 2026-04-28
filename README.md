@@ -44,7 +44,7 @@ Photoshop-to-Painter return data, select layers in Photoshop and use either
 `Export Selected (Applied Mask)` or `Export Selected + Masks`, then manually
 import the written PNG files into Painter.
 
-## Distribution Installer Status
+## Windows Offline Install
 
 The Windows offline installer copies `ps_plugin/` into:
 
@@ -60,3 +60,23 @@ It also registers the plugin in:
 
 After running the installer, close Photoshop completely and reopen it before
 checking `Plugins -> Rizum PT Bridge`.
+
+Run:
+
+```text
+installers\install-ps-plugin-windows.bat
+```
+
+## Windows Offline Uninstall
+
+The Windows uninstaller removes this plugin's UXP External folder and removes
+the matching `pluginId` entry from `PS.json`.
+
+Run:
+
+```text
+installers\uninstall-ps-plugin-windows.bat
+```
+
+After running the uninstaller, close Photoshop completely and reopen it before
+checking that `Plugins -> Rizum PT Bridge` is gone.
