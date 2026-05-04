@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:community.adobe.com)",
+      "WebFetch(domain:adobesubstance3d.uservoice.com)"
+    ]
+  }
+}
