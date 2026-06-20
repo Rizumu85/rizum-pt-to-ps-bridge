@@ -652,7 +652,6 @@ def set_compact_footer_button_width(button, width, height=FOOTER_BUTTON_HEIGHT):
     button.setMaximumSize(width, height)
     button.setStyleSheet(
         f"min-width: {content_width}px; max-width: {content_width}px; "
-        f"min-height: {height}px; max-height: {height}px; "
         f"padding-left: {FOOTER_BUTTON_PADDING_X}px; "
         f"padding-right: {FOOTER_BUTTON_PADDING_X}px;"
     )
@@ -678,43 +677,10 @@ def update_compact_field_row(row_widget, label_width=None, control_width=None):
         label.setFixedWidth(int(label_width))
     if control is not None and control_width is not None:
         control.setFixedWidth(int(control_width))
-    height = compact_control_height([label, control], minimum=32, padding=14)
-    row_widget.setFixedHeight(height)
-    if label is not None:
-        label.setMinimumHeight(height)
-    if control is not None and hasattr(control, "setCompactHeight"):
-        control.setCompactHeight(height)
     try:
         row_widget.updateGeometry()
     except Exception:
         pass
-
-
-def compact_control_height(widgets=None, widget=None, minimum=26, padding=8):
-    """Return a compact control height with enough room for the active font."""
-    from PySide6 import QtGui, QtWidgets
-
-    candidates = []
-    if widgets is not None:
-        if isinstance(widgets, (list, tuple)):
-            candidates.extend(candidate for candidate in widgets if candidate is not None)
-        else:
-            candidates.append(widgets)
-    if widget is not None:
-        candidates.append(widget)
-    if not candidates:
-        app = QtWidgets.QApplication.instance()
-        if app is not None:
-            return max(minimum, QtGui.QFontMetrics(app.font()).height() + padding)
-        return minimum
-
-    height = minimum
-    for candidate in candidates:
-        try:
-            height = max(height, QtGui.QFontMetrics(candidate.font()).height() + padding)
-        except Exception:
-            pass
-    return int(height)
 
 
 def compact_text_width(text, widget=None, minimum=0, maximum=None, padding=0):
@@ -771,9 +737,7 @@ def make_inline_checkbox_row(label_text, checkbox, parent=None, minimum=88, maxi
     label = QtWidgets.QLabel(label_text)
     label.setObjectName("RizumHintLabel")
     text_width = compact_text_width(label_text, widget=label, minimum=0, maximum=maximum - 32)
-    label_height = compact_control_height(label, minimum=18, padding=2)
     label.setMinimumWidth(text_width)
-    label.setMinimumHeight(label_height)
     label.setSizePolicy(
         QtWidgets.QSizePolicy.Policy.Preferred,
         QtWidgets.QSizePolicy.Policy.Preferred,
@@ -783,7 +747,6 @@ def make_inline_checkbox_row(label_text, checkbox, parent=None, minimum=88, maxi
 
     row_width = min(maximum, max(minimum, text_width + checkbox.width() + 36))
     widget.setMinimumWidth(row_width)
-    widget.setMinimumHeight(max(28, label_height + 8, checkbox.height() + 8))
     widget._rizum_label = label
     widget._rizum_checkbox = checkbox
     widget._rizum_minimum = minimum
@@ -820,12 +783,9 @@ def update_inline_checkbox_row(widget, label_text=None, minimum=None, maximum=No
         minimum=0,
         maximum=max(0, maximum - 32),
     )
-    label_height = compact_control_height(label, minimum=18, padding=2)
     label.setMinimumWidth(text_width)
-    label.setMinimumHeight(label_height)
     row_width = min(maximum, max(minimum, text_width + checkbox.width() + 36))
     widget.setMinimumWidth(row_width)
-    widget.setMinimumHeight(max(28, label_height + 8, checkbox.height() + 8))
     try:
         widget.updateGeometry()
     except Exception:
@@ -2273,7 +2233,6 @@ def make_spin_input(value=1.0, minimum=0.75, maximum=2.0, step=0.05, decimals=2)
             layout.addWidget(CompactSpinArrows(self._step_by))
 
             self.setValue(value)
-            self.setCompactHeight(32)
             self.setMinimumWidth(self.sizeHint().width())
 
         def value(self):
@@ -2300,13 +2259,6 @@ def make_spin_input(value=1.0, minimum=0.75, maximum=2.0, step=0.05, decimals=2)
         def setDecimals(self, decimals):
             self._decimals = int(decimals)
             self._label.setText(f"{self._value:.{self._decimals}f}")
-
-        def setCompactHeight(self, height):
-            height = int(height)
-            vertical_margin = 4 if height <= 34 else 5
-            self.setFixedHeight(height)
-            self.layout().setContentsMargins(8, vertical_margin, 8, vertical_margin)
-            self._label.setMinimumHeight(max(0, height - vertical_margin * 2))
 
         def wheelEvent(self, event):
             direction = 1 if event.angleDelta().y() > 0 else -1
