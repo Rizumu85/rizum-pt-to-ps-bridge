@@ -220,6 +220,10 @@ QWidget#RizumInlineCheckbox:hover {
     background: rgba(255, 255, 255, 13);
 }
 
+QWidget#RizumInlineCheckbox:hover QLabel#RizumHintLabel {
+    color: #e0e0e0;
+}
+
 QFrame#RizumMockInput {
     background: transparent;
     border: 1px solid transparent;

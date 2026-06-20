@@ -731,12 +731,12 @@ def make_inline_checkbox_row(label_text, checkbox, parent=None, minimum=88, maxi
     widget.setObjectName("RizumInlineCheckbox")
     widget.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
     layout = QtWidgets.QHBoxLayout(widget)
-    layout.setContentsMargins(6, 3, 6, 3)
-    layout.setSpacing(6)
+    layout.setContentsMargins(8, 4, 8, 4)
+    layout.setSpacing(10)
 
     label = QtWidgets.QLabel(label_text)
     label.setObjectName("RizumHintLabel")
-    text_width = compact_text_width(label_text, widget=label, minimum=0, maximum=maximum - 26)
+    text_width = compact_text_width(label_text, widget=label, minimum=0, maximum=maximum - 32)
     label.setMinimumWidth(text_width)
     label.setSizePolicy(
         QtWidgets.QSizePolicy.Policy.Preferred,
@@ -745,7 +745,7 @@ def make_inline_checkbox_row(label_text, checkbox, parent=None, minimum=88, maxi
     layout.addWidget(label)
     layout.addWidget(checkbox)
 
-    row_width = min(maximum, max(minimum, text_width + checkbox.width() + 24))
+    row_width = min(maximum, max(minimum, text_width + checkbox.width() + 36))
     widget.setMinimumWidth(row_width)
     widget._rizum_label = label
     widget._rizum_checkbox = checkbox
@@ -781,10 +781,10 @@ def update_inline_checkbox_row(widget, label_text=None, minimum=None, maximum=No
         label.text(),
         widget=label,
         minimum=0,
-        maximum=max(0, maximum - 26),
+        maximum=max(0, maximum - 32),
     )
     label.setMinimumWidth(text_width)
-    row_width = min(maximum, max(minimum, text_width + checkbox.width() + 24))
+    row_width = min(maximum, max(minimum, text_width + checkbox.width() + 36))
     widget.setMinimumWidth(row_width)
     try:
         widget.updateGeometry()
@@ -2673,7 +2673,7 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
 
 def make_combo_input(options=None):
     """Create a functional compact combo input backed by a lightweight menu."""
-    from PySide6 import QtCore, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets
 
     class _ComboInput(QtWidgets.QFrame):
         currentIndexChanged = QtCore.Signal(int)
@@ -2756,11 +2756,19 @@ def make_combo_input(options=None):
         def setFitToContents(self, enabled):
             self._fit_to_contents = bool(enabled)
             if self._fit_to_contents:
+                self.setSizePolicy(
+                    QtWidgets.QSizePolicy.Policy.Preferred,
+                    QtWidgets.QSizePolicy.Policy.Fixed,
+                )
                 self.fitToContents()
             else:
                 self._label.setMinimumWidth(0)
                 self.setMinimumWidth(0)
                 self.setMaximumWidth(16777215)
+                self.setSizePolicy(
+                    QtWidgets.QSizePolicy.Policy.Expanding,
+                    QtWidgets.QSizePolicy.Policy.Fixed,
+                )
 
         def fitToContents(self):
             if not self._fit_to_contents or not self._items:
@@ -2895,15 +2903,33 @@ def make_combo_input(options=None):
                 return
             menu = QtWidgets.QMenu(self)
             menu.setObjectName("RizumPopupMenu")
+            menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            try:
+                menu.setWindowFlag(QtCore.Qt.WindowType.NoDropShadowWindowHint, True)
+            except Exception:
+                pass
             for index, item in enumerate(self._items):
                 action = menu.addAction(item[0])
                 action.triggered.connect(lambda checked=False, i=index: self.setCurrentIndex(i))
             self._menu = menu
             menu.aboutToHide.connect(self._close_menu)
             self._arrow.setOpen(True)
-            menu_width = menu.sizeHint().width()
+            menu.ensurePolished()
+            menu_width = max(menu.sizeHint().width(), self.width())
+            menu.setFixedWidth(menu_width)
             popup_x = self.width() - menu_width if self._popup_alignment == "right" else 0
             menu.popup(self.mapToGlobal(QtCore.QPoint(popup_x, self.height() + 4)))
+            QtCore.QTimer.singleShot(0, lambda: self._applyMenuMask(menu))
+
+        def _applyMenuMask(self, menu):
+            if not _is_qt_object_alive(menu):
+                return
+            rect = menu.rect()
+            if rect.isEmpty():
+                return
+            path = QtGui.QPainterPath()
+            path.addRoundedRect(QtCore.QRectF(rect), 6, 6)
+            menu.setMask(QtGui.QRegion(path.toFillPolygon().toPolygon()))
 
         def _close_menu(self):
             self._arrow.setOpen(False)
@@ -3156,8 +3182,17 @@ def make_field_row(label_text, control, label_width=50, gap=18, width=None):
     row.addWidget(label)
     if width is not None:
         control.setFixedWidth(width)
-    row.addWidget(control)
-    row.addStretch(1)
+        row.addWidget(control)
+        row.addStretch(1)
+    elif control.sizePolicy().horizontalPolicy() in (
+        QtWidgets.QSizePolicy.Policy.Expanding,
+        QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        QtWidgets.QSizePolicy.Policy.Ignored,
+    ):
+        row.addWidget(control, 1)
+    else:
+        row.addWidget(control)
+        row.addStretch(1)
     widget._rizum_label = label
     widget._rizum_control = control
     return widget

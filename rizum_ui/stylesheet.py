@@ -214,6 +214,10 @@ QWidget#RizumInlineCheckbox:hover {{
     background: {theme.surface_hover};
 }}
 
+QWidget#RizumInlineCheckbox:hover QLabel#RizumHintLabel {{
+    color: {theme.text};
+}}
+
 QFrame#RizumMockInput {{
     background: transparent;
     border: 1px solid transparent;
