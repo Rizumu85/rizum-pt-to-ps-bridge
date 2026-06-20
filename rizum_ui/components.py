@@ -3156,10 +3156,8 @@ def make_field_row(label_text, control, label_width=50, gap=18, width=None):
     row.addWidget(label)
     if width is not None:
         control.setFixedWidth(width)
-        row.addWidget(control)
-        row.addStretch(1)
-    else:
-        row.addWidget(control, 1)
+    row.addWidget(control)
+    row.addStretch(1)
     widget._rizum_label = label
     widget._rizum_control = control
     return widget
