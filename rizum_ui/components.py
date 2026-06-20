@@ -26,6 +26,23 @@ def _svg_with_breathing_room(source):
     return source
 
 
+def _is_qt_object_alive(obj):
+    if obj is None:
+        return False
+    try:
+        import shiboken6
+
+        return shiboken6.isValid(obj)
+    except Exception:
+        try:
+            obj.objectName()
+        except RuntimeError:
+            return False
+        except Exception:
+            return False
+        return True
+
+
 class Card:
     """Factory for a compact framed surface."""
 
@@ -2748,22 +2765,39 @@ def make_combo_input(options=None):
         def fitToContents(self):
             if not self._fit_to_contents or not self._items:
                 return
-            metrics = self._label.fontMetrics()
+            if not _is_qt_object_alive(self):
+                return
+            label = getattr(self, "_label", None)
+            arrow = getattr(self, "_arrow", None)
+            layout = self.layout()
+            if (
+                not _is_qt_object_alive(label)
+                or not _is_qt_object_alive(arrow)
+                or layout is None
+            ):
+                return
+            try:
+                metrics = label.fontMetrics()
+            except RuntimeError:
+                return
             display_texts = [str(item[0]) for item in self._items]
             if self._display_prefix or self._display_value:
                 display_texts.append(f"{self._display_prefix} {self._display_value}".strip())
             text_width = max(metrics.horizontalAdvance(text) for text in display_texts)
-            margins = self.layout().contentsMargins()
+            margins = layout.contentsMargins()
             width = (
                 text_width
                 + margins.left()
                 + margins.right()
-                + self.layout().spacing()
-                + self._arrow.width()
+                + layout.spacing()
+                + arrow.width()
                 + 6
             )
-            self._label.setMinimumWidth(text_width)
-            self.setFixedWidth(width)
+            try:
+                label.setMinimumWidth(text_width)
+                self.setFixedWidth(width)
+            except RuntimeError:
+                return
 
         def refreshMetrics(self):
             self.fitToContents()
@@ -2794,7 +2828,7 @@ def make_combo_input(options=None):
         def showEvent(self, event):
             super().showEvent(event)
             if self._fit_to_contents:
-                QtCore.QTimer.singleShot(0, self.fitToContents)
+                self._queueFitToContents()
 
         def changeEvent(self, event):
             super().changeEvent(event)
@@ -2808,7 +2842,14 @@ def make_combo_input(options=None):
                     QtCore.QEvent.Type.Polish,
                 )
             ):
-                QtCore.QTimer.singleShot(0, self.fitToContents)
+                self._queueFitToContents()
+
+        def _queueFitToContents(self):
+            QtCore.QTimer.singleShot(0, self._fitToContentsIfAlive)
+
+        def _fitToContentsIfAlive(self):
+            if _is_qt_object_alive(self):
+                self.fitToContents()
 
         def findData(self, data):
             for index, item in enumerate(self._items):
