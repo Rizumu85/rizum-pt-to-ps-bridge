@@ -3,6 +3,7 @@
 These instructions apply to this repository until the user says otherwise.
 
 Spend time on thinking; you do not need to use the commentary channel to report progress to me.
+DO NOT send optional commentary.
 
 If the agent runtime can load local skills, load these skills first:
 
