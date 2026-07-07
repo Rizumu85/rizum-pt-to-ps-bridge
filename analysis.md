@@ -35,10 +35,30 @@ Current active direction:
   any layer`. Treat direct `content_effects` and `mask_effects` as metadata or
   as data baked through their parent layer/mask export, not as independently
   exportable PNG assets.
+- SP 12.1.0+ also breaks the old plugin's true mask export path:
+  `alg.mapexport.save([layer.uid, "mask"], ...)` now resolves through the
+  stack `blendingmask` channel. Stacks without that channel fail with
+  "The channel Blending mask is not available"; adding a `blendingmask`
+  channel only produces transparent empty PNGs, not the original layer/folder
+  mask. The active exporter must therefore not rely on JS `"mask"` export for
+  lossless mask data.
 - Phase 1 explicitly abandons editable Photoshop clipping reconstruction for
   Painter content effects. The exporter should keep those effects as
   provenance and rely on parent layer/mask PNGs. A future version can revisit
   clipping only if Adobe exposes or we validate a real per-effect export path.
+- Until a true Python layerstack mask exporter is validated, Painter mask PNGs
+  are an approximate compatibility fallback derived from the exported layer
+  PNG alpha. This keeps Photoshop builds usable and avoids the SP 12.1.0
+  `blendingmask` failure, but it is not a lossless original Painter mask and
+  cannot represent group masks without a direct layer PNG alpha source.
+- The first true-mask investigation step is a read-only Painter **Mask Probe**:
+  it walks masked layers/folders and their `mask_effects()`, records mask
+  backgrounds, effect kinds, source types, and rebuild hints into
+  `_mask_probe.json`. This probe intentionally does not mutate visibility,
+  create temporary layers, or export pixels; it exists to decide whether a
+  future true-mask exporter should rebuild simple source structures, use a
+  controlled render/solo-export path, or classify a mask as not recoverable
+  through Python alone.
 - The Painter exporter already supports `texture_sets`, `stacks`, and
   `channels` filters. The UI now exposes those filters as larger manual export
   scopes: one selected texture-set/stack/channel, all channels for the selected

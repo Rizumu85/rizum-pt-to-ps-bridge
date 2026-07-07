@@ -14,6 +14,7 @@ from .udim import uv_to_udim
 
 SCHEMA_VERSION = 1
 BUILD_REQUEST_FILENAME = "build_request.json"
+MASK_PROBE_FILENAME = "_mask_probe.json"
 EFFECT_NODE_KINDS = {
     "AnchorPointEffect",
     "ColorSelectionEffect",
@@ -49,17 +50,17 @@ def list_export_targets(settings=None):
     layerstack = modules["layerstack"]
     targets = []
 
-    for texture_set in textureset.all_texture_sets():
+    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
         texture_set_name = _call_or_attr(texture_set, "name")
         if not _matches_filter(texture_set_name, settings.get("texture_sets")):
             continue
 
-        for stack in texture_set.all_stacks():
+        for stack in _call_or_attr(texture_set, "all_stacks", []):
             stack_name = _call_or_attr(stack, "name") or ""
             if not _matches_filter(stack_name, settings.get("stacks")):
                 continue
 
-            stack_channels = stack.all_channels()
+            stack_channels = _call_or_attr(stack, "all_channels", {})
             used_identifiers = _used_channel_identifier_set(
                 texture_set_name,
                 stack_name,
@@ -117,7 +118,7 @@ def default_output_dir(settings=None):
 
     modules = _load_painter_modules()
     project = modules["project"]
-    project_name = _safe_filename(project.name() or "project")
+    project_name = _safe_filename(_call_or_attr(project, "name") or "project")
 
     export_root = None
     try:
@@ -128,7 +129,7 @@ def default_output_dir(settings=None):
         export_root = None
 
     if export_root is None:
-        project_path = project.file_path()
+        project_path = _call_or_attr(project, "file_path")
         export_root = Path(project_path).parent if project_path else Path.cwd()
 
     return export_root / f"{project_name}_photoshop_export"
@@ -148,6 +149,70 @@ def write_request_previews(output_dir, settings=None):
         path.write_text(json.dumps(request, indent=2, sort_keys=True), encoding="utf-8")
         written.append(path)
     return written
+
+
+def write_mask_probe(output_dir, settings=None):
+    """Write a read-only mask-structure probe for the selected Painter scope."""
+    settings = settings or {}
+    report = inspect_mask_capabilities(settings)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    path = output_path / MASK_PROBE_FILENAME
+    path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    return path, report
+
+
+def inspect_mask_capabilities(settings=None):
+    """Inspect mask stack structure without exporting pixels or mutating Painter."""
+    settings = settings or {}
+    modules = _load_painter_modules()
+    textureset = modules["textureset"]
+    layerstack = modules["layerstack"]
+    project = modules["project"]
+
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "report_type": "mask_probe",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "project": _project_info(project),
+        "scope": {
+            "texture_sets": settings.get("texture_sets"),
+            "stacks": settings.get("stacks"),
+            "channels": settings.get("channels"),
+        },
+        "api_findings": {
+            "direct_python_mask_pixel_export_found": False,
+            "notes": [
+                "Layerstack exposes mask structure, mask background, and mask effects.",
+                "The local Python docs do not expose a direct read/export API for mask pixels.",
+                "Paint strokes are explicitly not accessible from the Python API.",
+            ],
+        },
+        "stacks": [],
+    }
+
+    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
+        texture_set_name = _call_or_attr(texture_set, "name")
+        if not _matches_filter(texture_set_name, settings.get("texture_sets")):
+            continue
+        for stack in _call_or_attr(texture_set, "all_stacks", []):
+            stack_name = _call_or_attr(stack, "name") or ""
+            if not _matches_filter(stack_name, settings.get("stacks")):
+                continue
+            masked_nodes = []
+            for node in layerstack.get_root_layer_nodes(stack):
+                _collect_mask_probe_nodes(node, [], masked_nodes)
+            if masked_nodes:
+                report["stacks"].append(
+                    {
+                        "texture_set": texture_set_name,
+                        "stack": stack_name,
+                        "masked_nodes": masked_nodes,
+                    }
+                )
+
+    report["summary"] = _mask_probe_summary(report["stacks"])
+    return report
 
 
 def write_build_bundles(
@@ -339,19 +404,19 @@ def _build_export_requests(modules, settings):
     generated_at = datetime.now(timezone.utc).isoformat()
     requests = []
 
-    for texture_set in textureset.all_texture_sets():
+    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
         texture_set_name = _call_or_attr(texture_set, "name")
         if not _matches_filter(texture_set_name, settings.get("texture_sets")):
             continue
 
         uv_tiles = _uv_tiles(texture_set)
 
-        for stack in texture_set.all_stacks():
+        for stack in _call_or_attr(texture_set, "all_stacks", []):
             stack_name = _call_or_attr(stack, "name") or ""
             if not _matches_filter(stack_name, settings.get("stacks")):
                 continue
 
-            channels = stack.all_channels()
+            channels = _call_or_attr(stack, "all_channels", {})
             used_identifiers = _used_channel_identifier_set(
                 texture_set_name,
                 stack_name,
@@ -373,7 +438,7 @@ def _build_export_requests(modules, settings):
                 if not _matches_filter(channel_name, settings.get("channels")):
                     continue
 
-                is_color = channel.is_color()
+                is_color = _call_or_attr(channel, "is_color", False)
                 for uv_tile in uv_tiles:
                     requests.append(
                         {
@@ -396,8 +461,8 @@ def _build_export_requests(modules, settings):
                                 used_identifiers,
                             ),
                             "channel_role": _channel_role(channel_name, is_color),
-                            "channel_format": _enum_name(channel.format()),
-                            "bit_depth": channel.bit_depth(),
+                            "channel_format": _enum_name(_call_or_attr(channel, "format")),
+                            "bit_depth": _call_or_attr(channel, "bit_depth"),
                             "is_color": is_color,
                             "udim": uv_tile["udim"],
                             "uv_tile": uv_tile,
@@ -411,19 +476,19 @@ def _build_export_requests(modules, settings):
 
 
 def _project_info(project):
-    uuid = project.get_uuid()
+    uuid = _call_or_attr(project, "get_uuid")
     return {
-        "name": project.name(),
-        "path": project.file_path(),
+        "name": _call_or_attr(project, "name"),
+        "path": _call_or_attr(project, "file_path"),
         "uuid": str(uuid) if uuid is not None else None,
     }
 
 
 def _uv_tiles(texture_set):
-    if texture_set.has_uv_tiles():
-        return [_uv_tile_record(tile) for tile in texture_set.all_uv_tiles()]
+    if _call_or_attr(texture_set, "has_uv_tiles", False):
+        return [_uv_tile_record(tile) for tile in _call_or_attr(texture_set, "all_uv_tiles", [])]
 
-    resolution = texture_set.get_resolution()
+    resolution = _call_or_attr(texture_set, "get_resolution")
     return [
         {
             "u": 0,
@@ -443,18 +508,19 @@ def _uv_tile_record(tile):
         "name": tile.name,
         "udim": uv_to_udim(tile.u, tile.v),
         "is_udim": True,
-        "resolution": _resolution_record(tile.get_resolution()),
+        "resolution": _resolution_record(_call_or_attr(tile, "get_resolution")),
     }
 
 
 def _node_record(node, channel_types, settings):
+    uid = _call_or_attr(node, "uid")
     record = {
-        "uid": node.uid(),
-        "uid_hex": format(node.uid(), "x"),
-        "name": node.get_name(),
-        "kind": _enum_name(node.get_type()),
-        "visible": node.is_visible(),
-        "has_blending": node.has_blending(),
+        "uid": uid,
+        "uid_hex": format(uid, "x"),
+        "name": _call_or_attr(node, "get_name"),
+        "kind": _enum_name(_call_or_attr(node, "get_type")),
+        "visible": _call_or_attr(node, "is_visible", True),
+        "has_blending": _call_or_attr(node, "has_blending", False),
         "blend_mode": None,
         "opacity": None,
         "bake_policy": "no_blending",
@@ -481,36 +547,242 @@ def _node_record(node, channel_types, settings):
         record.update(_mask_record(node))
     if hasattr(node, "sub_layers"):
         record["children"] = [
-            _node_record(child, channel_types, settings) for child in node.sub_layers()
+            _node_record(child, channel_types, settings)
+            for child in _call_or_attr(node, "sub_layers", [])
         ]
     if hasattr(node, "content_effects"):
         record["content_effects"] = [
             _node_record(effect, channel_types, settings)
-            for effect in node.content_effects()
+            for effect in _call_or_attr(node, "content_effects", [])
         ]
     if hasattr(node, "mask_effects"):
         record["mask_effects"] = [
             _node_record(effect, channel_types, settings)
-            for effect in node.mask_effects()
+            for effect in _call_or_attr(node, "mask_effects", [])
         ]
 
     return record
 
 
 def _mask_record(node):
-    has_mask = node.has_mask()
+    has_mask = _call_or_attr(node, "has_mask", False)
     record = {"has_mask": has_mask}
     if has_mask:
-        record["mask_enabled"] = node.is_mask_enabled()
-        record["mask_background"] = _enum_name(node.get_mask_background())
+        record["mask_enabled"] = _call_or_attr(node, "is_mask_enabled", True)
+        record["mask_background"] = _enum_name(_call_or_attr(node, "get_mask_background"))
     else:
         record["mask_enabled"] = False
         record["mask_background"] = None
     return record
 
 
+def _collect_mask_probe_nodes(node, parent_path, records):
+    name = _call_or_attr(node, "get_name")
+    path = [*parent_path, name]
+    if hasattr(node, "has_mask") and _call_or_attr(node, "has_mask", False):
+        mask_effects = [
+            _mask_effect_probe(effect, [*path, "#mask"])
+            for effect in _call_or_attr(node, "mask_effects", [])
+        ] if hasattr(node, "mask_effects") else []
+        uid = _call_or_attr(node, "uid")
+        records.append(
+            {
+                "uid": uid,
+                "uid_hex": format(uid, "x"),
+                "name": name,
+                "kind": _enum_name(_call_or_attr(node, "get_type")),
+                "path": "/".join(path),
+                "visible": _call_or_attr(node, "is_visible", True),
+                "mask_enabled": _call_or_attr(node, "is_mask_enabled", True),
+                "mask_background": _enum_name(_call_or_attr(node, "get_mask_background")),
+                "mask_effect_count": len(mask_effects),
+                "mask_effects": mask_effects,
+                "rebuild_hint": _mask_rebuild_hint(mask_effects),
+            }
+        )
+
+    if hasattr(node, "sub_layers"):
+        for child in _call_or_attr(node, "sub_layers", []):
+            _collect_mask_probe_nodes(child, path, records)
+
+
+def _mask_effect_probe(effect, parent_path):
+    source_summary = _mask_effect_source_summary(effect)
+    uid = _call_or_attr(effect, "uid")
+    record = {
+        "uid": uid,
+        "uid_hex": format(uid, "x"),
+        "name": _call_or_attr(effect, "get_name"),
+        "kind": _enum_name(_call_or_attr(effect, "get_type")),
+        "path": "/".join([*parent_path, _call_or_attr(effect, "get_name")]),
+        "visible": _call_or_attr(effect, "is_visible", True),
+        "is_in_mask_stack": _call_or_attr(effect, "is_in_mask_stack", False),
+        "blend_mode": _safe_effect_blend_mode(effect),
+        "opacity": _safe_effect_opacity(effect),
+        "active_channels": _active_channels(effect),
+        "source_mode": _enum_name(getattr(effect, "source_mode", None)),
+        "source": source_summary,
+    }
+    if record["kind"] in {"PaintEffect", "PaintLayer"}:
+        record["pixel_access"] = "paint_strokes_not_accessible_from_python"
+    return record
+
+
+def _mask_effect_source_summary(effect):
+    source = None
+    error = None
+    if hasattr(effect, "get_source"):
+        try:
+            source = effect.get_source(None)
+        except TypeError:
+            try:
+                source = effect.get_source()
+            except Exception as exc:  # noqa: BLE001 - diagnostic only.
+                error = f"{type(exc).__name__}: {exc}"
+        except Exception as exc:  # noqa: BLE001 - diagnostic only.
+            error = f"{type(exc).__name__}: {exc}"
+    elif hasattr(effect, "get_material_source"):
+        try:
+            source = effect.get_material_source()
+        except Exception as exc:  # noqa: BLE001 - diagnostic only.
+            error = f"{type(exc).__name__}: {exc}"
+
+    if source is None:
+        return {"type": None, "error": error}
+
+    summary = {"type": type(source).__name__}
+    if hasattr(source, "uid"):
+        try:
+            summary["uid"] = _call_or_attr(source, "uid")
+        except Exception:
+            pass
+    if hasattr(source, "resource_id"):
+        try:
+            summary["resource_id"] = _resource_id_record(source.resource_id)
+        except Exception as exc:  # noqa: BLE001 - diagnostic only.
+            summary["resource_id_error"] = f"{type(exc).__name__}: {exc}"
+    if hasattr(source, "get_color"):
+        try:
+            summary["color"] = str(_call_or_attr(source, "get_color"))
+        except Exception as exc:  # noqa: BLE001 - diagnostic only.
+            summary["color_error"] = f"{type(exc).__name__}: {exc}"
+    for attr in ("anchor", "referenced_channel", "alpha_matte", "mask_output", "active_output"):
+        if hasattr(source, attr):
+            try:
+                summary[attr] = _probe_value(getattr(source, attr))
+            except Exception as exc:  # noqa: BLE001 - diagnostic only.
+                summary[f"{attr}_error"] = f"{type(exc).__name__}: {exc}"
+    return summary
+
+
+def _resource_id_record(resource_id):
+    return {
+        "context": _probe_value(_probe_attr(resource_id, "context")),
+        "name": _probe_value(_probe_attr(resource_id, "name")),
+        "url": _probe_value(_probe_attr(resource_id, "url")),
+    }
+
+
+def _probe_attr(obj, name):
+    if obj is None or not hasattr(obj, name):
+        return None
+    value = getattr(obj, name)
+    if callable(value):
+        try:
+            return value()
+        except TypeError:
+            return value
+    return value
+
+
+def _probe_value(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "uid") and hasattr(value, "get_name"):
+        try:
+            uid = _call_or_attr(value, "uid")
+            return {
+                "uid": uid,
+                "uid_hex": format(uid, "x"),
+                "name": _call_or_attr(value, "get_name"),
+                "kind": _enum_name(_call_or_attr(value, "get_type")) if hasattr(value, "get_type") else type(value).__name__,
+            }
+        except Exception:
+            return str(value)
+    if isinstance(value, (list, tuple, set)):
+        return [_probe_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _probe_value(item) for key, item in value.items()}
+    return _enum_name(value)
+
+
+def _safe_effect_blend_mode(effect):
+    if not _call_or_attr(effect, "has_blending", False):
+        return None
+    try:
+        return _enum_name(effect.get_blending_mode(None))
+    except Exception as exc:  # noqa: BLE001 - diagnostic only.
+        return f"{type(exc).__name__}: {exc}"
+
+
+def _safe_effect_opacity(effect):
+    if not _call_or_attr(effect, "has_blending", False):
+        return None
+    try:
+        return effect.get_opacity(None)
+    except Exception as exc:  # noqa: BLE001 - diagnostic only.
+        return f"{type(exc).__name__}: {exc}"
+
+
+def _mask_rebuild_hint(mask_effects):
+    if not mask_effects:
+        return "background_only"
+    kinds = {effect.get("kind") for effect in mask_effects}
+    source_types = {
+        (effect.get("source") or {}).get("type")
+        for effect in mask_effects
+        if effect.get("source") is not None
+    }
+    if "PaintEffect" in kinds or "PaintLayer" in kinds:
+        return "requires_rendered_export_paint_strokes_not_accessible"
+    if "AnchorPointEffect" in kinds or "SourceReference" in source_types:
+        return "requires_rendered_export_anchor_or_reference"
+    if kinds.issubset({"FillEffect"}) and source_types.issubset(
+        {"SourceUniformColor", "SourceBitmap", "SourceVectorial", "SourceSubstance", None}
+    ):
+        return "maybe_reconstructable_from_structure_but_not_pixel_exact_yet"
+    return "requires_rendered_export_or_effect_specific_rebuild"
+
+
+def _mask_probe_summary(stacks):
+    masked_nodes = 0
+    mask_effects = 0
+    hints = {}
+    effect_kinds = {}
+    source_types = {}
+    for stack in stacks:
+        for node in stack.get("masked_nodes", []):
+            masked_nodes += 1
+            hint = node.get("rebuild_hint") or "unknown"
+            hints[hint] = hints.get(hint, 0) + 1
+            for effect in node.get("mask_effects", []):
+                mask_effects += 1
+                kind = effect.get("kind") or "unknown"
+                effect_kinds[kind] = effect_kinds.get(kind, 0) + 1
+                source_type = (effect.get("source") or {}).get("type") or "none"
+                source_types[source_type] = source_types.get(source_type, 0) + 1
+    return {
+        "stacks_with_masks": len(stacks),
+        "masked_nodes": masked_nodes,
+        "mask_effects": mask_effects,
+        "rebuild_hints": hints,
+        "effect_kinds": effect_kinds,
+        "source_types": source_types,
+    }
+
+
 def _blend_modes(node, channel_types):
-    if node.is_in_mask_stack():
+    if _call_or_attr(node, "is_in_mask_stack", False):
         return {"mask": _enum_name(node.get_blending_mode(None))}
     return {
         _enum_name(channel_type): _enum_name(node.get_blending_mode(channel_type))
@@ -519,7 +791,7 @@ def _blend_modes(node, channel_types):
 
 
 def _opacities(node, channel_types):
-    if node.is_in_mask_stack():
+    if _call_or_attr(node, "is_in_mask_stack", False):
         return {"mask": node.get_opacity(None)}
     return {
         _enum_name(channel_type): node.get_opacity(channel_type)
@@ -757,8 +1029,8 @@ def _active_channels(node):
         return None
 
 
-def _call_or_attr(obj, name):
-    value = getattr(obj, name)
+def _call_or_attr(obj, name, default=None):
+    value = getattr(obj, name, default)
     return value() if callable(value) else value
 
 
@@ -834,12 +1106,29 @@ def _annotate_node_assets(node, asset_path, request_channel=None, in_mask_stack=
             path=asset_path / f"{prefix}_{node['uid_hex']}.png",
         )
 
-    if not in_mask_stack and node.get("has_mask") and node.get("mask_enabled"):
+    if (
+        not in_mask_stack
+        and node.get("has_mask")
+        and node.get("mask_enabled")
+        and node.get("asset") is not None
+    ):
         node["mask_asset"] = _asset_record(
             node,
             request_channel="mask",
             path=asset_path / f"uid_{node['uid_hex']}_mask.png",
         )
+        node["mask_asset"]["source"] = "layer_alpha_fallback"
+        node["mask_asset"]["fidelity"] = "approximate_visual_alpha"
+        node["mask_asset"]["warning"] = (
+            "SP 12.1+ no longer exports true layer masks through "
+            "alg.mapexport.save([uid, 'mask']). This mask is derived from the "
+            "exported layer PNG alpha and is not a lossless Painter mask."
+        )
+    elif not in_mask_stack and node.get("has_mask") and node.get("mask_enabled"):
+        node["mask_asset_unavailable"] = {
+            "reason": "no_layer_png_alpha_source",
+            "intended_strategy": "future_python_layerstack_mask_export",
+        }
 
     for child in node.get("children", []):
         _annotate_node_assets(child, asset_path, request_channel=request_channel)
@@ -895,6 +1184,7 @@ def _iter_assets(nodes, request_channel=None):
             yield {
                 **mask_asset,
                 "kind": "mask",
+                "fallback_layer_path": asset.get("path") if asset is not None else None,
             }
 
         yield from _iter_assets(node.get("children", []), request_channel)
@@ -902,6 +1192,10 @@ def _iter_assets(nodes, request_channel=None):
 
 
 def _export_asset_png(asset, export_settings, channel_candidates):
+    if asset["kind"] == "mask":
+        _export_mask_asset_png(asset)
+        return
+
     candidates = [asset["channel"]]
     if asset["kind"] == "layer":
         candidates = _dedupe_text([asset["channel"], *channel_candidates])
@@ -934,12 +1228,61 @@ def _export_asset_png(asset, export_settings, channel_candidates):
         raise RuntimeError("; ".join(errors))
 
 
+def _export_mask_asset_png(asset):
+    source_path = asset.get("fallback_layer_path")
+    if not source_path or not Path(source_path).exists():
+        return
+    _write_mask_png_from_layer_alpha(source_path, asset["path"])
+
+
+def _write_mask_png_from_layer_alpha(source_path, mask_path):
+    try:
+        from PySide6 import QtGui
+    except Exception as exc:
+        raise RuntimeError("PySide6 is required for alpha-derived mask export") from exc
+
+    image = QtGui.QImage(str(source_path))
+    if image.isNull():
+        raise RuntimeError(f"Could not read layer PNG for mask fallback: {source_path}")
+
+    rgba_format = getattr(QtGui.QImage, "Format_RGBA8888", None)
+    if rgba_format is None:
+        rgba_format = QtGui.QImage.Format.Format_RGBA8888
+    rgba = image.convertToFormat(rgba_format)
+    data = rgba.constBits()
+    if hasattr(data, "tobytes"):
+        raw = data.tobytes()
+    else:
+        data.setsize(rgba.sizeInBytes())
+        raw = bytes(data)
+
+    mask_bytes = bytearray(len(raw))
+    for index in range(0, len(raw), 4):
+        alpha = raw[index + 3]
+        mask_bytes[index] = alpha
+        mask_bytes[index + 1] = alpha
+        mask_bytes[index + 2] = alpha
+        mask_bytes[index + 3] = 255
+
+    mask_image = QtGui.QImage(
+        mask_bytes,
+        rgba.width(),
+        rgba.height(),
+        rgba.bytesPerLine(),
+        rgba_format,
+    )
+    Path(mask_path).parent.mkdir(parents=True, exist_ok=True)
+    if not mask_image.save(str(mask_path), "PNG"):
+        raise RuntimeError(f"Could not write alpha-derived mask PNG: {mask_path}")
+
+
 def _remove_asset_by_path(nodes, asset_path):
     target = str(asset_path)
     for node in nodes:
         asset = node.get("asset")
         if asset is not None and str(asset.get("path")) == target:
             node.pop("asset", None)
+            node.pop("mask_asset", None)
             node["asset_pruned"] = "empty_alpha"
             return True
         if _remove_asset_by_path(node.get("children", []), asset_path):

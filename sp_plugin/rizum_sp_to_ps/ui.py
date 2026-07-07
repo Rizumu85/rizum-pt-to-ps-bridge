@@ -10,6 +10,7 @@ from .exporter import (
     ExportCancelled,
     default_output_dir,
     list_export_targets,
+    write_mask_probe,
     write_build_bundles,
 )
 from rizum_ui import (
@@ -59,7 +60,7 @@ QDialog#RizumSettingsDialog {
 QFrame#RizumSettingsCard {
     background: #1b1b1b;
     border: 0;
-    border-radius: 6px;
+    border-radius: 10px;
 }
 QWidget#RizumSettingsBody,
 QWidget#RizumSettingsFooter,
@@ -798,16 +799,23 @@ class ExportDialog:
         footer = self.QtWidgets.QHBoxLayout()
         footer.setContentsMargins(0, 6, 0, 0)
         self.cancel_button = ActionButton.create("Cancel", "dialog-secondary")
+        self.probe_button = ActionButton.create("Probe", "dialog-secondary")
         self.run_button = ActionButton.create("Export", "dialog-primary")
         self.cancel_button.clicked.connect(self.dialog.reject)
+        self.probe_button.clicked.connect(self.probe_masks)
         self.run_button.clicked.connect(self.export_checked)
         footer.addWidget(self.cancel_button)
+        footer.addWidget(self.probe_button)
         footer.addStretch(1)
         footer.addWidget(self.run_button)
         layout.addLayout(footer)
         set_compact_footer_button_width(
             self.cancel_button,
             compact_footer_button_width(self.cancel_button, minimum=74, maximum=96),
+        )
+        set_compact_footer_button_width(
+            self.probe_button,
+            compact_footer_button_width(self.probe_button, minimum=64, maximum=82),
         )
         set_compact_footer_button_width(
             self.run_button,
@@ -1039,6 +1047,27 @@ class ExportDialog:
             )
         )
 
+    def probe_masks(self):
+        settings = self._probe_settings()
+        self.output.setVisible(True)
+        self.output.clear()
+        self.output.setPlainText(self.panel._run_mask_probe("export dialog mask probe", settings))
+
+    def _probe_settings(self):
+        selections = self.selected_exports()
+        if selections:
+            targets = [target for target, _channels in selections]
+        else:
+            targets = self._visible_targets()
+        texture_sets = [target.get("texture_set") for target in targets if target.get("texture_set")]
+        stacks = [target.get("stack") or "" for target in targets]
+        settings = self.panel._base_export_settings()
+        if texture_sets:
+            settings["texture_sets"] = sorted(set(texture_sets))
+        if stacks:
+            settings["stacks"] = _unique_preserving_order(stacks)
+        return settings
+
 
 class SmokeTestPanel:
     """Painter dock panel for the PT Bridge workflow."""
@@ -1143,7 +1172,7 @@ class SmokeTestPanel:
         try:
             import substance_painter.project
 
-            return substance_painter.project.is_open()
+            return _call_or_attr(substance_painter.project, "is_open", False)
         except Exception:
             return False
 
@@ -1152,8 +1181,8 @@ class SmokeTestPanel:
             import substance_painter.project
 
             return (
-                substance_painter.project.is_open()
-                and substance_painter.project.is_in_edition_state()
+                _call_or_attr(substance_painter.project, "is_open", False)
+                and _call_or_attr(substance_painter.project, "is_in_edition_state", False)
             )
         except Exception:
             return False
@@ -1161,8 +1190,8 @@ class SmokeTestPanel:
     def active_target_key(self):
         import substance_painter.textureset
 
-        stack = substance_painter.textureset.get_active_stack()
-        texture_set = stack.material()
+        stack = _call_or_attr(substance_painter.textureset, "get_active_stack")
+        texture_set = _call_or_attr(stack, "material")
         return (_call_or_attr(texture_set, "name"), _call_or_attr(stack, "name") or "")
 
     def open_settings_dialog(self):
@@ -1485,6 +1514,54 @@ class SmokeTestPanel:
             f"Last export list: {self.last_export_list_path}",
         ]
         lines.extend(str(path) for path in all_paths)
+        return "\n".join(lines)
+
+    def _run_mask_probe(self, label, settings):
+        if not self._project_is_open():
+            return "Open a Painter project before probing masks."
+        if not self._project_is_ready():
+            return "Painter project is still loading or not editable."
+
+        self._running = True
+        self._set_action_buttons_enabled(False)
+        self.status.setText("Probing mask structure...")
+        self.QtWidgets.QApplication.processEvents()
+        try:
+            output_dir = default_output_dir(settings)
+            path, report = write_mask_probe(output_dir, settings=settings)
+        except Exception as exc:  # noqa: BLE001 - show host errors to the user.
+            self.status.setText("Mask probe failed.")
+            return f"{type(exc).__name__}: {exc}"
+        finally:
+            self._running = False
+            self._set_action_buttons_enabled(True)
+
+        self.last_output_dir = Path(output_dir)
+        self.open_output_button.setEnabled(True)
+        self.status.setText("Mask probe written.")
+        summary = report.get("summary") or {}
+        lines = [
+            "Mask probe written.",
+            f"Path: {path}",
+            f"Stacks with masks: {summary.get('stacks_with_masks', 0)}",
+            f"Masked nodes: {summary.get('masked_nodes', 0)}",
+            f"Mask effects: {summary.get('mask_effects', 0)}",
+        ]
+        hints = summary.get("rebuild_hints") or {}
+        if hints:
+            lines.append("")
+            lines.append("Rebuild hints:")
+            lines.extend(f"- {key}: {value}" for key, value in sorted(hints.items()))
+        effect_kinds = summary.get("effect_kinds") or {}
+        if effect_kinds:
+            lines.append("")
+            lines.append("Mask effect kinds:")
+            lines.extend(f"- {key}: {value}" for key, value in sorted(effect_kinds.items()))
+        source_types = summary.get("source_types") or {}
+        if source_types:
+            lines.append("")
+            lines.append("Mask source types:")
+            lines.extend(f"- {key}: {value}" for key, value in sorted(source_types.items()))
         return "\n".join(lines)
 
     def copy_last_request_path(self):

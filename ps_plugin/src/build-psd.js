@@ -575,6 +575,7 @@ async function placeGroupBuildItem(app, targetDocument, item, build, topLevelPla
     blendMode: layerBlendModeName(item.node, build.channel),
     maskPath: groupMask && groupMask.path ? groupMask.path : null,
     maskApplied: groupMask ? groupMask.applied === true : false,
+    maskUnavailable: maskUnavailableSummary(item.node),
     childLayerCount: countBuildItemRasterLayers(item.children),
     childGroupCount: item.children.filter((child) => child.kind === "group").length
   });
@@ -645,6 +646,7 @@ function placedLayerSummary(item, node, placed, channel, groupName, mask, option
     clippedTo: options.clippedTo || null,
     maskPath: mask && mask.path ? mask.path : null,
     maskApplied: mask ? mask.applied === true : false,
+    maskUnavailable: maskUnavailableSummary(node),
     path: node.asset.path
   };
 }
@@ -942,6 +944,7 @@ function sidecarGroupRecord(group) {
     sync_direction: "both",
     blend_mode: group.blendMode || null,
     mask_path: group.maskPath || null,
+    mask_unavailable: group.maskUnavailable || null,
     baseline_hash: null,
     baseline_hash_kind: null
   };
@@ -962,6 +965,7 @@ function sidecarLayerRecord(layer) {
     clipped_to: layer.clippedTo || null,
     asset_path: layer.path || null,
     mask_path: layer.maskPath || null,
+    mask_unavailable: layer.maskUnavailable || null,
     baseline_hash: layer.baselineHash || null,
     baseline_hash_kind: layer.baselineHashKind || null
   };
@@ -1154,7 +1158,20 @@ function shouldRecordUnplacedNode(node, stack) {
   if (node.mask_asset && node.mask_asset.path) {
     return true;
   }
+  if (node.mask_asset_unavailable) {
+    return true;
+  }
   return false;
+}
+
+function maskUnavailableSummary(node) {
+  if (!node || !node.mask_asset_unavailable) {
+    return null;
+  }
+  return {
+    reason: node.mask_asset_unavailable.reason || "mask_asset_unavailable",
+    intended_strategy: node.mask_asset_unavailable.intended_strategy || null
+  };
 }
 
 function unplacedNodeReason(node, stack) {
@@ -1170,6 +1187,9 @@ function unplacedNodeReason(node, stack) {
   if (node.mask_asset && node.mask_asset.path) {
     return "mask_asset_not_placed";
   }
+  if (node.mask_asset_unavailable) {
+    return node.mask_asset_unavailable.reason || "mask_asset_unavailable";
+  }
   return "metadata_only";
 }
 
@@ -1184,6 +1204,9 @@ function unplacedNodeCategory(node, stack) {
     return "needs_attention";
   }
   if (node.mask_asset && node.mask_asset.path) {
+    return "needs_attention";
+  }
+  if (node.mask_asset_unavailable) {
     return "needs_attention";
   }
   return "known_baked";
@@ -1217,6 +1240,9 @@ function unplacedNodeSyncDirection(node, stack) {
     return "sp_to_ps_only";
   }
   if (node.mask_asset && node.mask_asset.path) {
+    return "sp_to_ps_only";
+  }
+  if (node.mask_asset_unavailable) {
     return "sp_to_ps_only";
   }
   return "none";

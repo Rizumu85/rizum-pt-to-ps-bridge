@@ -2,7 +2,7 @@
 
 const { entrypoints } = require("uxp");
 
-const PLUGIN_VERSION = "0.1.59";
+const PLUGIN_VERSION = "0.1.60";
 
 console.log(`[Rizum] main.js loaded ${PLUGIN_VERSION}`);
 scheduleStartupRender();
@@ -601,9 +601,10 @@ function formatRequestSummary(result) {
         ...result.build.placedGroups.map((group) => {
           const blend = group.blendMode ? ` [${group.blendMode}]` : "";
           const mask = group.maskPath ? `, mask ${group.maskApplied ? "applied" : "failed"}` : "";
+          const maskUnavailable = group.maskUnavailable ? `, mask unavailable: ${group.maskUnavailable.reason}` : "";
           const path = group.groupName ? `${group.groupName}/` : "";
           const childGroups = group.childGroupCount ? `, ${group.childGroupCount} child groups` : "";
-          return `- ${path}${group.psName || group.name}${blend} (${group.childLayerCount} PNG layers${childGroups}${mask})`;
+          return `- ${path}${group.psName || group.name}${blend} (${group.childLayerCount} PNG layers${childGroups}${mask}${maskUnavailable})`;
         })
       );
     }
@@ -620,6 +621,9 @@ function formatRequestSummary(result) {
           ];
           if (layer.maskPath) {
             lines.push(`  Mask ${layer.maskApplied ? "applied" : "failed"}: ${layer.maskPath}`);
+          }
+          if (layer.maskUnavailable) {
+            lines.push(`  Mask unavailable: ${layer.maskUnavailable.reason}`);
           }
           return lines.join("\n");
         })

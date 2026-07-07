@@ -481,11 +481,27 @@ default `Layer 1` only when the Painter request did not contain a real
 top-level item with that name. Placement diagnostics include source PNG paths
 so suspicious thumbnails can be traced back to Painter-exported payload files.
 
-The current mask slice attaches flattened `mask_asset` PNGs to placed raster
-layers through Photoshop's Imaging API: open mask PNG, read it as grayscale
-image data, then call `imaging.putLayerMask()` on the target Photoshop layer.
-Mask failures are reported separately and do not remove the successfully placed
+The current mask slice attaches `mask_asset` PNGs to placed raster layers
+through Photoshop's Imaging API: open mask PNG, read it as grayscale image
+data, then call `imaging.putLayerMask()` on the target Photoshop layer. Mask
+failures are reported separately and do not remove the successfully placed
 pixel layer.
+
+SP 12.1.0+ invalidates the old plugin's JS true-mask export path:
+`alg.mapexport.save([uid, "mask"], ...)` now routes through the stack
+`blendingmask` channel and does not return ordinary layer/folder mask pixels.
+For Phase 1 compatibility, Painter mask PNGs are therefore derived from the
+exported layer PNG alpha and marked as approximate. This preserves a useful
+Photoshop visual mask while avoiding the host error, but it is not a lossless
+Painter mask representation and cannot cover folder masks without a direct
+layer PNG alpha source. A later Python layerstack mask exporter is required
+before the design can claim original-mask fidelity again.
+
+The Painter Export dialog may expose a temporary **Probe** action while this
+mask exporter is being designed. Probe is read-only and writes `_mask_probe.json`
+beside the normal export bundles. It is not a user workflow feature; it is a
+host-diagnostic aid for deciding which mask structures can be reconstructed
+from Python metadata and which require a rendered workaround.
 
 ### 5.2 Sub-effects inside a layer's channel
 
@@ -522,9 +538,9 @@ attention.
 
 ### 5.3 Sub-effects inside a mask
 
-**Flattened** to a single grayscale PNG used as the PS layer mask. PS has no
-native concept of stacked mask effects. Loss of editable stack is declared in
-the export report.
+**Approximate in Phase 1** through the parent layer alpha-derived mask PNG. PS
+has no native concept of stacked mask effects. Loss of editable stack and
+lossless original mask pixels is declared in the export metadata/report.
 
 ### 5.4 Anchor point references
 

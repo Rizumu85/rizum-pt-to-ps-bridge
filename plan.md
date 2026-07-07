@@ -31,9 +31,16 @@ that Photoshop can consume to build an editable PSD.
       Painter project is open.
 - [x] Traverse texture sets, stacks, channels, layer trees, groups, content
       effects, mask effects, blend modes, opacity, visibility, and UV tiles.
-- [x] Use the legacy Painter JS `alg.mapexport.save` fallback for per-layer,
-      per-effect, and per-mask PNG export because the Python export API only
-      exports full channels.
+- [x] Use the legacy Painter JS `alg.mapexport.save` fallback for per-layer PNG
+      export because the Python export API only exports full channels.
+- [x] Stop using the old JS `alg.mapexport.save([uid, "mask"])` path for masks
+      after SP 12.1.0 host testing showed it now targets `blendingmask` instead
+      of true layer/folder mask pixels.
+- [x] Add an interim mask fallback that derives mask PNGs from the exported
+      layer PNG alpha and marks them as approximate, non-lossless mask data.
+- [x] Add a read-only Painter Mask Probe that writes `_mask_probe.json` with
+      masked layer/folder structure, mask effect kinds, source summaries, and
+      rebuild hints for true-mask exporter design.
 - [x] Emit one bundle per texture set / stack / channel / UV tile containing
       `build_request.json`, layer PNGs, mask PNGs, and baked PNGs.
 - [x] Omit the user-facing `1001` suffix for non-UDIM projects while retaining
@@ -97,6 +104,13 @@ that Photoshop can consume to build an editable PSD.
       per-tile per-layer PNGs using visibility isolation, `ScopedModification`,
       `application.disable_engine_computations()`, and
       `export_project_textures(... uvTiles ...)`.
+- [ ] Research and host-test a true Python layerstack mask export path for
+      layer/folder masks so the alpha-derived fallback can be replaced with
+      original Painter mask pixels.
+- [ ] Use Mask Probe results from representative projects to choose the next
+      true-mask strategy: structural rebuild for simple Fill masks, controlled
+      render/solo export for references/paint strokes, or explicit unsupported
+      reporting where Python cannot access the required pixel data.
 - [ ] Store project workflow metadata in build requests if UDIM export behavior
       needs to distinguish `UVTile` from `TextureSetPerUVTile`.
 - [ ] Host-test Painter export on representative projects: non-UDIM,
