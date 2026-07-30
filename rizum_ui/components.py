@@ -2286,6 +2286,7 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
             self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             self.setMouseTracking(True)
             self.setFixedSize(84, 24)
+            self._compact_height = 24
             self._value = int(value)
             self._minimum = int(minimum)
             self._maximum = int(maximum)
@@ -2341,6 +2342,20 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
         def setSingleStep(self, step):
             self._step = int(step)
 
+        def setCompactHeight(self, height):
+            """Scale the frame and painted geometry from the 24px baseline."""
+            self._compact_height = max(18, int(round(height)))
+            scale = self._compact_height / 24.0
+            self.setFixedSize(
+                max(63, int(round(84 * scale))),
+                self._compact_height,
+            )
+            self.updateGeometry()
+            self.update()
+
+        def _geometry_scale(self):
+            return self._compact_height / 24.0
+
         def getVisualScale(self):
             return self._visual_scale
 
@@ -2359,8 +2374,14 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
         visualOpacity = QtCore.Property(float, getVisualOpacity, setVisualOpacity)
 
         def _rect_for(self, part):
+            scale = self._geometry_scale()
             x_positions = {"minus": 0, "value": 30, "plus": 60}
-            return QtCore.QRectF(x_positions[part], 0, 24, 24)
+            return QtCore.QRectF(
+                x_positions[part] * scale,
+                0,
+                24 * scale,
+                24 * scale,
+            )
 
         def _hover_rect_for(self, part):
             rect = self._rect_for(part)
@@ -2587,7 +2608,8 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
                     rect = self._hover_rect_for(part)
                     painter.setPen(QtCore.Qt.PenStyle.NoPen)
                     painter.setBrush(self._hover_color())
-                    painter.drawRoundedRect(rect, 4, 4)
+                    radius = 4 * self._geometry_scale()
+                    painter.drawRoundedRect(rect, radius, radius)
 
             symbol_center_y = self._value_visual_center_y()
             self._draw_step_symbol(painter, "minus", symbol_center_y)
@@ -2599,7 +2621,9 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
 
         def _value_font(self):
             font = QtGui.QFont(self.font())
-            font.setPixelSize(12)
+            font.setPixelSize(
+                max(9, int(round(12 * self._geometry_scale())))
+            )
             font.setWeight(QtGui.QFont.Weight.Medium)
             return font
 
@@ -2637,12 +2661,18 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
             font = self._value_font()
             metrics = QtGui.QFontMetricsF(font)
             text_width = metrics.horizontalAdvance(self._value_text())
+            scale = self._geometry_scale()
             cursor_x = rect.center().x() + text_width / 2 + 1
-            cursor_top = rect.center().y() - 6
-            painter.setPen(QtGui.QPen(QtGui.QColor(self._theme["text"]), 1))
+            cursor_top = rect.center().y() - 6 * scale
+            painter.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(self._theme["text"]),
+                    max(0.75, scale),
+                )
+            )
             painter.drawLine(
                 QtCore.QPointF(cursor_x, cursor_top),
-                QtCore.QPointF(cursor_x, cursor_top + 12),
+                QtCore.QPointF(cursor_x, cursor_top + 12 * scale),
             )
 
         def _draw_step_symbol(self, painter, part, center_y):
@@ -2650,13 +2680,20 @@ def make_compact_stepper(value=8, minimum=0, maximum=999, step=1):
             scale = self._visual_scale if part == self._animated_part else 1.0
             opacity = self._visual_opacity if part == self._animated_part else 1.0
             color = self._theme["text"] if part == self._hover_part else self._theme["muted"]
-            pen = QtGui.QPen(QtGui.QColor(color), 1.6)
+            geometry_scale = self._geometry_scale()
+            pen = QtGui.QPen(
+                QtGui.QColor(color),
+                max(1.2, 1.6 * geometry_scale),
+            )
             pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
             previous_opacity = painter.opacity()
             painter.setOpacity(previous_opacity * max(0.0, min(1.0, opacity)))
             painter.setPen(pen)
-            half = 3.6 * scale
-            center = QtCore.QPointF(rect.center().x(), center_y - 0.5)
+            half = 3.6 * scale * geometry_scale
+            center = QtCore.QPointF(
+                rect.center().x(),
+                center_y - 0.5 * geometry_scale,
+            )
             painter.drawLine(
                 QtCore.QPointF(center.x() - half, center.y()),
                 QtCore.QPointF(center.x() + half, center.y()),

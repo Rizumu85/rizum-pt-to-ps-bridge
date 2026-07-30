@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,22 +16,47 @@ from .exporter import (
     write_mask_probe,
     write_build_bundles,
 )
-from rizum_ui import (
-    ActionButton,
-    apply_theme,
-    build_compact_dock_stylesheet,
-    compact_footer_button_width,
-    make_combo_input,
-    make_compact_dock_card,
-    make_compact_dock_layout,
-    make_compact_stepper,
-    make_icon_button,
-    make_inset_separator,
-    set_compact_footer_button_width,
-)
-from rizum_ui import settings_dialog as _settings_dialog
 
+
+def _load_vendored_ui():
+    package_name = "_rizum_pt_to_ps_bridge_ui"
+    package_dir = Path(__file__).resolve().parents[2] / "rizum_ui"
+    package = sys.modules.get(package_name)
+    if package is not None:
+        return package
+
+    spec = importlib.util.spec_from_file_location(
+        package_name,
+        package_dir / "__init__.py",
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load vendored UI package from {package_dir}")
+    package = importlib.util.module_from_spec(spec)
+    sys.modules[package_name] = package
+    spec.loader.exec_module(package)
+    return package
+
+
+_vendored_ui = _load_vendored_ui()
+_components = importlib.import_module(f"{_vendored_ui.__name__}.components")
+_settings_dialog = importlib.import_module(
+    f"{_vendored_ui.__name__}.settings_dialog"
+)
+
+_components = importlib.reload(_components)
 _settings_dialog = importlib.reload(_settings_dialog)
+ActionButton = _components.ActionButton
+apply_theme = _vendored_ui.apply_theme
+build_compact_dock_stylesheet = _components.build_compact_dock_stylesheet
+compact_footer_button_width = _components.compact_footer_button_width
+make_combo_input = _components.make_combo_input
+make_compact_dock_card = _components.make_compact_dock_card
+make_compact_dock_layout = _components.make_compact_dock_layout
+make_compact_stepper = _components.make_compact_stepper
+make_icon_button = _components.make_icon_button
+make_inset_separator = _components.make_inset_separator
+set_compact_footer_button_width = _components.set_compact_footer_button_width
 PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 
 LAST_EXPORT_FILENAME = "_last_export.json"
