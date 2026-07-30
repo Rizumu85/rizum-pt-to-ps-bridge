@@ -12,6 +12,7 @@
     "rizum_ui/animation.py",
     "rizum_ui/components.py",
     "rizum_ui/host_style.py",
+    "rizum_ui/settings_dialog.py",
     "rizum_ui/stylesheet.py",
     "rizum_ui/theme.py",
     "icons/action-bridge.svg",

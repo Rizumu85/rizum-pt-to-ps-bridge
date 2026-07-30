@@ -6,6 +6,11 @@ from .host_style import (
     apply_painter_like_base,
     build_painter_host_preview_stylesheet,
 )
+from .settings_dialog import (
+    PAINTER_SETTINGS_FRAME_COLOR,
+    PAINTER_SETTINGS_FRAME_WIDTH,
+    PainterSettingsDialog,
+)
 from .components import (
     ActionButton,
     COMPACT_DOCK_DEFAULT_HEIGHT,
@@ -74,6 +79,9 @@ __all__ = [
     "FOOTER_BUTTON_HEIGHT",
     "FOOTER_BUTTON_PADDING_X",
     "PillButton",
+    "PAINTER_SETTINGS_FRAME_COLOR",
+    "PAINTER_SETTINGS_FRAME_WIDTH",
+    "PainterSettingsDialog",
     "SectionHeader",
     "StatusPill",
     "Theme",

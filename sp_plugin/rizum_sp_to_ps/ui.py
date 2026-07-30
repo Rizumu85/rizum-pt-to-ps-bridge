@@ -26,6 +26,7 @@ from rizum_ui import (
     make_inset_separator,
     set_compact_footer_button_width,
 )
+from rizum_ui.settings_dialog import PainterSettingsDialog
 
 LAST_EXPORT_FILENAME = "_last_export.json"
 SETTINGS_ORG = "Rizum"
@@ -52,15 +53,6 @@ QWidget#RizumSettingsRow,
 QWidget#RizumPathField {
     background: transparent;
     border: 0;
-}
-QDialog#RizumSettingsDialog {
-    background: #f3f3f3;
-    color: #e0e0e0;
-}
-QFrame#RizumSettingsCard {
-    background: #1b1b1b;
-    border: 0;
-    border-radius: 10px;
 }
 QWidget#RizumSettingsBody,
 QWidget#RizumSettingsFooter,
@@ -559,7 +551,7 @@ class SettingsDialog:
         self.QtGui = panel.QtGui
         self.QtWidgets = panel.QtWidgets
 
-        self.dialog = self.QtWidgets.QDialog(panel.widget)
+        self.dialog = PainterSettingsDialog(panel.widget)
         self.dialog.setObjectName("RizumSettingsDialog")
         self.dialog.setWindowTitle("Settings")
         self.dialog.setModal(True)
@@ -567,15 +559,7 @@ class SettingsDialog:
         self.dialog.resize(386, 544)
         apply_theme(self.dialog, mode="overlay")
 
-        layout = self.QtWidgets.QVBoxLayout(self.dialog)
-        layout.setContentsMargins(2, 0, 2, 2)
-        layout.setSpacing(0)
-
-        card = self.QtWidgets.QFrame()
-        card.setObjectName("RizumSettingsCard")
-        card_layout = self.QtWidgets.QVBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(0)
+        card_layout = self.dialog.settingsSurfaceLayout()
 
         body = self.QtWidgets.QWidget()
         body.setObjectName("RizumSettingsBody")
@@ -671,7 +655,6 @@ class SettingsDialog:
         footer_layout.addWidget(self.done_button)
         card_layout.addWidget(footer)
         set_compact_footer_button_width(self.done_button, compact_footer_button_width(self.done_button, minimum=68, maximum=96))
-        layout.addWidget(card)
         self.dialog.setStyleSheet(self.dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
 
