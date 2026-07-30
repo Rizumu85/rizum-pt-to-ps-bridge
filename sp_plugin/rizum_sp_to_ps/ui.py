@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,10 @@ from rizum_ui import (
     make_inset_separator,
     set_compact_footer_button_width,
 )
-from rizum_ui.settings_dialog import PainterSettingsDialog
+from rizum_ui import settings_dialog as _settings_dialog
+
+_settings_dialog = importlib.reload(_settings_dialog)
+PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 
 LAST_EXPORT_FILENAME = "_last_export.json"
 SETTINGS_ORG = "Rizum"
@@ -72,29 +76,6 @@ QLabel#RizumSettingsMeta {
     font-size: 12px;
     font-weight: 400;
 }
-QLabel#RizumSettingsSection {
-    color: #9e9e9e;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    background: transparent;
-    border: 0;
-}
-QLabel#RizumSettingsItemName {
-    color: #e0e0e0;
-    font-size: 13px;
-    font-weight: 500;
-    background: transparent;
-    border: 0;
-}
-QLabel#RizumSettingsItemMeta,
-QLabel#RizumSettingsFooterHint {
-    color: #9e9e9e;
-    font-size: 11px;
-    font-weight: 500;
-    background: transparent;
-    border: 0;
-}
 QFrame#RizumSettingsRow {
     background: transparent;
     border: 0;
@@ -114,8 +95,6 @@ QLineEdit#RizumSettingsPathInput {
     background: transparent;
     border: 0;
     padding: 0;
-    font-size: 11px;
-    font-weight: 500;
     selection-background-color: #343434;
     selection-color: #e0e0e0;
 }
@@ -288,7 +267,17 @@ def _make_settings_toggle(QtCore, QtGui, QtWidgets, checked=False):
             self.setChecked(bool(checked))
             self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+            self._compact_height = 20
             self.setFixedSize(36, 20)
+
+        def setCompactHeight(self, height):
+            self._compact_height = max(15, int(round(height)))
+            scale = self._compact_height / 20.0
+            self.setFixedSize(
+                max(27, int(round(36 * scale))),
+                self._compact_height,
+            )
+            self.update()
 
         def paintEvent(self, event):
             painter = QtGui.QPainter(self)
@@ -296,11 +285,23 @@ def _make_settings_toggle(QtCore, QtGui, QtWidgets, checked=False):
             track = QtCore.QRectF(0, 0, self.width(), self.height())
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.setBrush(QtGui.QColor("#3a3a3a" if self.isChecked() else "#2f2f2f"))
-            painter.drawRoundedRect(track, 10, 10)
+            radius = self.height() / 2.0
+            painter.drawRoundedRect(track, radius, radius)
 
-            knob_size = 14
-            knob_x = self.width() - knob_size - 3 if self.isChecked() else 3
-            knob_rect = QtCore.QRectF(knob_x, 3, knob_size, knob_size)
+            scale = self._compact_height / 20.0
+            inset = max(2, int(round(3 * scale)))
+            knob_size = max(11, int(round(14 * scale)))
+            knob_x = (
+                self.width() - knob_size - inset
+                if self.isChecked()
+                else inset
+            )
+            knob_rect = QtCore.QRectF(
+                knob_x,
+                inset,
+                knob_size,
+                knob_size,
+            )
             painter.setBrush(QtGui.QColor("#a0a0a0"))
             painter.drawEllipse(knob_rect)
             painter.end()
@@ -566,6 +567,8 @@ class SettingsDialog:
         body_layout = self.QtWidgets.QVBoxLayout(body)
         body_layout.setContentsMargins(12, 8, 12, 0)
         body_layout.setSpacing(2)
+        self._settings_body = body
+        self._body_layout = body_layout
 
         body_layout.addWidget(_settings_section(self.QtWidgets, "Export", first=True))
         self.infinite_padding = _make_settings_toggle(self.QtCore, self.QtGui, self.QtWidgets)
@@ -611,10 +614,10 @@ class SettingsDialog:
         body_layout.addWidget(_settings_section(self.QtWidgets, "Photoshop"))
         path_row, path_row_layout = _settings_frame_row(self.QtWidgets, 45)
         path_row_layout.setContentsMargins(8, 5, 8, 5)
-        path_field = self.QtWidgets.QFrame()
-        path_field.setObjectName("RizumSettingsMockSelect")
-        path_field.setFixedHeight(34)
-        path_layout = self.QtWidgets.QHBoxLayout(path_field)
+        self.path_field = self.QtWidgets.QFrame()
+        self.path_field.setObjectName("RizumSettingsMockSelect")
+        self.path_field.setFixedHeight(34)
+        path_layout = self.QtWidgets.QHBoxLayout(self.path_field)
         path_layout.setContentsMargins(8, 0, 8, 0)
         path_layout.setSpacing(6)
         self.photoshop_path = self.QtWidgets.QLineEdit()
@@ -628,7 +631,7 @@ class SettingsDialog:
         self.browse_button.setFixedSize(26, 26)
         self.browse_button.clicked.connect(self.browse_photoshop)
         path_layout.addWidget(self.photoshop_path, 1, self.panel.QtCore.Qt.AlignmentFlag.AlignVCenter)
-        path_row_layout.addWidget(path_field, 1)
+        path_row_layout.addWidget(self.path_field, 1)
         path_row_layout.addWidget(self.browse_button)
         body_layout.addWidget(path_row)
 
@@ -654,8 +657,13 @@ class SettingsDialog:
         self.done_button.clicked.connect(self.save)
         footer_layout.addWidget(self.done_button)
         card_layout.addWidget(footer)
+        self._footer = footer
+        self._footer_layout = footer_layout
         set_compact_footer_button_width(self.done_button, compact_footer_button_width(self.done_button, minimum=68, maximum=96))
         self.dialog.setStyleSheet(self.dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
+        self._capture_scale_metrics()
+        self.dialog.settingsUiScaleChanged.connect(self._apply_ui_scale)
+        self._apply_ui_scale(self.dialog.settingsUiScale())
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
 
         self.load_values()
@@ -663,6 +671,89 @@ class SettingsDialog:
     def open(self):
         self.load_values()
         return self.dialog.exec()
+
+    def _capture_scale_metrics(self):
+        self._settings_sections = [
+            (label, label.minimumHeight())
+            for label in self._settings_body.findChildren(
+                self.QtWidgets.QLabel,
+                "RizumSettingsSection",
+            )
+        ]
+        self._settings_rows = []
+        for row in self._settings_body.findChildren(
+            self.QtWidgets.QFrame,
+            "RizumSettingsRow",
+        ):
+            row_layout = row.layout()
+            margins = row_layout.contentsMargins()
+            self._settings_rows.append(
+                (
+                    row,
+                    row.minimumHeight(),
+                    (
+                        margins.left(),
+                        margins.top(),
+                        margins.right(),
+                        margins.bottom(),
+                    ),
+                    row_layout.spacing(),
+                )
+            )
+
+    def _apply_ui_scale(self, _scale):
+        metric = self.dialog.settingsMetric
+        control_height = metric(32)
+
+        self.dialog.setMinimumSize(386, metric(544))
+        self.dialog.resize(386, metric(544))
+        self._body_layout.setContentsMargins(
+            metric(12),
+            metric(8),
+            metric(12),
+            0,
+        )
+        self._body_layout.setSpacing(metric(2))
+        for label, base_height in self._settings_sections:
+            label.setFixedHeight(metric(base_height))
+        for row, base_height, margins, spacing in self._settings_rows:
+            row.setFixedHeight(metric(base_height))
+            row.layout().setContentsMargins(
+                *(metric(value) for value in margins)
+            )
+            row.layout().setSpacing(metric(spacing))
+
+        self.infinite_padding.setCompactHeight(metric(20))
+        self.auto_open_photoshop.setCompactHeight(metric(20))
+        self.dilation_stepper.setCompactHeight(control_height)
+        self.bit_depth.setCompactHeight(control_height)
+        self.bit_depth.setFixedWidth(metric(126))
+
+        self.path_field.setFixedHeight(metric(34))
+        self.photoshop_path.setMinimumHeight(metric(20))
+        browse_size = metric(26)
+        self.browse_button.setFixedSize(browse_size, browse_size)
+        if hasattr(self.browse_button, "setPaintedIconSize"):
+            self.browse_button.setPaintedIconSize(metric(14))
+
+        self._footer.setFixedHeight(metric(48))
+        self._footer_layout.setContentsMargins(
+            metric(16),
+            0,
+            metric(16),
+            0,
+        )
+        set_compact_footer_button_width(
+            self.done_button,
+            compact_footer_button_width(
+                self.done_button,
+                minimum=metric(68),
+                maximum=metric(96),
+            ),
+            height=metric(26),
+        )
+        self.dialog.layout().activate()
+        self.dialog.updateGeometry()
 
     def load_values(self):
         settings = self.panel.user_settings
