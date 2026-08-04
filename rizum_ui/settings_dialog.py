@@ -55,6 +55,12 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         frame_width: int = PAINTER_SETTINGS_FRAME_WIDTH,
     ):
         super().__init__(parent)
+        self.setObjectName("RizumPainterSettingsDialog")
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QDialog#RizumPainterSettingsDialog { background: transparent; border: 0; }"
+        )
         self._settings_theme = theme
         self._settings_frame_color = QtGui.QColor(PAINTER_SETTINGS_FRAME_COLOR)
         self._settings_frame_width = 0
@@ -91,6 +97,9 @@ class PainterSettingsDialog(QtWidgets.QDialog):
     def settingsSurfaceRadius(self) -> float:
         return self._settings_surface_radius
 
+    def settingsWindowRadius(self) -> float:
+        return float(self._settings_theme.radius_window)
+
     def settingsUiScale(self) -> float:
         return self._settings_ui_scale
 
@@ -105,10 +114,11 @@ class PainterSettingsDialog(QtWidgets.QDialog):
     def setSettingsUiScale(self, scale: float) -> None:
         scale = _bounded_ui_scale(scale)
         changed = abs(scale - self._settings_ui_scale) > 0.0001
+        if not changed:
+            return
         self._settings_ui_scale = scale
         self._update_surface_stylesheet()
-        if changed:
-            self.settingsUiScaleChanged.emit(scale)
+        self.settingsUiScaleChanged.emit(scale)
 
     def syncSettingsUiScale(self) -> None:
         self.setSettingsUiScale(_configured_ui_scale())
@@ -142,7 +152,7 @@ class PainterSettingsDialog(QtWidgets.QDialog):
                 border-radius: {self._settings_surface_radius:g}px;
             }}
             QLabel#RizumSettingsSection {{
-                color: {self._settings_theme.text_muted};
+                color: {self._settings_theme.text_faint};
                 font-size: {section_px}px;
                 font-weight: 700;
                 letter-spacing: 0.5px;
@@ -162,6 +172,11 @@ class PainterSettingsDialog(QtWidgets.QDialog):
                 color: {self._settings_theme.text_muted};
                 font-size: {meta_px}px;
                 font-weight: 500;
+            }}
+            QLabel#RizumSettingsItemMeta,
+            QLabel#RizumSettingsFooterHint {{
+                background: transparent;
+                border: 0;
             }}
             QLabel#RizumMockText,
             QFrame#RizumSegmentedControl {{
@@ -189,9 +204,15 @@ class PainterSettingsDialog(QtWidgets.QDialog):
             self.syncSettingsUiScale()
 
     def paintEvent(self, event) -> None:
-        super().paintEvent(event)
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), self._settings_frame_color)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(self._settings_frame_color)
+        painter.drawRoundedRect(
+            QtCore.QRectF(self.rect()),
+            self.settingsWindowRadius(),
+            self.settingsWindowRadius(),
+        )
 
 
 __all__ = [

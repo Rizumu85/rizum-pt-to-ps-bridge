@@ -35,7 +35,7 @@ QWidget {
 
 QToolTip {
     color: #e0e0e0;
-    background: #1b1b1b;
+    background-color: #1b1b1b;
     border: 1px solid #414141;
     border-radius: 5px;
     padding: 1px 6px;

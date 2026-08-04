@@ -344,6 +344,16 @@ QFrame#RizumDragTreeItem[added="true"] {{
     background: rgba(255, 255, 255, 0.12);
 }}
 
+QFrame#RizumDragTreeItem[mapped="true"] {{
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 2px solid {theme.text};
+}}
+
+QFrame#RizumDragTreeItem[mapped="true"][hovered="true"] {{
+    background: rgba(255, 255, 255, 0.10);
+    border-left: 2px solid {theme.text};
+}}
+
 QLabel#RizumDragItemName,
 QLabel#RizumDragItemName:hover,
 QLabel#RizumDragItemName:focus {{
@@ -639,7 +649,7 @@ QScrollBar::handle:hover {{
 
 QToolTip {{
     color: {theme.text};
-    background: {theme.surface};
+    background-color: {theme.surface};
     border: 1px solid #414141;
     border-radius: 5px;
     padding: 1px 6px;
