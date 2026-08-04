@@ -230,11 +230,6 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         del event
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_Source)
-        painter.fillRect(self.rect(), QtCore.Qt.GlobalColor.transparent)
-        painter.setCompositionMode(
-            QtGui.QPainter.CompositionMode.CompositionMode_SourceOver
-        )
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(self._settings_frame_color)
         painter.drawRoundedRect(
