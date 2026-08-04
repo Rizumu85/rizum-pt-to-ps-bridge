@@ -553,6 +553,11 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         self._hover_clear = False
         self._pressed_clear = False
         self.setFixedHeight(self.BASE_HEIGHT)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QFrame#RizumShortcutCapture { background: transparent; border: 0; }"
+        )
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
