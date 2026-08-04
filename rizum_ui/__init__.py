@@ -14,6 +14,7 @@ from .settings_dialog import (
 from .settings_controls import (
     AnimatedSaveButton,
     ModeParameterSlot,
+    SecondaryActionButton,
     ShortcutCaptureField,
     TextActionButton,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "PAINTER_SETTINGS_FRAME_WIDTH",
     "PainterSettingsDialog",
     "ModeParameterSlot",
+    "SecondaryActionButton",
     "SectionHeader",
     "StatusPill",
     "ShortcutCaptureField",

@@ -154,6 +154,87 @@ class TextActionButton(QtWidgets.QAbstractButton):
         painter.end()
 
 
+class SecondaryActionButton(QtWidgets.QAbstractButton):
+    """Host-independent compact secondary dialog action."""
+
+    BASE_HEIGHT = 28
+    MIN_HEIGHT = 21
+
+    def __init__(
+        self,
+        text: str,
+        background: str = "#303236",
+        hover_background: str = "#383a3e",
+        pressed_background: str = "#2b2d30",
+        text_color: str = "#f0f0f0",
+        radius: float = default_theme.radius_small,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setText(text)
+        self.setObjectName("RizumSecondaryAction")
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QAbstractButton#RizumSecondaryAction { background: transparent; border: 0; }"
+        )
+        self._background = QtGui.QColor(background)
+        self._hover_background = QtGui.QColor(hover_background)
+        self._pressed_background = QtGui.QColor(pressed_background)
+        self._text_color = QtGui.QColor(text_color)
+        self._radius = float(radius)
+        self._compact_height = self.BASE_HEIGHT
+        self.setCompactHeight(self.BASE_HEIGHT)
+
+    def _scale(self) -> float:
+        return self._compact_height / float(self.BASE_HEIGHT)
+
+    def _font(self) -> QtGui.QFont:
+        font = QtGui.QFont(self.font())
+        font.setPixelSize(max(9, int(round(12 * self._scale()))))
+        font.setWeight(QtGui.QFont.Weight.Normal)
+        return font
+
+    def sizeHint(self) -> QtCore.QSize:
+        text_width = QtGui.QFontMetrics(self._font()).horizontalAdvance(self.text())
+        return QtCore.QSize(
+            text_width + 2 * FOOTER_BUTTON_PADDING_X + 2,
+            self._compact_height,
+        )
+
+    def setCompactHeight(self, height: int) -> None:
+        self._compact_height = max(self.MIN_HEIGHT, int(round(height)))
+        self.setFixedHeight(self._compact_height)
+        self.updateGeometry()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing, True)
+        if self.isDown():
+            background = self._pressed_background
+        elif self.underMouse() or self.hasFocus():
+            background = self._hover_background
+        else:
+            background = self._background
+        radius = max(4.0, self._radius * self._scale())
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        painter.drawRoundedRect(
+            QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            radius,
+            radius,
+        )
+        painter.setFont(self._font())
+        painter.setPen(self._text_color)
+        painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.end()
+
+
 class AnimatedSaveButton(QtWidgets.QAbstractButton):
     """Save action that communicates clean, dirty, and saved states in place."""
 
@@ -862,6 +943,7 @@ class ModeParameterSlot(QtWidgets.QFrame):
 __all__ = [
     "AnimatedSaveButton",
     "ModeParameterSlot",
+    "SecondaryActionButton",
     "ShortcutCaptureField",
     "TextActionButton",
 ]
