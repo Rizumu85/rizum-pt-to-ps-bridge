@@ -880,6 +880,10 @@ class ModeParameterSlot(QtWidgets.QFrame):
         super().__init__(parent)
         self.setObjectName("RizumModeParameterSlot")
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QFrame#RizumModeParameterSlot { background: transparent; border: 0; }"
+        )
         self._rows = dict(rows)
         self._mode = None
         self._expanded_height = max(0, int(round(height)))

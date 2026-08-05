@@ -229,9 +229,16 @@ class PainterSettingsDialog(QtWidgets.QDialog):
     def paintEvent(self, event) -> None:
         del event
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(self._settings_frame_color)
+        if self.isWindow():
+            # Painter's native window region owns the outer curve. Filling the
+            # full client rect avoids turning the light window base into a
+            # separately painted outline with mismatched antialiasing.
+            painter.fillRect(self.rect(), self._settings_frame_color)
+            return
+
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.drawRoundedRect(
             QtCore.QRectF(self.rect()),
             self.settingsWindowRadius(),
