@@ -413,6 +413,19 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         painter.setBrush(self._settings_frame_color)
         if self.isWindow():
             painter.fillRect(self.rect(), self._settings_frame_color)
+            # Native fractional-DPR placement can leave the surface child's
+            # first raster row uncovered. Underpaint the flat run so Painter's
+            # title-bar separator cannot flash white below the close button.
+            dpr = max(1.0, self.devicePixelRatioF())
+            inset = self._settings_frame_width / dpr
+            radius = self._settings_surface_top_radius
+            left = inset + radius
+            right = self.width() - inset - radius
+            if right > left:
+                painter.fillRect(
+                    QtCore.QRectF(left, 0.0, right - left, 1.0 / dpr),
+                    self._settings_surface.paintedSurfaceColor(),
+                )
             return
 
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)

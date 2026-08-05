@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-08-05T02:51:05.732540+00:00",
+  "generated_at": "2026-08-05T03:28:14.073709+00:00",
   "source_root": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-ui-prettier",
   "source_git_head": "8404228",
-  "source_git_status": "",
+  "source_git_status": "M rizum_ui/settings_dialog.py",
   "managed_roots": [
     "rizum_ui",
     "icons"
