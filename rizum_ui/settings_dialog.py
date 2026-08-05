@@ -67,6 +67,7 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._settings_frame_color = QtGui.QColor(PAINTER_SETTINGS_FRAME_COLOR)
         self._settings_frame_width = 0
         self._settings_frame_bottom_width = 0
+        self._settings_bottom_edge_blend = True
         self._settings_surface_top_radius = 0.0
         self._settings_surface_radius = 0.0
         self._settings_ui_scale = _configured_ui_scale()
@@ -100,6 +101,9 @@ class PainterSettingsDialog(QtWidgets.QDialog):
 
     def settingsFrameBottomWidth(self) -> int:
         return self._settings_frame_bottom_width
+
+    def settingsBottomEdgeBlendEnabled(self) -> bool:
+        return self._settings_bottom_edge_blend
 
     def settingsSurfaceRadius(self) -> float:
         return self._settings_surface_radius
@@ -156,6 +160,14 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._update_frame_margins()
         self.update()
 
+    def setSettingsBottomEdgeBlendEnabled(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if enabled == self._settings_bottom_edge_blend:
+            return
+        self._settings_bottom_edge_blend = enabled
+        self._update_surface_stylesheet()
+        self.update()
+
     def _update_frame_margins(self) -> None:
         self._settings_outer_layout.setContentsMargins(
             self._settings_frame_width,
@@ -169,11 +181,17 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         item_px = self.settingsMetric(13)
         meta_px = self.settingsMetric(11)
         button_px = self.settingsMetric(12)
+        bottom_edge = (
+            "1px solid transparent"
+            if self._settings_bottom_edge_blend
+            else "0"
+        )
         self._settings_surface.setStyleSheet(
             f"""
             QFrame#{_SURFACE_OBJECT_NAME} {{
                 background: {self._settings_theme.surface};
                 border: 0;
+                border-bottom: {bottom_edge};
                 border-top-left-radius: {self._settings_surface_top_radius:g}px;
                 border-top-right-radius: {self._settings_surface_top_radius:g}px;
                 border-bottom-left-radius: {self._settings_surface_radius:g}px;
