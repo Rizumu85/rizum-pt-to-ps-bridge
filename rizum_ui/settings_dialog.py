@@ -75,11 +75,11 @@ def _surface_path(
 
 
 class _PainterSettingsSurface(QtWidgets.QFrame):
-    """Dialog-wide surface painting the dark panel as one antialiased path.
+    """Dialog-wide surface painting the dark panel as one path.
 
-    The widget fills the whole dialog so the frame ring can land on exact
-    device-pixel boundaries: layout margins only move whole DIPs, which is
-    what made the old QSS margin/border stack uneven at fractional DPR.
+    Native windows leave their outer frame and clipping to the platform.
+    Embedded previews keep the painted Painter-like frame so designers can
+    inspect the dialog without changing the production window chrome.
     QSS remains the color source: consumers restyle the surface by appending
     a background rule for its object name, and the last declaration wins.
     """
@@ -92,6 +92,7 @@ class _PainterSettingsSurface(QtWidgets.QFrame):
         self._frame_bottom = 0.0
         self._top_radius = 0.0
         self._bottom_radius = 0.0
+        self._delegate_native_chrome = False
 
     def paintedSurfaceColor(self) -> QtGui.QColor:
         return QtGui.QColor(self._painted_color)
@@ -108,6 +109,17 @@ class _PainterSettingsSurface(QtWidgets.QFrame):
         self._frame_bottom = float(bottom)
         self._top_radius = float(top_radius)
         self._bottom_radius = float(bottom_radius)
+        self.update()
+
+    def setDelegatesNativeChrome(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if enabled == self._delegate_native_chrome:
+            return
+        self._delegate_native_chrome = enabled
+        self.setAttribute(
+            QtCore.Qt.WidgetAttribute.WA_OpaquePaintEvent,
+            enabled,
+        )
         self.update()
 
     def setStyleSheet(self, stylesheet) -> None:
@@ -145,6 +157,10 @@ class _PainterSettingsSurface(QtWidgets.QFrame):
     def paintEvent(self, event) -> None:
         del event
         if not self._painted_color.isValid():
+            return
+        if self._delegate_native_chrome:
+            painter = QtGui.QPainter(self)
+            painter.fillRect(self.rect(), self._painted_color)
             return
         dpr = max(1.0, self.devicePixelRatioF())
         inset = self._frame_width / dpr
@@ -187,7 +203,7 @@ def _configured_ui_scale() -> float:
 
 
 class PainterSettingsDialog(QtWidgets.QDialog):
-    """Painter dialog with a narrow light frame and rounded dark surface."""
+    """Painter dialog whose native chrome stays owned by the platform."""
 
     settingsUiScaleChanged = QtCore.Signal(float)
 
@@ -314,6 +330,13 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         else:
             bottom = self._settings_frame_bottom_override
         self._settings_frame_bottom_width = bottom
+        if self.isWindow():
+            self._settings_surface_layout.setContentsMargins(0, 0, 0, 0)
+            self._settings_surface.setPaintedFrame(0, 0, 0, 0)
+            self._settings_surface.setDelegatesNativeChrome(True)
+            return
+
+        self._settings_surface.setDelegatesNativeChrome(False)
         # Content insets stay whole DIPs; the painted ring compensates below
         # that so it always lands on exact device pixels.
         self._settings_surface_layout.setContentsMargins(
@@ -408,26 +431,12 @@ class PainterSettingsDialog(QtWidgets.QDialog):
 
     def paintEvent(self, event) -> None:
         del event
+        if self.isWindow():
+            return
+
         painter = QtGui.QPainter(self)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(self._settings_frame_color)
-        if self.isWindow():
-            painter.fillRect(self.rect(), self._settings_frame_color)
-            # Native fractional-DPR placement can leave the surface child's
-            # first raster row uncovered. Underpaint the flat run so Painter's
-            # title-bar separator cannot flash white below the close button.
-            dpr = max(1.0, self.devicePixelRatioF())
-            inset = self._settings_frame_width / dpr
-            radius = self._settings_surface_top_radius
-            left = inset + radius
-            right = self.width() - inset - radius
-            if right > left:
-                painter.fillRect(
-                    QtCore.QRectF(left, 0.0, right - left, 1.0 / dpr),
-                    self._settings_surface.paintedSurfaceColor(),
-                )
-            return
-
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.drawRoundedRect(
             QtCore.QRectF(self.rect()),
