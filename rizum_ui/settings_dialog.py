@@ -431,7 +431,7 @@ class PainterSettingsDialog(QtWidgets.QDialog):
 
     def paintEvent(self, event) -> None:
         del event
-        if self.isWindow():
+        if self.isWindow() or self._settings_frame_width <= 0:
             return
 
         painter = QtGui.QPainter(self)

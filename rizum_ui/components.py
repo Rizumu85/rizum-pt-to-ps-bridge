@@ -2359,6 +2359,8 @@ def make_painter_window_content(
     parent=None,
     *,
     rounded=True,
+    top_radius=None,
+    bottom_radius=None,
 ):
     """Create a preview container for plugin-controlled window content."""
     from PySide6 import QtCore, QtWidgets
@@ -2371,26 +2373,33 @@ def make_painter_window_content(
             self._content_layout = QtWidgets.QVBoxLayout(self)
             self._content_layout.setContentsMargins(0, 0, 0, 0)
             self._content_layout.setSpacing(0)
-            self._rounded = bool(rounded)
+            default_top = PAINTER_WINDOW_CONTENT_RADIUS if rounded else 0
+            default_bottom = (
+                PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS if rounded else 0
+            )
+            self._top_radius = max(
+                0,
+                int(default_top if top_radius is None else top_radius),
+            )
+            self._bottom_radius = max(
+                0,
+                int(default_bottom if bottom_radius is None else bottom_radius),
+            )
             self.setPainterContentColor(background)
 
         def contentLayout(self):
             return self._content_layout
 
         def setPainterContentColor(self, color):
-            top_radius = PAINTER_WINDOW_CONTENT_RADIUS if self._rounded else 0
-            bottom_radius = (
-                PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS if self._rounded else 0
-            )
             self.setStyleSheet(
                 f"""
                 QFrame#RizumPainterWindowContent {{
                     background: {color};
                     border: 0;
-                    border-top-left-radius: {top_radius}px;
-                    border-top-right-radius: {top_radius}px;
-                    border-bottom-left-radius: {bottom_radius}px;
-                    border-bottom-right-radius: {bottom_radius}px;
+                    border-top-left-radius: {self._top_radius}px;
+                    border-top-right-radius: {self._top_radius}px;
+                    border-bottom-left-radius: {self._bottom_radius}px;
+                    border-bottom-right-radius: {self._bottom_radius}px;
                 }}
                 """
             )
