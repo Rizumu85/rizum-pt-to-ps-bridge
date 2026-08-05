@@ -2354,8 +2354,13 @@ def make_painter_title_bar(title, parent=None):
     return _PainterTitleBar()
 
 
-def make_painter_window_content(background="#1b1b1b", parent=None):
-    """Create Painter's rounded client area below the native title bar."""
+def make_painter_window_content(
+    background="#1b1b1b",
+    parent=None,
+    *,
+    rounded=True,
+):
+    """Create a preview container for plugin-controlled window content."""
     from PySide6 import QtCore, QtWidgets
 
     class _PainterWindowContent(QtWidgets.QFrame):
@@ -2366,21 +2371,26 @@ def make_painter_window_content(background="#1b1b1b", parent=None):
             self._content_layout = QtWidgets.QVBoxLayout(self)
             self._content_layout.setContentsMargins(0, 0, 0, 0)
             self._content_layout.setSpacing(0)
+            self._rounded = bool(rounded)
             self.setPainterContentColor(background)
 
         def contentLayout(self):
             return self._content_layout
 
         def setPainterContentColor(self, color):
+            top_radius = PAINTER_WINDOW_CONTENT_RADIUS if self._rounded else 0
+            bottom_radius = (
+                PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS if self._rounded else 0
+            )
             self.setStyleSheet(
                 f"""
                 QFrame#RizumPainterWindowContent {{
                     background: {color};
                     border: 0;
-                    border-top-left-radius: {PAINTER_WINDOW_CONTENT_RADIUS}px;
-                    border-top-right-radius: {PAINTER_WINDOW_CONTENT_RADIUS}px;
-                    border-bottom-left-radius: {PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS}px;
-                    border-bottom-right-radius: {PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS}px;
+                    border-top-left-radius: {top_radius}px;
+                    border-top-right-radius: {top_radius}px;
+                    border-bottom-left-radius: {bottom_radius}px;
+                    border-bottom-right-radius: {bottom_radius}px;
                 }}
                 """
             )
