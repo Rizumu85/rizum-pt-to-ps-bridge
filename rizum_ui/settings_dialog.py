@@ -69,7 +69,6 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._settings_surface_top_radius = 0.0
         self._settings_surface_radius = 0.0
         self._settings_ui_scale = _configured_ui_scale()
-        self._settings_frame_path = QtGui.QPainterPath()
 
         self._settings_outer_layout = QtWidgets.QVBoxLayout(self)
         self._settings_outer_layout.setSpacing(0)
@@ -136,10 +135,7 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._settings_surface_top_radius = float(
             self._settings_theme.radius_window
         )
-        self._settings_surface_radius = max(
-            0.0,
-            float(self._settings_theme.radius_window - width),
-        )
+        self._settings_surface_radius = float(self._settings_theme.radius_window)
         self._settings_outer_layout.setContentsMargins(
             width,
             0,
@@ -227,32 +223,21 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         ):
             self.syncSettingsUiScale()
 
-    def resizeEvent(self, event) -> None:
-        self._rebuild_settings_frame_path()
-        super().resizeEvent(event)
-
-    def _rebuild_settings_frame_path(self) -> None:
-        # Native dialogs and embedded previews intentionally share this curve;
-        # the OS window region is only the final outer bound in Painter.
-        path = QtGui.QPainterPath()
-        radius = self.settingsWindowRadius()
-        path.addRoundedRect(QtCore.QRectF(self.rect()), radius, radius)
-        self._settings_frame_path = path
-
     def paintEvent(self, event) -> None:
         del event
-        if self._settings_frame_path.isEmpty():
-            self._rebuild_settings_frame_path()
         painter = QtGui.QPainter(self)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(self._settings_frame_color)
+        if self.isWindow():
+            painter.fillRect(self.rect(), self._settings_frame_color)
+            return
+
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        painter.setCompositionMode(
-            QtGui.QPainter.CompositionMode.CompositionMode_Source
+        painter.drawRoundedRect(
+            QtCore.QRectF(self.rect()),
+            self.settingsWindowRadius(),
+            self.settingsWindowRadius(),
         )
-        painter.fillRect(self.rect(), QtCore.Qt.GlobalColor.transparent)
-        painter.setCompositionMode(
-            QtGui.QPainter.CompositionMode.CompositionMode_SourceOver
-        )
-        painter.fillPath(self._settings_frame_path, self._settings_frame_color)
 
 
 __all__ = [
