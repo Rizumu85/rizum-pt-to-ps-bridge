@@ -3245,6 +3245,12 @@ def make_compact_stepper(
             # Painter host styling must not move the native editing baseline.
             super().setAlignment(self._alignment)
 
+        def paintEvent(self, event):
+            # QLineEdit keeps native input, selection, and cursor-position
+            # behavior, while the parent owns every visible pixel. Painter's
+            # host style can otherwise shift this text or reveal a second caret.
+            event.accept()
+
     class _CompactStepper(QtWidgets.QWidget):
         valueChanged = QtCore.Signal(object)
 
@@ -3286,7 +3292,16 @@ def make_compact_stepper(
             self._editor.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
             self._editor.editingFinished.connect(self._commit_edit)
             self._editor.textChanged.connect(self._editor_visual_changed)
+            self._editor.cursorPositionChanged.connect(
+                self._editor_visual_changed
+            )
             self._editor.selectionChanged.connect(self._editor_visual_changed)
+            self._cursor_visible = False
+            self._cursor_timer = QtCore.QTimer(self)
+            self._cursor_timer.setInterval(
+                max(200, QtWidgets.QApplication.cursorFlashTime() // 2)
+            )
+            self._cursor_timer.timeout.connect(self._toggle_edit_cursor)
             if self._decimals:
                 validator = QtGui.QDoubleValidator(
                     float(self._minimum),
@@ -3380,20 +3395,11 @@ def make_compact_stepper(
         def _sync_editor_geometry(self):
             scale = self._geometry_scale()
             value_rect = self._rect_for("value")
-            metrics = QtGui.QFontMetrics(self._value_font())
-            line_top = (self._compact_height - metrics.height() + 1) // 2
-            # Painter can apply qproperty-alignment through C++ and bypass the
-            # Python override, so center the native editor's line box itself.
-            editor_y = max(0, line_top - 1)
-            editor_height = min(
-                self._compact_height - editor_y,
-                metrics.height() + 2,
-            )
             self._editor.setGeometry(
                 int(round(value_rect.left())),
-                editor_y,
+                0,
                 max(1, int(round(value_rect.width()))),
-                max(1, editor_height),
+                self._compact_height,
             )
             self._editor.setTextMargins(
                 max(0, int(round(11 * scale)) - 2),
@@ -3438,7 +3444,17 @@ QLineEdit#RizumCompactStepperEditor {{
 
         def _editor_visual_changed(self, *_args):
             if self._editing:
+                self._cursor_visible = True
+                self._cursor_timer.start()
                 self.update()
+
+        def _toggle_edit_cursor(self):
+            if not self._editing or not self._editor.hasFocus():
+                self._cursor_visible = False
+                self._cursor_timer.stop()
+                return
+            self._cursor_visible = not self._cursor_visible
+            self.update()
 
         def _geometry_scale(self):
             return self._compact_height / 32.0
@@ -3558,6 +3574,8 @@ QLineEdit#RizumCompactStepperEditor {{
             self._editor.show()
             self._editor.raise_()
             self._editor.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+            self._cursor_visible = True
+            self._cursor_timer.start()
             app = QtWidgets.QApplication.instance()
             if app is not None and not self._outside_click_filter_installed:
                 app.installEventFilter(self)
@@ -3583,6 +3601,8 @@ QLineEdit#RizumCompactStepperEditor {{
         def _finish_edit(self):
             self._editing = False
             self._replace_on_type = False
+            self._cursor_visible = False
+            self._cursor_timer.stop()
             app = QtWidgets.QApplication.instance()
             if app is not None and self._outside_click_filter_installed:
                 app.removeEventFilter(self)
@@ -3776,6 +3796,12 @@ QLineEdit#RizumCompactStepperEditor {{
             symbol_center_y = self._value_visual_center_y()
             self._draw_step_symbol(painter, "minus", symbol_center_y)
             self._draw_value_text(painter)
+            if (
+                self._editing
+                and self._editor.hasFocus()
+                and self._cursor_visible
+            ):
+                self._draw_edit_cursor(painter)
             self._draw_step_symbol(painter, "plus", symbol_center_y)
             painter.end()
 
@@ -3838,13 +3864,40 @@ QLineEdit#RizumCompactStepperEditor {{
                     2 * scale,
                     2 * scale,
                 )
-            if self._editing:
-                return
             painter.setPen(QtGui.QColor(self._theme["text"]))
             # Left-align the number so it lines up with combo input text.
             painter.drawText(
                 QtCore.QPointF(text_x, baseline),
                 self._value_text(),
+            )
+
+        def _draw_edit_cursor(self, painter):
+            font = self._value_font()
+            metrics = QtGui.QFontMetricsF(font)
+            scale = self._geometry_scale()
+            cursor_position = max(
+                0,
+                min(self._editor.cursorPosition(), len(self._value_text())),
+            )
+            cursor_x = (
+                11 * scale
+                + metrics.horizontalAdvance(
+                    self._value_text()[:cursor_position]
+                )
+                + scale
+            )
+            baseline = self._value_baseline(font)
+            cursor_top = baseline - metrics.ascent()
+            cursor_bottom = baseline + max(metrics.descent(), scale)
+            painter.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(self._theme["text"]),
+                    max(1.0, scale),
+                )
+            )
+            painter.drawLine(
+                QtCore.QPointF(cursor_x, cursor_top),
+                QtCore.QPointF(cursor_x, cursor_bottom),
             )
 
         def _draw_step_symbol(self, painter, part, center_y):
