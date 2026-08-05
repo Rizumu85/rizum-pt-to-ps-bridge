@@ -135,7 +135,11 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._settings_surface_top_radius = float(
             self._settings_theme.radius_window
         )
-        self._settings_surface_radius = float(self._settings_theme.radius_window)
+        # The inset bottom curve stays concentric with Painter's outer curve.
+        self._settings_surface_radius = max(
+            0.0,
+            float(self._settings_theme.radius_window - width),
+        )
         self._settings_outer_layout.setContentsMargins(
             width,
             0,
