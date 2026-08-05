@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from types import MappingProxyType
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .components import FOOTER_BUTTON_PADDING_X
 from .theme import default_theme
+
+
+PAINTER_DIALOG_STYLE = MappingProxyType(
+    {
+        "surface": "#202020",
+        "control": "#333333",
+        "control_hover": "#444444",
+        "control_pressed": "#2c2c2c",
+        "text": "#f2f2f2",
+        "muted": "#9a9a9a",
+        "faint": "#858585",
+        "accent": "#f2f2f2",
+        "accent_hover": "#ffffff",
+        "accent_pressed": "#dedede",
+        "accent_text": "#202020",
+    }
+)
 
 
 class TextActionButton(QtWidgets.QAbstractButton):
@@ -19,8 +37,8 @@ class TextActionButton(QtWidgets.QAbstractButton):
     def __init__(
         self,
         text: str,
-        muted: str = "#a8acb2",
-        active: str = "#f0f0f0",
+        muted: str = PAINTER_DIALOG_STYLE["muted"],
+        active: str = PAINTER_DIALOG_STYLE["text"],
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -159,14 +177,15 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
 
     BASE_HEIGHT = 28
     MIN_HEIGHT = 21
+    HOVER_DURATION = 100
 
     def __init__(
         self,
         text: str,
-        background: str = "#303236",
-        hover_background: str = "#383a3e",
-        pressed_background: str = "#2b2d30",
-        text_color: str = "#f0f0f0",
+        background: str = PAINTER_DIALOG_STYLE["control"],
+        hover_background: str = PAINTER_DIALOG_STYLE["control_hover"],
+        pressed_background: str = PAINTER_DIALOG_STYLE["control_pressed"],
+        text_color: str = PAINTER_DIALOG_STYLE["text"],
         radius: float = default_theme.radius_small,
         parent=None,
     ) -> None:
@@ -186,7 +205,23 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         self._text_color = QtGui.QColor(text_color)
         self._radius = float(radius)
         self._compact_height = self.BASE_HEIGHT
+        self._hover_progress = 0.0
+        self._hover_animation = None
         self.setCompactHeight(self.BASE_HEIGHT)
+
+    @staticmethod
+    def _blend(
+        start: QtGui.QColor,
+        end: QtGui.QColor,
+        progress: float,
+    ) -> QtGui.QColor:
+        progress = max(0.0, min(1.0, float(progress)))
+        return QtGui.QColor(
+            round(start.red() + (end.red() - start.red()) * progress),
+            round(start.green() + (end.green() - start.green()) * progress),
+            round(start.blue() + (end.blue() - start.blue()) * progress),
+            round(start.alpha() + (end.alpha() - start.alpha()) * progress),
+        )
 
     def _scale(self) -> float:
         return self._compact_height / float(self.BASE_HEIGHT)
@@ -210,6 +245,58 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         self.updateGeometry()
         self.update()
 
+    def hoverProgress(self) -> float:
+        return self._hover_progress
+
+    def setHoverProgress(self, value: float) -> None:
+        self._hover_progress = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    animatedHoverProgress = QtCore.Property(
+        float,
+        hoverProgress,
+        setHoverProgress,
+    )
+
+    def _animate_hover(self, target: float) -> None:
+        if self._hover_animation is not None:
+            self._hover_animation.stop()
+            self._hover_animation.deleteLater()
+        animation = QtCore.QPropertyAnimation(
+            self,
+            b"animatedHoverProgress",
+            self,
+        )
+        animation.setDuration(self.HOVER_DURATION)
+        animation.setStartValue(self._hover_progress)
+        animation.setEndValue(float(target))
+        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._hover_animation = animation
+
+        def clear_animation() -> None:
+            if self._hover_animation is animation:
+                self._hover_animation = None
+            animation.deleteLater()
+
+        animation.finished.connect(clear_animation)
+        animation.start()
+
+    def enterEvent(self, event) -> None:
+        self._animate_hover(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._animate_hover(0.0)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        super().mousePressEvent(event)
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        self.update()
+
     def paintEvent(self, event) -> None:
         del event
         painter = QtGui.QPainter(self)
@@ -217,10 +304,16 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing, True)
         if self.isDown():
             background = self._pressed_background
-        elif self.underMouse() or self.hasFocus():
-            background = self._hover_background
         else:
-            background = self._background
+            hover_progress = max(
+                self._hover_progress,
+                1.0 if self.hasFocus() else 0.0,
+            )
+            background = self._blend(
+                self._background,
+                self._hover_background,
+                hover_progress,
+            )
         radius = max(4.0, self._radius * self._scale())
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(background)
@@ -242,16 +335,20 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
     MIN_HEIGHT = 21
     ACTIVATION_DURATION = 140
     FEEDBACK_DURATION = 500
+    HOVER_DURATION = 100
 
     def __init__(
         self,
         text: str,
-        disabled_background: str = "#303236",
-        disabled_text: str = "#858a90",
-        active_background: str = "#f2f2f2",
-        active_text: str = "#202123",
+        disabled_background: str = PAINTER_DIALOG_STYLE["control"],
+        disabled_text: str = PAINTER_DIALOG_STYLE["faint"],
+        active_background: str = PAINTER_DIALOG_STYLE["accent"],
+        active_text: str = PAINTER_DIALOG_STYLE["accent_text"],
         radius: float = default_theme.radius_small,
         parent=None,
+        *,
+        active_hover_background: str = PAINTER_DIALOG_STYLE["accent_hover"],
+        active_pressed_background: str = PAINTER_DIALOG_STYLE["accent_pressed"],
     ) -> None:
         super().__init__(parent)
         self.setText(text)
@@ -266,6 +363,8 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         self._disabled_text = QtGui.QColor(disabled_text)
         self._active_background = QtGui.QColor(active_background)
         self._active_text = QtGui.QColor(active_text)
+        self._active_hover_background = QtGui.QColor(active_hover_background)
+        self._active_pressed_background = QtGui.QColor(active_pressed_background)
         self._radius = float(radius)
         self._compact_height = self.BASE_HEIGHT
         self._dirty = None
@@ -273,8 +372,10 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         self._activation_progress = 0.0
         self._pulse_progress = 0.0
         self._check_progress = 0.0
+        self._hover_progress = 0.0
         self._state_animation = None
         self._feedback_animation = None
+        self._hover_animation = None
         self.setCompactHeight(self.BASE_HEIGHT)
         self.setDirty(False, animate=False)
 
@@ -352,6 +453,36 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
 
     animatedCheckProgress = QtCore.Property(float, checkProgress, setCheckProgress)
 
+    def hoverProgress(self) -> float:
+        return self._hover_progress
+
+    def setHoverProgress(self, value: float) -> None:
+        self._hover_progress = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    animatedHoverProgress = QtCore.Property(
+        float,
+        hoverProgress,
+        setHoverProgress,
+    )
+
+    def _animate_hover(self, target: float) -> None:
+        self._stop_animation("_hover_animation")
+        animation = QtCore.QPropertyAnimation(
+            self,
+            b"animatedHoverProgress",
+            self,
+        )
+        animation.setDuration(self.HOVER_DURATION)
+        animation.setStartValue(self._hover_progress)
+        animation.setEndValue(float(target))
+        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._hover_animation = animation
+        animation.finished.connect(
+            lambda: self._clear_animation("_hover_animation", animation)
+        )
+        animation.start()
+
     def _stop_animation(self, attribute: str) -> None:
         animation = getattr(self, attribute)
         if animation is None:
@@ -384,6 +515,9 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
             else QtCore.Qt.CursorShape.ArrowCursor
         )
         super().setEnabled(dirty)
+        if not dirty:
+            self._stop_animation("_hover_animation")
+            self.setHoverProgress(0.0)
 
         target = 1.0 if dirty else 0.0
         if not animate:
@@ -424,6 +558,8 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         self._feedback_active = True
         super().setEnabled(False)
         self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+        self._stop_animation("_hover_animation")
+        self.setHoverProgress(0.0)
         self.setActivationProgress(1.0)
         self.setPulseProgress(0.0)
         self.setCheckProgress(0.0)
@@ -456,6 +592,48 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         group.finished.connect(finish)
         group.start()
 
+    def enterEvent(self, event) -> None:
+        if self._dirty and self.isEnabled():
+            self._animate_hover(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._animate_hover(0.0)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        super().mousePressEvent(event)
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        self.update()
+
+    def _checkmark_polygon(self) -> QtGui.QPolygonF:
+        scale = self._scale()
+        center = QtCore.QRectF(self.rect()).center()
+        # The authored path bounds are offset from its origin; compensate so
+        # the visible mark, rather than that origin, shares the text center.
+        # Extra +1.0 design px: a bounds-centered check reads optically high
+        # against the Save label, so bias the mark down (user report).
+        origin = QtCore.QPointF(
+            center.x() - 0.35 * scale,
+            center.y() + 1.4 * scale,
+        )
+        return QtGui.QPolygonF(
+            [
+                QtCore.QPointF(origin.x() - 4.5 * scale, origin.y()),
+                QtCore.QPointF(
+                    origin.x() - 1.2 * scale,
+                    origin.y() + 3.0 * scale,
+                ),
+                QtCore.QPointF(
+                    origin.x() + 5.2 * scale,
+                    origin.y() - 3.8 * scale,
+                ),
+            ]
+        )
+
     def paintEvent(self, event) -> None:
         del event
         painter = QtGui.QPainter(self)
@@ -473,9 +651,13 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
             )
         if self._dirty and self.isEnabled():
             if self.isDown():
-                background = background.darker(112)
-            elif self.underMouse():
-                background = background.lighter(104)
+                background = self._active_pressed_background
+            elif self._hover_progress:
+                background = self._blend(
+                    background,
+                    self._active_hover_background,
+                    self._hover_progress,
+                )
         text_color = self._blend(
             self._disabled_text,
             self._active_text,
@@ -497,20 +679,11 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
 
         painter.setOpacity(self._check_progress)
         scale = self._scale()
-        center = QtCore.QPointF(self.rect().center())
         pen = QtGui.QPen(text_color, max(1.4, 1.7 * scale))
         pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        painter.drawPolyline(
-            QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(center.x() - 4.5 * scale, center.y()),
-                    QtCore.QPointF(center.x() - 1.2 * scale, center.y() + 3.0 * scale),
-                    QtCore.QPointF(center.x() + 5.2 * scale, center.y() - 3.8 * scale),
-                ]
-            )
-        )
+        painter.drawPolyline(self._checkmark_polygon())
         painter.end()
 
 
@@ -898,6 +1071,7 @@ class ModeParameterSlot(QtWidgets.QFrame):
             row.setFixedHeight(self._expanded_height)
             self._layout.addWidget(row)
         self.setFixedHeight(0)
+        self.hide()
 
     def expandedHeight(self) -> int:
         return self._expanded_height
@@ -944,14 +1118,19 @@ class ModeParameterSlot(QtWidgets.QFrame):
                 key != target_mode,
             )
         if target_mode is not None:
+            self.show()
             self._layout.setCurrentWidget(self._rows[target_mode])
-        self.setHeightProgress(1.0 if target_mode is not None else 0.0)
+            self.setHeightProgress(1.0)
+        else:
+            self.setHeightProgress(0.0)
+            self.hide()
         self.update()
 
 
 __all__ = [
     "AnimatedSaveButton",
     "ModeParameterSlot",
+    "PAINTER_DIALOG_STYLE",
     "SecondaryActionButton",
     "ShortcutCaptureField",
     "TextActionButton",

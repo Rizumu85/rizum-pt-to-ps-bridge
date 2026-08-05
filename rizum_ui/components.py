@@ -3231,6 +3231,20 @@ def make_compact_stepper(
 
     from .theme import default_theme
 
+    class _StepperLineEdit(QtWidgets.QLineEdit):
+        _alignment = (
+            QtCore.Qt.AlignmentFlag.AlignLeft
+            | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            super().setAlignment(self._alignment)
+
+        def setAlignment(self, _alignment):
+            # Painter host styling must not move the native editing baseline.
+            super().setAlignment(self._alignment)
+
     class _CompactStepper(QtWidgets.QWidget):
         valueChanged = QtCore.Signal(object)
 
@@ -3257,14 +3271,43 @@ def make_compact_stepper(
             self._visual_opacity = 1.0
             self._animation = None
             self._editing = False
-            self._edit_text = self._formatted_value(self._value)
-            self._replace_edit_text = False
+            self._replace_on_type = False
+            self._outside_click_filter_installed = False
             self._theme = {
                 "background": default_theme.surface,
                 "text": default_theme.text,
                 "muted": default_theme.text_muted,
                 "hover": default_theme.surface_child_hover,
             }
+            self._editor = _StepperLineEdit(self)
+            self._editor.setObjectName("RizumCompactStepperEditor")
+            self._editor.setFrame(False)
+            self._editor.setMaxLength(16)
+            self._editor.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+            self._editor.editingFinished.connect(self._commit_edit)
+            self._editor.textChanged.connect(self._editor_visual_changed)
+            self._editor.selectionChanged.connect(self._editor_visual_changed)
+            if self._decimals:
+                validator = QtGui.QDoubleValidator(
+                    float(self._minimum),
+                    float(self._maximum),
+                    self._decimals,
+                    self._editor,
+                )
+                validator.setNotation(
+                    QtGui.QDoubleValidator.Notation.StandardNotation
+                )
+                validator.setLocale(QtCore.QLocale.c())
+            else:
+                validator = QtGui.QIntValidator(
+                    int(self._minimum),
+                    int(self._maximum),
+                    self._editor,
+                )
+            self._editor.setValidator(validator)
+            self._editor.hide()
+            self._sync_editor_geometry()
+            self._sync_editor_style()
             self.setValue(value, emit=False)
 
         def setTheme(self, theme):
@@ -3280,6 +3323,7 @@ def make_compact_stepper(
                     theme.get("hover", default_theme.surface_child_hover),
                 ),
             }
+            self._sync_editor_style()
             self.update()
 
         def value(self):
@@ -3288,10 +3332,12 @@ def make_compact_stepper(
         def setValue(self, value, emit=True):
             next_value = self._normalized_value(value)
             if next_value == self._value:
-                self._edit_text = self._formatted_value(self._value)
+                if not self._editing:
+                    self._editor.setText(self._formatted_value(self._value))
                 return
             self._value = next_value
-            self._edit_text = self._formatted_value(self._value)
+            if not self._editing:
+                self._editor.setText(self._formatted_value(self._value))
             self.update()
             if emit:
                 self.valueChanged.emit(self._value)
@@ -3314,6 +3360,8 @@ def make_compact_stepper(
                 max(90, int(round(120 * scale))),
                 self._compact_height,
             )
+            self._sync_editor_geometry()
+            self._sync_editor_style()
             self.updateGeometry()
             self.update()
 
@@ -3328,6 +3376,60 @@ def make_compact_stepper(
             if self._decimals:
                 return f"{float(value):.{self._decimals}f}"
             return str(int(round(float(value))))
+
+        def _sync_editor_geometry(self):
+            scale = self._geometry_scale()
+            value_rect = self._rect_for("value")
+            self._editor.setGeometry(
+                int(round(value_rect.left())),
+                0,
+                max(1, int(round(value_rect.width()))),
+                self._compact_height,
+            )
+            self._editor.setTextMargins(
+                max(0, int(round(11 * scale)) - 2),
+                0,
+                int(round(3 * scale)),
+                0,
+            )
+
+        def _sync_editor_style(self):
+            font = self._value_font()
+            self._editor.setFont(font)
+            family = font.family().replace("\\", "\\\\").replace('"', '\\"')
+            text_color = QtGui.QColor(self._theme["text"])
+            if not text_color.isValid():
+                text_color = QtGui.QColor(default_theme.text)
+            text_name = text_color.name()
+            self._editor.setStyleSheet(
+                f"""
+QLineEdit#RizumCompactStepperEditor {{
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: {text_name};
+    selection-background-color: transparent;
+    selection-color: {text_name};
+    font-family: "{family}";
+    font-size: {font.pixelSize()}px;
+    font-weight: {font.weight()};
+}}
+"""
+            )
+            palette = self._editor.palette()
+            transparent = QtGui.QColor(0, 0, 0, 0)
+            palette.setColor(QtGui.QPalette.ColorRole.Text, text_color)
+            palette.setColor(
+                QtGui.QPalette.ColorRole.HighlightedText,
+                text_color,
+            )
+            palette.setColor(QtGui.QPalette.ColorRole.Highlight, transparent)
+            self._editor.setPalette(palette)
+
+        def _editor_visual_changed(self, *_args):
+            if self._editing:
+                self.update()
 
         def _geometry_scale(self):
             return self._compact_height / 32.0
@@ -3438,34 +3540,121 @@ def make_compact_stepper(
             self.setValue(self._value + direction * self._step)
 
         def _start_edit(self):
+            if self._editing:
+                return
             self._editing = True
-            self._edit_text = self._formatted_value(self._value)
-            self._replace_edit_text = True
-            self.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+            self._replace_on_type = True
+            self._editor.setText(self._formatted_value(self._value))
+            self._editor.setCursorPosition(len(self._editor.text()))
+            self._editor.show()
+            self._editor.raise_()
+            self._editor.setFocus(QtCore.Qt.FocusReason.MouseFocusReason)
+            app = QtWidgets.QApplication.instance()
+            if app is not None and not self._outside_click_filter_installed:
+                app.installEventFilter(self)
+                self._outside_click_filter_installed = True
             self.update()
 
         def _commit_edit(self):
             if not self._editing:
                 return
-            text = self._edit_text.strip()
+            text = self._editor.text().strip()
             if text not in ("", "-", ".", "-."):
                 try:
                     self.setValue(float(text))
                 except ValueError:
-                    self._edit_text = self._formatted_value(self._value)
-            else:
-                self._edit_text = self._formatted_value(self._value)
-            self._editing = False
-            self._replace_edit_text = False
-            self.update()
+                    pass
+            self._finish_edit()
 
         def _cancel_edit(self):
             if not self._editing:
                 return
-            self._edit_text = self._formatted_value(self._value)
+            self._finish_edit()
+
+        def _finish_edit(self):
             self._editing = False
-            self._replace_edit_text = False
+            self._replace_on_type = False
+            app = QtWidgets.QApplication.instance()
+            if app is not None and self._outside_click_filter_installed:
+                app.removeEventFilter(self)
+                self._outside_click_filter_installed = False
+            self._editor.hide()
+            self._editor.setText(self._formatted_value(self._value))
             self.update()
+
+        def eventFilter(self, watched, event):
+            if not self._editing:
+                return super().eventFilter(watched, event)
+
+            if watched is self._editor:
+                if event.type() == QtCore.QEvent.Type.KeyPress:
+                    key = event.key()
+                    if key in (
+                        QtCore.Qt.Key.Key_Return,
+                        QtCore.Qt.Key.Key_Enter,
+                    ):
+                        self._commit_edit()
+                        event.accept()
+                        return True
+                    if key == QtCore.Qt.Key.Key_Escape:
+                        self._cancel_edit()
+                        event.accept()
+                        return True
+
+                    modifiers = event.modifiers()
+                    blocked_modifiers = (
+                        QtCore.Qt.KeyboardModifier.ControlModifier
+                        | QtCore.Qt.KeyboardModifier.AltModifier
+                        | QtCore.Qt.KeyboardModifier.MetaModifier
+                    )
+                    typed_text = event.text()
+                    is_decimal = self._decimals and typed_text in (".", ",")
+                    is_negative = typed_text == "-" and self._minimum < 0
+                    is_number_character = bool(
+                        typed_text
+                        and (
+                            typed_text.isdigit()
+                            or is_decimal
+                            or is_negative
+                        )
+                    )
+                    if (
+                        self._replace_on_type
+                        and is_number_character
+                        and not modifiers & blocked_modifiers
+                    ):
+                        self._editor.clear()
+                    if is_decimal and typed_text == ",":
+                        self._editor.insert(".")
+                        self._replace_on_type = False
+                        event.accept()
+                        return True
+                    if (
+                        is_number_character
+                        or modifiers & blocked_modifiers
+                        or key
+                        in (
+                            QtCore.Qt.Key.Key_Backspace,
+                            QtCore.Qt.Key.Key_Delete,
+                            QtCore.Qt.Key.Key_Left,
+                            QtCore.Qt.Key.Key_Right,
+                            QtCore.Qt.Key.Key_Home,
+                            QtCore.Qt.Key.Key_End,
+                            QtCore.Qt.Key.Key_Tab,
+                            QtCore.Qt.Key.Key_Backtab,
+                        )
+                    ):
+                        self._replace_on_type = False
+                elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                    self._replace_on_type = False
+
+            if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                global_position = event.globalPosition().toPoint()
+                local_position = self.mapFromGlobal(global_position)
+                if not self.rect().contains(local_position):
+                    self._commit_edit()
+
+            return super().eventFilter(watched, event)
 
         def enterEvent(self, event):
             super().enterEvent(event)
@@ -3515,7 +3704,7 @@ def make_compact_stepper(
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 part = self._part_at(event.position().toPoint() if hasattr(event, "position") else event.pos())
                 pressed_part = self._pressed_part
-                if part == self._pressed_part:
+                if pressed_part is not None and part == pressed_part:
                     if part == "minus":
                         self._step_by(-1)
                     elif part == "plus":
@@ -3532,47 +3721,6 @@ def make_compact_stepper(
             super().mouseReleaseEvent(event)
 
         def keyPressEvent(self, event):
-            if self._editing:
-                if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-                    self._commit_edit()
-                    event.accept()
-                    return
-                if event.key() == QtCore.Qt.Key.Key_Escape:
-                    self._cancel_edit()
-                    event.accept()
-                    return
-                if event.key() == QtCore.Qt.Key.Key_Backspace:
-                    self._edit_text = "" if self._replace_edit_text else self._edit_text[:-1]
-                    self._replace_edit_text = False
-                    self.update()
-                    event.accept()
-                    return
-                text = event.text()
-                is_decimal = self._decimals and text in (".", ",")
-                is_negative = text == "-" and self._minimum < 0
-                if text and (text.isdigit() or is_decimal or is_negative):
-                    seed = "" if self._replace_edit_text else self._edit_text
-                    character = "." if is_decimal else text
-                    next_text = seed + character
-                    if character == "." and "." in seed:
-                        event.accept()
-                        return
-                    if character == "-" and seed:
-                        event.accept()
-                        return
-                    if "." in next_text:
-                        fraction = next_text.partition(".")[2]
-                        if len(fraction) > self._decimals:
-                            event.accept()
-                            return
-                    if len(next_text) <= 16:
-                        self._edit_text = next_text
-                    self._replace_edit_text = False
-                    self.update()
-                    event.accept()
-                    return
-                event.accept()
-                return
             if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
                 self._start_edit()
                 event.accept()
@@ -3588,7 +3736,6 @@ def make_compact_stepper(
             super().keyPressEvent(event)
 
         def focusOutEvent(self, event):
-            self._commit_edit()
             super().focusOutEvent(event)
 
         def wheelEvent(self, event):
@@ -3620,8 +3767,6 @@ def make_compact_stepper(
             symbol_center_y = self._value_visual_center_y()
             self._draw_step_symbol(painter, "minus", symbol_center_y)
             self._draw_value_text(painter)
-            if self._editing and self.hasFocus():
-                self._draw_edit_cursor(painter)
             self._draw_step_symbol(painter, "plus", symbol_center_y)
             painter.end()
 
@@ -3634,9 +3779,11 @@ def make_compact_stepper(
             return font
 
         def _value_baseline(self, font):
-            rect = self._rect_for("value")
-            metrics = QtGui.QFontMetricsF(font)
-            return rect.center().y() + (metrics.ascent() - metrics.descent()) / 2
+            metrics = QtGui.QFontMetrics(font)
+            return float(
+                (self._compact_height - metrics.height() + 1) // 2
+                + metrics.ascent()
+            )
 
         def _value_visual_center_y(self):
             font = self._value_font()
@@ -3646,41 +3793,49 @@ def make_compact_stepper(
             return baseline + bounds.y() + bounds.height() / 2
 
         def _value_text(self):
-            return self._edit_text if self._editing else str(self._value)
+            if self._editing:
+                return self._editor.text()
+            return str(self._value)
 
         def _draw_value_text(self, painter):
             rect = self._rect_for("value")
             font = self._value_font()
             painter.setFont(font)
-            painter.setPen(QtGui.QColor(self._theme["text"]))
             baseline = self._value_baseline(font)
+            scale = self._geometry_scale()
+            text_x = 11 * scale
+            if self._editing and self._editor.hasSelectedText():
+                selection_start = self._editor.selectionStart()
+                selection_end = selection_start + len(
+                    self._editor.selectedText()
+                )
+                metrics = QtGui.QFontMetricsF(font)
+                selection_left = text_x + metrics.horizontalAdvance(
+                    self._value_text()[:selection_start]
+                )
+                selection_width = metrics.horizontalAdvance(
+                    self._value_text()[selection_start:selection_end]
+                )
+                selection_rect = QtCore.QRectF(
+                    selection_left,
+                    rect.center().y() - 9 * scale,
+                    selection_width,
+                    18 * scale,
+                )
+                painter.setPen(QtCore.Qt.PenStyle.NoPen)
+                painter.setBrush(QtGui.QColor("#555555"))
+                painter.drawRoundedRect(
+                    selection_rect,
+                    2 * scale,
+                    2 * scale,
+                )
+            if self._editing:
+                return
+            painter.setPen(QtGui.QColor(self._theme["text"]))
             # Left-align the number so it lines up with combo input text.
             painter.drawText(
-                QtCore.QPointF(11 * self._geometry_scale(), baseline),
+                QtCore.QPointF(text_x, baseline),
                 self._value_text(),
-            )
-
-        def _draw_edit_cursor(self, painter):
-            rect = self._rect_for("value")
-            font = self._value_font()
-            metrics = QtGui.QFontMetricsF(font)
-            # Cursor follows the left-aligned text, just past its right edge.
-            scale = self._geometry_scale()
-            cursor_x = (
-                11 * scale
-                + metrics.horizontalAdvance(self._value_text())
-                + scale
-            )
-            cursor_top = rect.center().y() - 7 * scale
-            painter.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(self._theme["text"]),
-                    max(1.0, scale),
-                )
-            )
-            painter.drawLine(
-                QtCore.QPointF(cursor_x, cursor_top),
-                QtCore.QPointF(cursor_x, cursor_top + 14 * scale),
             )
 
         def _draw_step_symbol(self, painter, part, center_y):
