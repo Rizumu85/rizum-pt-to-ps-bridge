@@ -3380,11 +3380,20 @@ def make_compact_stepper(
         def _sync_editor_geometry(self):
             scale = self._geometry_scale()
             value_rect = self._rect_for("value")
+            metrics = QtGui.QFontMetrics(self._value_font())
+            line_top = (self._compact_height - metrics.height() + 1) // 2
+            # Painter can apply qproperty-alignment through C++ and bypass the
+            # Python override, so center the native editor's line box itself.
+            editor_y = max(0, line_top - 1)
+            editor_height = min(
+                self._compact_height - editor_y,
+                metrics.height() + 2,
+            )
             self._editor.setGeometry(
                 int(round(value_rect.left())),
-                0,
+                editor_y,
                 max(1, int(round(value_rect.width()))),
-                self._compact_height,
+                max(1, editor_height),
             )
             self._editor.setTextMargins(
                 max(0, int(round(11 * scale)) - 2),
