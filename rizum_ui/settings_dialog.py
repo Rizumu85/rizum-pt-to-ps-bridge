@@ -66,6 +66,7 @@ class PainterSettingsDialog(QtWidgets.QDialog):
         self._settings_theme = theme
         self._settings_frame_color = QtGui.QColor(PAINTER_SETTINGS_FRAME_COLOR)
         self._settings_frame_width = 0
+        self._settings_frame_bottom_width = 0
         self._settings_surface_top_radius = 0.0
         self._settings_surface_radius = 0.0
         self._settings_ui_scale = _configured_ui_scale()
@@ -96,6 +97,9 @@ class PainterSettingsDialog(QtWidgets.QDialog):
 
     def settingsFrameWidth(self) -> int:
         return self._settings_frame_width
+
+    def settingsFrameBottomWidth(self) -> int:
+        return self._settings_frame_bottom_width
 
     def settingsSurfaceRadius(self) -> float:
         return self._settings_surface_radius
@@ -132,6 +136,9 @@ class PainterSettingsDialog(QtWidgets.QDialog):
     def setSettingsFrameWidth(self, width: int) -> None:
         width = max(0, int(width))
         self._settings_frame_width = width
+        # Painter contributes the final visible bottom pixel outside the
+        # client area; embedded previews opt back into the full frame width.
+        self._settings_frame_bottom_width = max(0, width - 1)
         self._settings_surface_top_radius = float(
             self._settings_theme.radius_window
         )
@@ -140,14 +147,22 @@ class PainterSettingsDialog(QtWidgets.QDialog):
             0.0,
             float(self._settings_theme.radius_window - width),
         )
-        self._settings_outer_layout.setContentsMargins(
-            width,
-            0,
-            width,
-            width,
-        )
+        self._update_frame_margins()
         self._update_surface_stylesheet()
         self.update()
+
+    def setSettingsFrameBottomWidth(self, width: int) -> None:
+        self._settings_frame_bottom_width = max(0, int(width))
+        self._update_frame_margins()
+        self.update()
+
+    def _update_frame_margins(self) -> None:
+        self._settings_outer_layout.setContentsMargins(
+            self._settings_frame_width,
+            0,
+            self._settings_frame_width,
+            self._settings_frame_bottom_width,
+        )
 
     def _update_surface_stylesheet(self) -> None:
         section_px = self.settingsMetric(10)
