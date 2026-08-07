@@ -1963,6 +1963,7 @@ class SmokeTestPanel:
         self.QtGui = QtGui
         self.QtWidgets = QtWidgets
         self._running = False
+        self._closing = False
         self.targets = []
         self.last_paths = []
         self.last_export_list_path = None
@@ -2045,7 +2046,7 @@ class SmokeTestPanel:
                 if event.type() in (
                     QtCore.QEvent.Type.FontChange,
                     QtCore.QEvent.Type.ApplicationFontChange,
-                ):
+                ) and not self._closing:
                     QtCore.QTimer.singleShot(0, self._apply_dock_ui_scale)
                 return False
 
@@ -2055,7 +2056,8 @@ class SmokeTestPanel:
 
     def close(self):
         """Stop owned Qt helpers before Painter removes the dock."""
-        pass
+        self._closing = True
+        self.widget.removeEventFilter(self._dock_scale_filter)
 
     def _current_ui_scale(self):
         app = self.QtWidgets.QApplication.instance()
@@ -2066,6 +2068,8 @@ class SmokeTestPanel:
             return 1.0
 
     def _apply_dock_ui_scale(self):
+        if self._closing:
+            return
         scale = self._current_ui_scale()
         self._dock_toolbar.setUiScale(scale)
         minimum_width = max(

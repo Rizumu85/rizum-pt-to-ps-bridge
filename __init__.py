@@ -21,5 +21,18 @@ def close_plugin():
     _close_plugin()
 
 
+def reload_plugin():
+    """Reload the package modules Painter keeps cached between plugin toggles."""
+    import importlib
+
+    from sp_plugin import rizum_sp_to_ps as bridge_package
+
+    global _close_plugin, _start_plugin
+    importlib.reload(bridge_package.ui)
+    bridge_package = importlib.reload(bridge_package)
+    _close_plugin = bridge_package.close_plugin
+    _start_plugin = bridge_package.start_plugin
+
+
 if __name__ == "__main__":
     start_plugin()
