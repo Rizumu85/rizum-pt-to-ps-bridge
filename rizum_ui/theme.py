@@ -24,6 +24,10 @@ class Theme:
     surface_control: str = "#343434"
     surface_hover: str = "rgba(255, 255, 255, 13)"
     surface_child_hover: str = "rgba(255, 255, 255, 20)"
+    # Shared clickable-layer overlays in #AARRGGBB so Qt stylesheets and
+    # QColor read one token; hover/press only brighten, never recolor.
+    action_hover: str = "#1effffff"
+    action_pressed: str = "#4bffffff"
     surface_sunken: str = "#222222"
     border: str = "#414141"
     border_soft: str = "rgba(255, 255, 255, 0)"

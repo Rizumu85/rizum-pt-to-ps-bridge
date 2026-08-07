@@ -1663,13 +1663,16 @@ def bind_hover_state(host, row, *widgets, property_name="hovered"):
         def __init__(self):
             super().__init__(host)
 
-        def set_hovered(self, is_hovered):
-            if row.property(property_name) == is_hovered:
+        def set_row_property(self, name, value):
+            if row.property(name) == value:
                 return
-            row.setProperty(property_name, is_hovered)
+            row.setProperty(name, value)
             row.style().unpolish(row)
             row.style().polish(row)
             row.update()
+
+        def set_hovered(self, is_hovered):
+            self.set_row_property(property_name, is_hovered)
 
         def refresh_hovered(self):
             self.set_hovered(any(widget.underMouse() for widget in watched))
@@ -1680,6 +1683,14 @@ def bind_hover_state(host, row, *widgets, property_name="hovered"):
                 self.set_hovered(True)
             elif event_type == QtCore.QEvent.Type.Leave:
                 QtCore.QTimer.singleShot(0, self.refresh_hovered)
+            elif event_type in (
+                QtCore.QEvent.Type.MouseButtonPress,
+                QtCore.QEvent.Type.MouseButtonRelease,
+            ) and event.button() == QtCore.Qt.MouseButton.LeftButton:
+                self.set_row_property(
+                    "pressed",
+                    event_type == QtCore.QEvent.Type.MouseButtonPress,
+                )
             return False
 
     for widget in watched:
@@ -1732,7 +1743,7 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         host.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         host.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         host_layout = QtWidgets.QHBoxLayout(host)
-        host_layout.setContentsMargins(24, 0, 0, 0)
+        host_layout.setContentsMargins(24, 0, 4, 0)
         host_layout.setSpacing(0)
 
         row = QtWidgets.QFrame()
@@ -1740,7 +1751,7 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         row.setProperty("child", "true")
         row.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         row_layout = QtWidgets.QHBoxLayout(row)
-        row_layout.setContentsMargins(8, 4, 8, 4)
+        row_layout.setContentsMargins(8, 4, 4, 4)
         row_layout.setSpacing(10)
         row_layout.addSpacing(0)
 
@@ -1758,6 +1769,25 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         host._rizum_checkbox = checkbox
         host._rizum_checkbox_slot = checkbox_slot
         host._rizum_child = True
+        host._rizum_right_inset = 4
+        host._rizum_right_padding = 4
+
+        def set_right_inset(inset, padding):
+            inset = max(3, int(round(inset)))
+            padding = max(3, int(round(padding)))
+            host._rizum_right_inset = inset
+            host._rizum_right_padding = padding
+            host_layout.setContentsMargins(24, 0, inset, 0)
+            row_layout.setContentsMargins(
+                8,
+                4,
+                padding,
+                4,
+            )
+            host_layout.invalidate()
+            row.updateGeometry()
+
+        host.setRightInset = set_right_inset
         update_export_tree_item(host, name)
         def refresh_host(name_text=None, meta_text=None):
             update_export_tree_item(host, name_text, meta_text)
@@ -1862,8 +1892,15 @@ def make_collapsible_group(
             super().__init__()
             self.setObjectName("RizumCollapsibleChevron")
             self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            self.setFixedSize(14, 14)
+            self._size = 14
+            self.setFixedSize(self._size, self._size)
             self._angle = 90.0 if is_expanded else 0.0
+
+        def setSize(self, size):
+            self._size = max(11, int(round(size)))
+            self.setFixedSize(self._size, self._size)
+            self.updateGeometry()
+            self.update()
 
         def getAngle(self):
             return self._angle
@@ -1875,21 +1912,22 @@ def make_collapsible_group(
         angle = QtCore.Property(float, getAngle, setAngle)
 
         def paintEvent(self, event):
+            scale = self._size / 14.0
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
             painter.translate(self.width() / 2, self.height() / 2)
             painter.rotate(self._angle)
             painter.translate(-self.width() / 2, -self.height() / 2)
             pen = QtGui.QPen(QtGui.QColor("#9e9e9e"))
-            pen.setWidthF(1.8)
+            pen.setWidthF(1.8 * scale)
             pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.drawPolyline(
                 [
-                    QtCore.QPointF(5.0, 3.7),
-                    QtCore.QPointF(8.4, 7.0),
-                    QtCore.QPointF(5.0, 10.3),
+                    QtCore.QPointF(5.0 * scale, 3.7 * scale),
+                    QtCore.QPointF(8.4 * scale, 7.0 * scale),
+                    QtCore.QPointF(5.0 * scale, 10.3 * scale),
                 ]
             )
 
@@ -2078,6 +2116,26 @@ def make_collapsible_group(
         except Exception:
             pass
 
+    def set_compact_height(height):
+        height = max(27, int(round(height)))
+        scale = height / 36.0
+        group_margin = max(2, int(round(2 * scale)))
+        horizontal_margin = max(6, int(round(8 * scale)))
+        vertical_margin = max(3, int(round(4 * scale)))
+        group_layout.setContentsMargins(0, group_margin, 0, group_margin)
+        header.setFixedHeight(height)
+        header_layout.setContentsMargins(
+            horizontal_margin,
+            vertical_margin,
+            horizontal_margin,
+            vertical_margin,
+        )
+        header_layout.setSpacing(max(8, int(round(10 * scale))))
+        content_layout.setSpacing(max(2, int(round(2 * scale))))
+        if chevron is not None:
+            chevron.setSize(max(11, int(round(14 * scale))))
+        refresh_layout()
+
     def set_expanded(next_expanded):
         next_expanded = bool(next_expanded)
         if group._rizum_expanded == next_expanded:
@@ -2138,6 +2196,7 @@ def make_collapsible_group(
     group.isExpanded = lambda: group._rizum_expanded
     group.toggle = toggle
     group.refreshLayout = refresh_layout
+    group.setCompactHeight = set_compact_height
     header.mousePressEvent = lambda event: toggle() if event.button() == QtCore.Qt.MouseButton.LeftButton else None
     return group
 
@@ -2411,6 +2470,8 @@ def make_icon_button(icon_name, tooltip="", size=16, compact=True):
     """Create a themed icon button from the shared icons folder."""
     from PySide6 import QtCore, QtGui, QtWidgets
 
+    from .theme import default_theme
+
     try:
         from PySide6 import QtSvg
     except Exception:
@@ -2546,15 +2607,24 @@ def make_icon_button(icon_name, tooltip="", size=16, compact=True):
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
             painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
             # Hover/pressed background mirrors the stepper: adjusted(1,1,-1,-1)
-            # so the highlight sits 1px inside the button edge, with 6px corners.
+            # so the highlight sits 1px inside the button edge. Fill and radius
+            # come from the shared clickable-layer tokens.
             if self.isEnabled() and (self.underMouse() or self.isDown()):
-                bg_alpha = 75 if self.isDown() else 30
                 frame_size = max(1, min(self.width(), self.height()))
                 frame_scale = max(0.75, frame_size / float(self._button_base_size))
                 hover_inset = max(1, int(round(1 * frame_scale)))
-                hover_radius = max(5, int(round(6 * frame_scale)))
+                hover_radius = max(
+                    5,
+                    int(round(default_theme.radius_small * frame_scale)),
+                )
                 painter.setPen(QtCore.Qt.PenStyle.NoPen)
-                painter.setBrush(QtGui.QColor(255, 255, 255, bg_alpha))
+                painter.setBrush(
+                    QtGui.QColor(
+                        default_theme.action_pressed
+                        if self.isDown()
+                        else default_theme.action_hover
+                    )
+                )
                 rect = QtCore.QRectF(self.rect()).adjusted(
                     hover_inset,
                     hover_inset,
