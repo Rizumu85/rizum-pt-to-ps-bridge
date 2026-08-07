@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bridge
+from . import bridge, pixel_export
 from .blend_map import decide_node_blending
 from .udim import uv_to_udim
 
@@ -256,8 +256,12 @@ def export_request_assets(build_request, progress_callback=None, progress_prefix
     if not str(build_request.get("channel") or "").startswith("User"):
         channel_candidates = [request_channel]
     assets = list(_iter_assets(build_request["layers"], request_channel))
-    total = len(assets)
-    for index, asset in enumerate(assets, start=1):
+    layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
+    initial_mask_count = sum(asset["kind"] == "mask" for asset in assets)
+    total = len(layer_assets) + initial_mask_count
+    completed = 0
+    for asset in layer_assets:
+        index = completed + 1
         layer_label = asset.get("label") or asset["uid_hex"]
         prefix = f"{progress_prefix}: " if progress_prefix else ""
         _notify_progress(
@@ -267,14 +271,44 @@ def export_request_assets(build_request, progress_callback=None, progress_prefix
             total=total,
             text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
         )
-        _export_asset_png(asset, export_settings, channel_candidates)
-        if asset["kind"] == "layer" and _png_is_fully_transparent(asset["path"]):
+        candidates = _dedupe_text([asset["channel"], *channel_candidates])
+        if pixel_export.export_layer_png(asset, export_settings, candidates):
             _remove_asset_by_path(build_request["layers"], asset["path"])
             _remove_file_if_exists(asset["path"])
+        completed += 1
         _notify_progress(
             progress_callback,
             stage="assets",
-            value=index,
+            value=completed,
+            total=total,
+            text=f"{prefix}finished PNG {index} of {total}: {layer_label}",
+        )
+
+    # Re-plan masks after empty channel layers are pruned so their now-orphaned
+    # masks are neither exported nor left beside the finished bundle.
+    mask_assets = [
+        asset
+        for asset in _iter_assets(build_request["layers"], request_channel)
+        if asset["kind"] == "mask"
+    ]
+    total = len(layer_assets) + len(mask_assets)
+    for asset in mask_assets:
+        index = completed + 1
+        layer_label = asset.get("label") or asset["uid_hex"]
+        prefix = f"{progress_prefix}: " if progress_prefix else ""
+        _notify_progress(
+            progress_callback,
+            stage="assets",
+            value=completed,
+            total=total,
+            text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
+        )
+        pixel_export.export_mask_png(asset, export_settings)
+        completed += 1
+        _notify_progress(
+            progress_callback,
+            stage="assets",
+            value=completed,
             total=total,
             text=f"{prefix}finished PNG {index} of {total}: {layer_label}",
         )
@@ -909,55 +943,6 @@ def _iter_assets(nodes, request_channel=None):
         yield from _iter_assets(node.get("content_effects", []), request_channel)
 
 
-def _export_asset_png(asset, export_settings, channel_candidates):
-    if asset["kind"] == "mask":
-        _export_mask_asset_png(asset, export_settings)
-        return
-
-    candidates = [asset["channel"]]
-    if asset["kind"] == "layer":
-        candidates = _dedupe_text([asset["channel"], *channel_candidates])
-
-    wrote_transparent = False
-    errors = []
-    for channel in candidates:
-        try:
-            bridge.export_layer_png_raw(
-                asset["uid"],
-                channel,
-                asset["path"],
-                padding=export_settings["padding"],
-                dilation=export_settings["dilation"],
-                resolution=export_settings["resolution"],
-                bit_depth=export_settings["bit_depth"],
-                keep_alpha=export_settings["keep_alpha"],
-            )
-        except Exception as exc:  # noqa: BLE001 - try alternate user-channel ids.
-            errors.append(f"{channel}: {type(exc).__name__}: {exc}")
-            continue
-
-        if asset["kind"] != "layer" or not _png_is_fully_transparent(asset["path"]):
-            return
-        wrote_transparent = True
-
-    if wrote_transparent:
-        return
-    if errors:
-        raise RuntimeError("; ".join(errors))
-
-
-def _export_mask_asset_png(asset, export_settings):
-    bridge.export_mask_png(
-        asset["uid"],
-        asset["path"],
-        padding=export_settings["padding"],
-        dilation=export_settings["dilation"],
-        resolution=export_settings["resolution"],
-        bit_depth=export_settings["bit_depth"],
-        keep_alpha=export_settings["keep_alpha"],
-    )
-
-
 def _remove_asset_by_path(nodes, asset_path):
     target = str(asset_path)
     for node in nodes:
@@ -1001,29 +986,6 @@ def _remove_file_if_exists(path):
         file_path = Path(path)
         if file_path.exists():
             file_path.unlink()
-
-
-def _png_is_fully_transparent(path):
-    try:
-        from PySide6 import QtGui
-    except Exception:
-        return False
-
-    image = QtGui.QImage(str(path))
-    if image.isNull() or not image.hasAlphaChannel():
-        return False
-
-    rgba_format = getattr(QtGui.QImage, "Format_RGBA8888", None)
-    if rgba_format is None:
-        rgba_format = QtGui.QImage.Format.Format_RGBA8888
-    rgba = image.convertToFormat(rgba_format)
-    data = rgba.constBits()
-    if hasattr(data, "tobytes"):
-        raw = data.tobytes()
-    else:
-        data.setsize(rgba.sizeInBytes())
-        raw = bytes(data)
-    return not any(raw[index] for index in range(3, len(raw), 4))
 
 
 def _safe_filename(value):
