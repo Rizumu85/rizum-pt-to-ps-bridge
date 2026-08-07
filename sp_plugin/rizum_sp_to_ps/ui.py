@@ -57,14 +57,22 @@ _settings_layout = importlib.reload(_settings_layout)
 ActionButton = _components.ActionButton
 apply_theme = _vendored_ui.apply_theme
 build_compact_dock_stylesheet = _components.build_compact_dock_stylesheet
+compact_action_bar_width = _components.compact_action_bar_width
 compact_footer_button_width = _components.compact_footer_button_width
+install_compact_tooltip = _components.install_compact_tooltip
 make_combo_input = _components.make_combo_input
+make_collapsible_group = _components.make_collapsible_group
+make_compact_action_bar = _components.make_compact_action_bar
 make_compact_dock_card = _components.make_compact_dock_card
 make_compact_dock_layout = _components.make_compact_dock_layout
+make_compact_icon_toolbar = _components.make_compact_icon_toolbar
 make_compact_stepper = _components.make_compact_stepper
+make_export_tree_item = _components.make_export_tree_item
 make_icon_button = _components.make_icon_button
 make_inset_separator = _components.make_inset_separator
+make_mock_checkbox = _components.make_mock_checkbox
 set_compact_footer_button_width = _components.set_compact_footer_button_width
+update_export_tree_item = _components.update_export_tree_item
 PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
 SecondaryActionButton = _settings_controls.SecondaryActionButton
@@ -1263,135 +1271,459 @@ class ExportDialog:
     def __init__(self, panel):
         self.panel = panel
         self.QtCore = panel.QtCore
+        self.QtGui = panel.QtGui
         self.QtWidgets = panel.QtWidgets
         self.targets = []
+        self.groups = []
         self._updating_checks = False
+        self._target_error = ""
 
-        self.dialog = self.QtWidgets.QDialog(panel.widget)
+        self.dialog = PainterSettingsDialog(panel.widget)
+        self.dialog.setObjectName("RizumExportDialog")
         self.dialog.setWindowTitle("Export")
         self.dialog.setModal(True)
-        self.dialog.setFixedWidth(318)
-        self.dialog.resize(318, 420)
-        apply_theme(self.dialog, mode="overlay")
+        self.dialog.setSizePolicy(
+            self.QtWidgets.QSizePolicy.Policy.Fixed,
+            self.QtWidgets.QSizePolicy.Policy.Fixed,
+        )
+        surface_layout = self.dialog.settingsSurfaceLayout()
 
-        layout = self.QtWidgets.QVBoxLayout(self.dialog)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
-
-        title = self.QtWidgets.QLabel("Export")
-        title.setObjectName("RizumDialogTitle")
-        layout.addWidget(title)
-        layout.addWidget(make_inset_separator(0, thickness=1))
-
-        toolbar_widget = self.QtWidgets.QWidget()
-        toolbar_widget.setObjectName("RizumDialogToolbar")
-        header = self.QtWidgets.QHBoxLayout(toolbar_widget)
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(4)
         self.scope_combo = make_combo_input([("Current Stack", "current"), ("All Stacks", "all")])
-        self.scope_combo.setCompactHeight(28)
+        self.scope_combo.setObjectName("RizumExportScopeInput")
         self.scope_combo.currentIndexChanged.connect(self.refresh_tree)
-        header.addWidget(self.scope_combo, 0)
-        header.addStretch(1)
 
-        self.expand_button = make_icon_button("chevrons-down.svg", "Expand all", size=14)
-        self.collapse_button = make_icon_button("chevrons-up.svg", "Collapse all", size=14)
-        self.all_button = make_icon_button("circle-dot.svg", "Select all", size=14)
-        self.none_button = make_icon_button("circle-slash.svg", "Select none", size=14)
+        self.expand_button = make_icon_button("chevrons-down.svg", "Expand all")
+        self.collapse_button = make_icon_button("chevrons-up.svg", "Collapse all")
+        self.all_button = make_icon_button("circle-dot.svg", "Select all")
+        self.none_button = make_icon_button("circle-slash.svg", "Select none")
+        for button in (
+            self.expand_button,
+            self.collapse_button,
+            self.all_button,
+            self.none_button,
+        ):
+            button.setProperty("accent", True)
         self.expand_button.clicked.connect(self.tree_expand_all)
         self.collapse_button.clicked.connect(self.tree_collapse_all)
         self.all_button.clicked.connect(lambda: self.set_all_checked(True))
         self.none_button.clicked.connect(lambda: self.set_all_checked(False))
-        header.addWidget(self.expand_button)
-        header.addWidget(self.collapse_button)
-        header.addSpacing(8)
-        header.addWidget(self.all_button)
-        header.addWidget(self.none_button)
-        layout.addWidget(toolbar_widget)
-        layout.addWidget(make_inset_separator(0, thickness=1))
 
-        self.tree = self.QtWidgets.QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.itemChanged.connect(self._on_item_changed)
-        self.tree.setMinimumHeight(150)
-        layout.addWidget(self.tree, 1)
+        self.icon_bar = make_compact_icon_toolbar(
+            self.expand_button,
+            self.collapse_button,
+            None,
+            self.all_button,
+            self.none_button,
+        )
+        self.top_controls = make_compact_action_bar(
+            [self.scope_combo],
+            self.icon_bar,
+            object_name="RizumExportTopControls",
+            height=PAINTER_SETTINGS_LAYOUT.row_height.design,
+            margins=(
+                PAINTER_SETTINGS_LAYOUT.body_margin_x.design,
+                0,
+                PAINTER_SETTINGS_LAYOUT.body_margin_x.design,
+                0,
+            ),
+            spacing=PAINTER_SETTINGS_LAYOUT.row_spacing,
+        )
+        surface_layout.addWidget(self.top_controls)
+
+        self.top_separator = make_inset_separator(
+            PAINTER_SETTINGS_LAYOUT.body_margin_x.design,
+            thickness=1,
+        )
+        self.top_separator.setObjectName("RizumExportTopDivider")
+        surface_layout.addWidget(self.top_separator)
+
+        self.tree_scroll = self.QtWidgets.QScrollArea()
+        self.tree_scroll.setObjectName("RizumExportTreeScroll")
+        self.tree_scroll.setWidgetResizable(True)
+        self.tree_scroll.setFrameShape(self.QtWidgets.QFrame.Shape.NoFrame)
+        self.tree_scroll.setHorizontalScrollBarPolicy(
+            self.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.tree_scroll.setVerticalScrollBarPolicy(
+            self.QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.tree_scroll.viewport().setAutoFillBackground(False)
+
+        self.tree = self.QtWidgets.QFrame()
+        self.tree.setObjectName("RizumExportTree")
+        self.tree_layout = self.QtWidgets.QVBoxLayout(self.tree)
+        self.tree_layout.setContentsMargins(12, 8, 12, 8)
+        self.tree_layout.setSpacing(PAINTER_SETTINGS_LAYOUT.body_spacing.design)
+        self.status = self.QtWidgets.QLabel("")
+        self.status.setObjectName("RizumExportEmptyState")
+        self.status.setWordWrap(True)
+        self.status.setAlignment(self.QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.status.hide()
+        self.tree_layout.addWidget(self.status)
+        self.tree_layout.addStretch(1)
+        self.tree_scroll.setWidget(self.tree)
+        surface_layout.addWidget(self.tree_scroll, 1)
 
         self.export_pngs = self.QtWidgets.QCheckBox("Export PNGs")
         self.export_pngs.setChecked(True)
         self.export_pngs.setVisible(False)
 
-        self.status = self.QtWidgets.QLabel("")
-        self.status.setObjectName("RizumDimLabel")
-        self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        self.footer_separator = make_inset_separator(
+            PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+            thickness=1,
+        )
+        self.footer_separator.setObjectName("RizumExportFooterDivider")
+        surface_layout.addWidget(self.footer_separator)
 
-        self.output = self.QtWidgets.QPlainTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setMinimumHeight(72)
-        self.output.setVisible(False)
-        layout.addWidget(self.output)
-
-        footer = self.QtWidgets.QHBoxLayout()
-        footer.setContentsMargins(0, 6, 0, 0)
-        self.cancel_button = ActionButton.create("Cancel", "dialog-secondary")
-        self.probe_button = ActionButton.create("Probe", "dialog-secondary")
-        self.run_button = ActionButton.create("Export", "dialog-primary")
+        self.footer = self.QtWidgets.QWidget()
+        self.footer.setObjectName("RizumExportFooter")
+        self.footer_outer = self.QtWidgets.QVBoxLayout(self.footer)
+        self.footer_outer.setContentsMargins(0, 0, 0, 0)
+        self.footer_outer.setSpacing(0)
+        self.footer_row = self.QtWidgets.QWidget()
+        self.footer_row.setObjectName("RizumExportFooterRow")
+        self.footer_layout = self.QtWidgets.QHBoxLayout(self.footer_row)
+        self.footer_layout.setContentsMargins(
+            PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+            0,
+            PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+            0,
+        )
+        self.footer_layout.setSpacing(PAINTER_SETTINGS_LAYOUT.footer_button_spacing)
+        theme = PAINTER_DIALOG_STYLE
+        self.cancel_button = SecondaryActionButton(
+            "Cancel",
+            theme["control"],
+            theme["control_hover"],
+            theme["control_pressed"],
+            theme["text"],
+            default_theme.radius_small,
+        )
+        self.cancel_button.setObjectName("RizumExportCancel")
+        self.run_button = SecondaryActionButton(
+            "Export",
+            theme["accent"],
+            theme["accent_hover"],
+            theme["accent_pressed"],
+            theme["accent_text"],
+            default_theme.radius_small,
+        )
+        self.run_button.setObjectName("RizumExportConfirm")
         self.cancel_button.clicked.connect(self.dialog.reject)
-        self.probe_button.clicked.connect(self.probe_masks)
         self.run_button.clicked.connect(self.export_checked)
-        footer.addWidget(self.cancel_button)
-        footer.addWidget(self.probe_button)
-        footer.addStretch(1)
-        footer.addWidget(self.run_button)
-        layout.addLayout(footer)
-        set_compact_footer_button_width(
-            self.cancel_button,
-            compact_footer_button_width(self.cancel_button, minimum=74, maximum=96),
-        )
-        set_compact_footer_button_width(
-            self.probe_button,
-            compact_footer_button_width(self.probe_button, minimum=64, maximum=82),
-        )
-        set_compact_footer_button_width(
-            self.run_button,
-            compact_footer_button_width(self.run_button, minimum=82, maximum=108),
-        )
-        self.dialog.setStyleSheet(self.dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
+        self.footer_layout.addWidget(self.cancel_button)
+        self.footer_layout.addStretch(1)
+        self.footer_layout.addWidget(self.run_button)
+        self.footer_outer.addWidget(self.footer_row)
+        surface_layout.addWidget(self.footer)
+
+        apply_theme(self.dialog, mode="overlay")
+        self.dialog.syncSettingsUiScale()
+        self.dialog.settingsUiScaleChanged.connect(self._apply_ui_scale)
+        self._apply_ui_scale(self.dialog.settingsUiScale())
 
     def open(self):
         self.refresh_targets()
         return self.dialog.exec()
 
     def tree_expand_all(self):
-        self.tree.expandAll()
+        for group in self.groups:
+            group["widget"].setExpanded(True)
 
     def tree_collapse_all(self):
-        self.tree.collapseAll()
+        for group in self.groups:
+            group["widget"].setExpanded(False)
 
-    def _enum(self, group, name):
-        container = getattr(self.QtCore.Qt, group, self.QtCore.Qt)
-        return getattr(container, name)
+    def _metric(self, pixels, minimum=None):
+        return self.dialog.settingsMetric(pixels, minimum)
 
-    def _checked(self):
-        return self._enum("CheckState", "Checked")
-
-    def _unchecked(self):
-        return self._enum("CheckState", "Unchecked")
-
-    def _partial(self):
-        return self._enum("CheckState", "PartiallyChecked")
-
-    def _user_role(self):
-        return self._enum("ItemDataRole", "UserRole")
-
-    def _checkable_flags(self):
+    def _selection_counter(self, selected, total):
+        theme = PAINTER_DIALOG_STYLE
         return (
-            self._enum("ItemFlag", "ItemIsEnabled")
-            | self._enum("ItemFlag", "ItemIsSelectable")
-            | self._enum("ItemFlag", "ItemIsUserCheckable")
+            f'<span style="color:{theme["text"]};">{selected}</span>'
+            f'<span style="color:{theme["faint"]};"> / {total}</span>'
         )
 
+    @staticmethod
+    def _selection_tooltip(selected, total):
+        return f"{selected} of {total} channels selected"
+
+    def _footer_button_width(self, button, minimum=56, maximum=112):
+        scale = self.dialog.settingsUiScale()
+        width = button.sizeHint().width() + self._metric(16, 12)
+        return max(
+            self._metric(minimum),
+            min(int(round(maximum * scale)), width),
+        )
+
+    def _required_width(self):
+        margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
+        toolbar_width = compact_action_bar_width(
+            [self.scope_combo],
+            self.icon_bar,
+            minimum=PAINTER_SETTINGS_LAYOUT.dialog_width.resolve(self.dialog),
+            horizontal_margins=margin * 2,
+            spacing=PAINTER_SETTINGS_LAYOUT.row_spacing,
+            spacing_budget=PAINTER_SETTINGS_LAYOUT.row_spacing,
+        )
+        footer_width = (
+            margin * 2
+            + self.cancel_button.width()
+            + self.run_button.width()
+            + PAINTER_SETTINGS_LAYOUT.footer_button_spacing
+        )
+        return max(
+            PAINTER_SETTINGS_LAYOUT.dialog_width.resolve(self.dialog),
+            toolbar_width,
+            footer_width,
+        )
+
+    def _expanded_tree_height(self):
+        margins = self.tree_layout.contentsMargins()
+        if not self.groups:
+            return margins.top() + self._metric(72, 54) + margins.bottom()
+
+        height = margins.top() + margins.bottom()
+        for index, group in enumerate(self.groups):
+            if index:
+                height += self.tree_layout.spacing()
+            group_layout = group["widget"].layout()
+            group_margins = group_layout.contentsMargins()
+            height += (
+                group_margins.top()
+                + group["widget"]._rizum_header.height()
+                + group["widget"]._rizum_content_inner.sizeHint().height()
+                + group_margins.bottom()
+            )
+        return height
+
+    def _sync_tree_height(self):
+        content_height = self._expanded_tree_height()
+        viewport_height = min(content_height, self._metric(300, 225))
+        self.tree.setMinimumHeight(content_height)
+        self.tree_scroll.setFixedHeight(viewport_height)
+
+    def _apply_ui_scale(self, _scale):
+        margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
+        self.top_controls.setFixedHeight(
+            PAINTER_SETTINGS_LAYOUT.row_height.resolve(self.dialog)
+        )
+        self.top_controls.layout().setContentsMargins(margin, 0, margin, 0)
+        self.top_controls.layout().setSpacing(PAINTER_SETTINGS_LAYOUT.row_spacing)
+        self.scope_combo.setCompactHeight(
+            PAINTER_SETTINGS_LAYOUT.control_height.resolve(self.dialog)
+        )
+        self.scope_combo.fitToContents()
+
+        icon_frame = self._metric(22, 17)
+        icon_size = self._metric(16, 12)
+        for button in (
+            self.expand_button,
+            self.collapse_button,
+            self.all_button,
+            self.none_button,
+        ):
+            button.setFixedSize(icon_frame, icon_frame)
+            button.setPaintedIconSize(icon_size)
+            if hasattr(button, "setCompactTooltipScale"):
+                button.setCompactTooltipScale(self.dialog.settingsUiScale())
+        for separator in self.icon_bar.findChildren(self.QtWidgets.QFrame):
+            if separator.width() == 1:
+                separator.setFixedHeight(self._metric(14, 11))
+
+        tree_margin_x = self._metric(12, 9)
+        tree_margin_y = self._metric(8, 6)
+        self.tree_layout.setContentsMargins(
+            tree_margin_x,
+            tree_margin_y,
+            tree_margin_x,
+            tree_margin_y,
+        )
+        self.tree_layout.setSpacing(
+            PAINTER_SETTINGS_LAYOUT.body_spacing.resolve(self.dialog)
+        )
+        checkbox_size = self._metric(14, 11)
+        group_height = self._metric(36, 27)
+        child_height = self._metric(32, 24)
+        for group in self.groups:
+            for checkbox in (
+                group["parent"],
+                *(child["checkbox"] for child in group["children"]),
+            ):
+                checkbox.setSize(checkbox_size)
+            group["subtitle"].setFixedWidth(self._metric(42, 32))
+            group["subtitle"].setCompactTooltipScale(
+                self.dialog.settingsUiScale()
+            )
+            group["widget"].setCompactHeight(group_height)
+            for child in group["children"]:
+                child["row"].setRightInset(
+                    self._metric(4, 3),
+                    self._metric(4, 3),
+                )
+                update_export_tree_item(
+                    child["row"],
+                    minimum_height=child_height,
+                )
+            group["widget"].refreshLayout()
+
+        footer_margin = PAINTER_SETTINGS_LAYOUT.footer_margin_x.resolve(self.dialog)
+        footer_top = PAINTER_SETTINGS_LAYOUT.footer_top.resolve(self.dialog)
+        footer_gap = PAINTER_SETTINGS_LAYOUT.footer_gap.resolve(self.dialog)
+        footer_bottom = PAINTER_SETTINGS_LAYOUT.footer_bottom.resolve(self.dialog)
+        footer_row_height = PAINTER_SETTINGS_LAYOUT.footer_row_height.resolve(self.dialog)
+        self.footer_outer.setContentsMargins(
+            0,
+            footer_top + footer_gap,
+            0,
+            footer_bottom,
+        )
+        self.footer_row.setFixedHeight(footer_row_height)
+        self.footer.setFixedHeight(
+            footer_top + footer_gap + footer_row_height + footer_bottom
+        )
+        self.footer_layout.setContentsMargins(
+            footer_margin,
+            0,
+            footer_margin,
+            0,
+        )
+        self.footer_separator.layout().setContentsMargins(
+            footer_margin,
+            0,
+            footer_margin,
+            0,
+        )
+        self.top_separator.layout().setContentsMargins(margin, 0, margin, 0)
+        button_height = PAINTER_SETTINGS_LAYOUT.footer_button_height.resolve(
+            self.dialog
+        )
+        for button in (self.cancel_button, self.run_button):
+            button.setCompactHeight(button_height)
+            button.setFixedWidth(self._footer_button_width(button))
+
+        self._restyle()
+        # Painter's host stylesheet applies a 24 px icon-button minimum during
+        # polish, so restore the shared compact frame after the local style lands.
+        for button in (
+            self.expand_button,
+            self.collapse_button,
+            self.all_button,
+            self.none_button,
+        ):
+            button.setFixedSize(icon_frame, icon_frame)
+        self.icon_bar.layout().invalidate()
+        self.icon_bar.layout().activate()
+        self.dialog.setFixedWidth(self._required_width())
+        self._sync_tree_height()
+        self.dialog.setFixedHeight(
+            self.top_controls.height()
+            + self.top_separator.height()
+            + self.tree_scroll.height()
+            + self.footer_separator.height()
+            + self.footer.height()
+        )
+        self.dialog.updateGeometry()
+
+    def _restyle(self):
+        theme = PAINTER_DIALOG_STYLE
+        self.dialog._update_surface_stylesheet()
+        item_px = self._metric(13)
+        meta_px = self._metric(11)
+        surface = self.dialog.settingsSurface()
+        surface.setStyleSheet(
+            surface.styleSheet()
+            + f"""
+QFrame#RizumPainterSettingsSurface {{
+    background: {theme["surface"]};
+}}
+QWidget#RizumExportTopControls,
+QScrollArea#RizumExportTreeScroll,
+QScrollArea#RizumExportTreeScroll > QWidget > QWidget,
+QFrame#RizumExportTree,
+QWidget#RizumExportFooter,
+QWidget#RizumExportFooterRow,
+QWidget#RizumExportTopDivider,
+QWidget#RizumExportFooterDivider,
+QFrame#RizumCollapsibleHeader,
+QFrame#RizumCollapsibleContent,
+QWidget#RizumCollapsibleContentInner,
+QFrame#RizumExportTreeItemHost {{
+    background: transparent;
+    border: 0;
+}}
+QWidget#RizumExportTopDivider QFrame#RizumInsetSeparator,
+QWidget#RizumExportFooterDivider QFrame#RizumInsetSeparator {{
+    background: #3a3b3e;
+}}
+QFrame#RizumExportScopeInput {{
+    background: transparent;
+    border: 0;
+    border-radius: {default_theme.radius_small}px;
+}}
+QFrame#RizumExportScopeInput:focus {{
+    background: transparent;
+}}
+QFrame#RizumExportScopeInput:hover {{
+    background: {default_theme.action_hover};
+}}
+QFrame#RizumCollapsibleGroup {{
+    background: transparent;
+    border: 0;
+    border-radius: {default_theme.radius_small}px;
+}}
+QFrame#RizumCollapsibleGroup:hover {{
+    background: {theme["control_pressed"]};
+    border: 0;
+}}
+QFrame#RizumExportTreeItem {{
+    background: transparent;
+    border: 0;
+    border-radius: {default_theme.radius_small}px;
+}}
+QFrame#RizumExportTreeItem[hovered="true"][child="true"] {{
+    background: {default_theme.action_hover};
+}}
+QFrame#RizumExportTreeItem[pressed="true"][child="true"] {{
+    background: {default_theme.action_pressed};
+}}
+QLabel#RizumExportItemName,
+QLabel#RizumCollapsibleTitle {{
+    color: {theme["text"]};
+    font-size: {item_px}px;
+    font-weight: 500;
+    background: transparent;
+    border: 0;
+}}
+QLabel#RizumExportMeta,
+QLabel#RizumCollapsibleSubtitle,
+QLabel#RizumExportEmptyState {{
+    color: {theme["muted"]};
+    font-size: {meta_px}px;
+    font-weight: 500;
+    background: transparent;
+    border: 0;
+}}
+QLabel#RizumSvgLabel,
+QLabel#RizumSvgLabel:hover {{
+    background: transparent;
+    border: 0;
+}}
+"""
+        )
+        for button in (
+            self.expand_button,
+            self.collapse_button,
+            self.all_button,
+            self.none_button,
+        ):
+            button.setProperty("iconColor", theme["muted"])
+            button.setProperty("iconAccentColor", theme["muted"])
+            button.setProperty("iconHoverColor", theme["text"])
+            button.update()
+
     def refresh_targets(self):
+        self._target_error = ""
         if not self.panel._project_is_open():
             self.targets = []
             self.refresh_tree()
@@ -1417,60 +1749,164 @@ class ExportDialog:
             self.targets = list_export_targets(settings=self.panel._base_export_settings())
         except Exception as exc:  # noqa: BLE001 - show host errors to the user.
             self.targets = []
-            self.status.setText(f"Could not list export targets: {type(exc).__name__}: {exc}")
+            self._target_error = (
+                f"Could not list export targets: {type(exc).__name__}: {exc}"
+            )
         self.refresh_tree()
 
-    def refresh_tree(self):
-        self._updating_checks = True
-        self.tree.clear()
+    def _clear_groups(self):
+        for group in self.groups:
+            self.tree_layout.removeWidget(group["widget"])
+            group["widget"].deleteLater()
+        self.groups.clear()
 
-        visible_targets = self._visible_targets()
+    def _show_tree_message(self, message):
+        self.status.setText(message)
+        self.status.setVisible(bool(message))
+
+    def refresh_tree(self, *_args):
+        self._updating_checks = True
+        self._clear_groups()
+
+        visible_targets = [
+            target
+            for target in self._visible_targets()
+            if target.get("channels")
+        ]
         if not visible_targets:
-            if self.scope_combo.currentText() == "Current Stack":
-                self.status.setText("No exportable channels found for Current Stack.")
+            if self._target_error:
+                message = self._target_error
+            elif (
+                self.scope_combo.currentText() == "Current Stack"
+                and self._active_target_key() is None
+            ):
+                message = "Select a stack in Painter to export."
+            elif self.scope_combo.currentText() == "Current Stack":
+                message = "No exportable channels found for Current Stack."
             else:
-                self.status.setText("No exportable channels were found.")
+                message = "No exportable channels were found."
+            self._show_tree_message(message)
             self.run_button.setEnabled(False)
             self._updating_checks = False
+            self._apply_ui_scale(self.dialog.settingsUiScale())
             return
 
-        self.run_button.setEnabled(True)
-        if self.scope_combo.currentText() == "Current Stack" and self._active_target_key() is None:
-            self.status.setText("Showing the first available stack for Current Stack.")
-        else:
-            self.status.setText("")
+        select_current = self.scope_combo.currentText() == "Current Stack"
+        self._show_tree_message("")
 
         for target in visible_targets:
-            item = self.QtWidgets.QTreeWidgetItem([self._target_label(target)])
-            item.setFlags(self._checkable_flags())
-            item.setCheckState(0, self._unchecked())
-            item.setData(
-                0,
-                self._user_role(),
-                {"kind": "target", "target": target},
-            )
-            self.tree.addTopLevelItem(item)
-
-            labels = target.get("channel_labels", {})
-            for channel in target.get("channels", []):
-                child = self.QtWidgets.QTreeWidgetItem([labels.get(channel) or channel])
-                child.setFlags(self._checkable_flags())
-                child.setCheckState(0, self._unchecked())
-                child.setData(
-                    0,
-                    self._user_role(),
-                    {"kind": "channel", "channel": channel},
-                )
-                item.addChild(child)
-            item.setExpanded(True)
+            self._add_group(target, checked=select_current)
 
         self._updating_checks = False
+        self._refresh_selection_state()
+        self._apply_ui_scale(self.dialog.settingsUiScale())
+
+    def _add_group(self, target, checked):
+        parent_checkbox = make_mock_checkbox(checked)
+        group = {
+            "target": target,
+            "parent": parent_checkbox,
+            "children": [],
+        }
+        labels = target.get("channel_labels", {})
+        child_rows = []
+
+        for channel in target.get("channels", []):
+            checkbox = make_mock_checkbox(checked)
+            row = make_export_tree_item(
+                labels.get(channel) or channel,
+                checkbox,
+                child=True,
+            )
+            child = {
+                "channel": channel,
+                "checkbox": checkbox,
+                "row": row,
+            }
+            group["children"].append(child)
+            child_rows.append(row)
+
+            def row_press(event, cb=checkbox, owner=group):
+                if event.button() == self.QtCore.Qt.MouseButton.LeftButton:
+                    cb.toggle()
+                    self._update_group(owner)
+                    event.accept()
+
+            row.mousePressEvent = row_press
+            old_checkbox_press = checkbox.mousePressEvent
+
+            def checkbox_press(
+                event,
+                owner=group,
+                old=old_checkbox_press,
+            ):
+                old(event)
+                if event.button() == self.QtCore.Qt.MouseButton.LeftButton:
+                    self._update_group(owner)
+
+            checkbox.mousePressEvent = checkbox_press
+
+        old_parent_press = parent_checkbox.mousePressEvent
+
+        def parent_press(event, owner=group, old=old_parent_press):
+            old(event)
+            if event.button() != self.QtCore.Qt.MouseButton.LeftButton:
+                return
+            next_checked = owner["parent"].isChecked()
+            for child in owner["children"]:
+                child["checkbox"].setChecked(next_checked)
+            self._update_group(owner)
+
+        parent_checkbox.mousePressEvent = parent_press
+        total = len(group["children"])
+        widget = make_collapsible_group(
+            self._target_label(target),
+            self._selection_counter(total if checked else 0, total),
+            children=child_rows,
+            trailing_widget=parent_checkbox,
+            expanded=True,
+        )
+        group["widget"] = widget
+        subtitle = widget.findChild(
+            self.QtWidgets.QLabel,
+            "RizumCollapsibleSubtitle",
+        )
+        subtitle.setTextFormat(self.QtCore.Qt.TextFormat.RichText)
+        tooltip = self._selection_tooltip(total if checked else 0, total)
+        install_compact_tooltip(subtitle, tooltip)
+        subtitle.setAccessibleName(tooltip)
+        group["subtitle"] = subtitle
+        self.tree_layout.insertWidget(self.tree_layout.count() - 1, widget)
+        self.groups.append(group)
+
+    def _update_group(self, group, refresh_total=True):
+        selected = sum(
+            1
+            for child in group["children"]
+            if child["checkbox"].isChecked()
+        )
+        total = len(group["children"])
+        if not selected:
+            group["parent"].setChecked(False)
+        elif selected == total:
+            group["parent"].setChecked(True)
+        else:
+            group["parent"].setIndeterminate(True)
+
+        tooltip = self._selection_tooltip(selected, total)
+        group["widget"].refreshLayout(
+            subtitle_text=self._selection_counter(selected, total)
+        )
+        group["subtitle"].setCompactTooltipText(tooltip)
+        group["subtitle"].setAccessibleName(tooltip)
+        if refresh_total and not self._updating_checks:
+            self._refresh_selection_state()
 
     def _visible_targets(self):
         if self.scope_combo.currentText() == "Current Stack":
             active_key = self._active_target_key()
             if active_key is None:
-                return self.targets[:1]
+                return []
             texture_set_name, stack_name = active_key
             matches = [
                 target
@@ -1490,119 +1926,123 @@ class ExportDialog:
     def _target_label(self, target):
         texture_set = target.get("texture_set") or "(unknown texture set)"
         stack = target.get("stack") or "(default)"
-        channels = target.get("channels") or []
-        channel_word = "channel" if len(channels) == 1 else "channels"
-        return f"{texture_set} / {stack} / {len(channels)} {channel_word}"
+        return stack if stack != "(default)" else texture_set
 
     def set_all_checked(self, checked):
-        state = self._checked() if checked else self._unchecked()
         self._updating_checks = True
-        for index in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(index)
-            item.setCheckState(0, state)
-            for child_index in range(item.childCount()):
-                item.child(child_index).setCheckState(0, state)
+        for group in self.groups:
+            for child in group["children"]:
+                child["checkbox"].setChecked(checked)
+            self._update_group(group, refresh_total=False)
         self._updating_checks = False
+        self._refresh_selection_state()
 
-    def _on_item_changed(self, item, column):
-        if self._updating_checks or column != 0:
-            return
-
-        data = item.data(0, self._user_role()) or {}
-        if data.get("kind") == "target":
-            self._updating_checks = True
-            state = item.checkState(0)
-            for child_index in range(item.childCount()):
-                item.child(child_index).setCheckState(0, state)
-            self._updating_checks = False
-            return
-
-        parent = item.parent()
-        if parent is None:
-            return
-
-        checked_count = 0
-        partial_count = 0
-        for child_index in range(parent.childCount()):
-            state = parent.child(child_index).checkState(0)
-            if state == self._checked():
-                checked_count += 1
-            elif state == self._partial():
-                partial_count += 1
-
-        self._updating_checks = True
-        if checked_count == parent.childCount():
-            parent.setCheckState(0, self._checked())
-        elif checked_count or partial_count:
-            parent.setCheckState(0, self._partial())
-        else:
-            parent.setCheckState(0, self._unchecked())
-        self._updating_checks = False
+    def _refresh_selection_state(self):
+        selected_total = sum(
+            1
+            for group in self.groups
+            for child in group["children"]
+            if child["checkbox"].isChecked()
+        )
+        self.run_button.setEnabled(selected_total > 0)
 
     def selected_exports(self):
         selections = []
-        for index in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(index)
-            data = item.data(0, self._user_role()) or {}
-            target = data.get("target")
-            if not target:
-                continue
-
-            channels = []
-            for child_index in range(item.childCount()):
-                child = item.child(child_index)
-                if child.checkState(0) != self._checked():
-                    continue
-                child_data = child.data(0, self._user_role()) or {}
-                channel = child_data.get("channel")
-                if channel:
-                    channels.append(channel)
+        for group in self.groups:
+            channels = [
+                child["channel"]
+                for child in group["children"]
+                if child["checkbox"].isChecked()
+            ]
             if channels:
-                selections.append((target, channels))
+                selections.append((group["target"], channels))
         return selections
 
     def export_checked(self):
         selections = self.selected_exports()
         if not selections:
+            self.run_button.setEnabled(False)
+            return
+
+        result = self.panel._run_export_selections(
+            "export dialog selection",
+            selections,
+            export_pngs=self.export_pngs.isChecked(),
+        )
+        if not result["ok"]:
             _show_modal_message(
                 self.QtWidgets,
                 self.dialog,
-                "Export",
-                "Choose at least one channel to export.",
+                "Export failed",
+                result["message"],
             )
             return
 
-        self.output.setVisible(True)
-        self.output.clear()
-        self.output.setPlainText(
-            self.panel._run_export_selections(
-                "export dialog selection",
-                selections,
-                export_pngs=self.export_pngs.isChecked(),
-            )
+        settings = self.panel.user_settings
+        if settings.get("auto_open_photoshop"):
+            launched, message = self.panel.launch_photoshop()
+            if not launched:
+                _show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
+                return
+            self.dialog.accept()
+            return
+
+        self._show_export_handoff(result)
+        self.dialog.accept()
+
+    def _show_export_handoff(self, result):
+        dialog = self.QtWidgets.QDialog(self.dialog)
+        dialog.setWindowTitle("Export complete")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(340)
+        apply_theme(dialog, mode="overlay")
+
+        layout = self.QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+        title = self.QtWidgets.QLabel("Export complete")
+        title.setObjectName("RizumDialogTitle")
+        layout.addWidget(title)
+        layout.addWidget(make_inset_separator(0, thickness=1))
+
+        summary = self.QtWidgets.QLabel(
+            f"Exported {result['count']} build request(s). Continue in Photoshop when ready."
         )
+        summary.setObjectName("RizumDimLabel")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
 
-    def probe_masks(self):
-        settings = self._probe_settings()
-        self.output.setVisible(True)
-        self.output.clear()
-        self.output.setPlainText(self.panel._run_mask_probe("export dialog mask probe", settings))
+        path = self.QtWidgets.QLineEdit(str(result["output_dir"]))
+        path.setObjectName("RizumPathInput")
+        path.setReadOnly(True)
+        path.setFrame(False)
+        path.setCursorPosition(0)
+        layout.addWidget(path)
 
-    def _probe_settings(self):
-        selections = self.selected_exports()
-        if selections:
-            targets = [target for target, _channels in selections]
-        else:
-            targets = self._visible_targets()
-        texture_sets = [target.get("texture_set") for target in targets if target.get("texture_set")]
-        stacks = [target.get("stack") or "" for target in targets]
-        settings = self.panel._base_export_settings()
-        if texture_sets:
-            settings["texture_sets"] = sorted(set(texture_sets))
-        if stacks:
-            settings["stacks"] = _unique_preserving_order(stacks)
-        return settings
-
+        footer = self.QtWidgets.QHBoxLayout()
+        footer.setContentsMargins(0, 6, 0, 0)
+        open_button = ActionButton.create("Open Folder", "dialog-secondary")
+        copy_button = ActionButton.create("Copy List", "dialog-secondary")
+        done_button = ActionButton.create("Done", "dialog-primary")
+        open_button.clicked.connect(self.panel.open_output_folder)
+        copy_button.clicked.connect(self.panel.copy_last_export_list_path)
+        done_button.clicked.connect(dialog.accept)
+        footer.addWidget(open_button)
+        footer.addWidget(copy_button)
+        footer.addStretch(1)
+        footer.addWidget(done_button)
+        layout.addLayout(footer)
+        for button, minimum, maximum in (
+            (open_button, 86, 116),
+            (copy_button, 78, 106),
+            (done_button, 68, 96),
+        ):
+            set_compact_footer_button_width(
+                button,
+                compact_footer_button_width(button, minimum=minimum, maximum=maximum),
+            )
+        dialog.setStyleSheet(dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
+        dialog.exec()
 
 class SmokeTestPanel:
     """Painter dock panel for the PT Bridge workflow."""
@@ -1689,7 +2129,10 @@ class SmokeTestPanel:
             dock_actions.actionButtons()
         )
         self.dock_export_button.clicked.connect(self.open_export_dialog)
-        self.dock_bridge_button.clicked.connect(self.open_bridge_dialog)
+        self.dock_bridge_button.setEnabled(False)
+        self.dock_bridge_button.setToolTip(
+            "Layer mapping is not available yet. Export, then build in Photoshop."
+        )
         self.dock_settings_button.clicked.connect(self.open_settings_dialog)
         content_layout.addWidget(
             dock_actions,
@@ -1968,11 +2411,14 @@ class SmokeTestPanel:
 
     def _run_export_selections(self, label, selections, export_pngs):
         if not self._project_is_open():
-            return "Open a Painter project before exporting."
+            return {"ok": False, "message": "Open a Painter project before exporting."}
         if not self._project_is_ready():
-            return "Painter project is still loading or not editable."
+            return {
+                "ok": False,
+                "message": "Painter project is still loading or not editable.",
+            }
         if not selections:
-            return "No channels were selected."
+            return {"ok": False, "message": "No channels were selected."}
 
         base_settings = self._base_export_settings()
         output_dir = default_output_dir(base_settings)
@@ -2014,9 +2460,12 @@ class SmokeTestPanel:
                     )
                 )
         except ExportCancelled:
-            return "Export was cancelled before completion."
+            return {
+                "ok": False,
+                "message": "Export cancelled. Completed files were kept.",
+            }
         except Exception as exc:  # noqa: BLE001 - show host errors to the user.
-            return f"{type(exc).__name__}: {exc}"
+            return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
         finally:
             progress.close()
             self._running = False
@@ -2043,13 +2492,14 @@ class SmokeTestPanel:
 
         mode = "JSON + PNG" if export_pngs else "JSON-only"
         self.status.setText(f"Export completed ({mode}).")
-        lines = [
-            f"Wrote {len(all_paths)} build request(s):",
-            f"Output folder: {self.last_output_dir}",
-            f"Last export list: {self.last_export_list_path}",
-        ]
-        lines.extend(str(path) for path in all_paths)
-        return "\n".join(lines)
+        return {
+            "ok": True,
+            "message": f"Exported {len(all_paths)} build request(s).",
+            "count": len(all_paths),
+            "output_dir": self.last_output_dir,
+            "export_list": self.last_export_list_path,
+            "paths": list(all_paths),
+        }
 
     def _run_mask_probe(self, label, settings):
         if not self._project_is_open():
@@ -2127,6 +2577,20 @@ class SmokeTestPanel:
         else:
             self.status.setText(f"Could not open output folder: {path}")
 
+    def launch_photoshop(self):
+        executable = Path(self.user_settings.get("photoshop_path") or "")
+        if not executable.is_file():
+            return False, "Set a valid Photoshop executable in Settings."
+
+        started = self.QtCore.QProcess.startDetached(str(executable), [])
+        if isinstance(started, tuple):
+            started = started[0]
+        if not started:
+            return False, f"Could not launch Photoshop: {executable}"
+
+        self.status.setText("Export complete. Opening Photoshop...")
+        return True, ""
+
     def _selected_target(self):
         index = self.target_combo.currentIndex()
         if index < 0:
@@ -2180,7 +2644,7 @@ class SmokeTestPanel:
 
     def _set_action_buttons_enabled(self, enabled):
         self.dock_export_button.setEnabled(enabled)
-        self.dock_bridge_button.setEnabled(enabled)
+        self.dock_bridge_button.setEnabled(False)
         self.dock_settings_button.setEnabled(enabled)
         self.refresh_targets_button.setEnabled(enabled)
         self.run_selected_button.setEnabled(enabled)
