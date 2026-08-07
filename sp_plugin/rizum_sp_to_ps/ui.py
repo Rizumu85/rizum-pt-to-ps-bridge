@@ -1246,9 +1246,17 @@ class ExportDialog:
             self.QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         self.tree_scroll.viewport().setAutoFillBackground(False)
+        self.tree_scroll.verticalScrollBar().valueChanged.connect(
+            self._refresh_tree_hover
+        )
 
         self.tree = self.QtWidgets.QFrame()
         self.tree.setObjectName("RizumExportTree")
+        self.tree.setMinimumWidth(0)
+        self.tree.setSizePolicy(
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+            self.QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         self.tree_layout = self.QtWidgets.QVBoxLayout(self.tree)
         self.tree_layout.setContentsMargins(12, 8, 12, 8)
         self.tree_layout.setSpacing(PAINTER_SETTINGS_LAYOUT.body_spacing.design)
@@ -1385,21 +1393,105 @@ class ExportDialog:
         for index, group in enumerate(self.groups):
             if index:
                 height += self.tree_layout.spacing()
-            group_layout = group["widget"].layout()
-            group_margins = group_layout.contentsMargins()
-            height += (
-                group_margins.top()
-                + group["widget"]._rizum_header.height()
-                + group["widget"]._rizum_content_inner.sizeHint().height()
-                + group_margins.bottom()
-            )
+            height += group["widget"].height()
         return height
 
+    def _first_group_prefix_height(self, group, maximum):
+        widget = group["widget"]
+        group_margins = widget.layout().contentsMargins()
+        base = (
+            group_margins.top()
+            + widget._rizum_header.height()
+            + group_margins.bottom()
+        )
+        if not widget.isExpanded() or base >= maximum:
+            return min(base, maximum)
+
+        height = base
+        content_layout = widget._rizum_content_layout
+        for index, child in enumerate(group["children"]):
+            row_height = child["row"].height()
+            addition = row_height + (content_layout.spacing() if index else 0)
+            if height + addition > maximum:
+                break
+            height += addition
+        return height
+
+    def _quantized_tree_height(self, content_height, maximum):
+        if content_height <= maximum or not self.groups:
+            return content_height
+
+        margins = self.tree_layout.contentsMargins()
+        height = margins.top()
+        complete_groups = 0
+        truncated = False
+        for group in self.groups:
+            spacing = self.tree_layout.spacing() if complete_groups else 0
+            candidate = (
+                height
+                + spacing
+                + group["widget"].height()
+                + margins.bottom()
+            )
+            if candidate > maximum:
+                truncated = True
+                if not complete_groups:
+                    available = max(
+                        0,
+                        maximum - height - spacing - margins.bottom(),
+                    )
+                    height += spacing + self._first_group_prefix_height(
+                        group,
+                        available,
+                    )
+                break
+            height += spacing + group["widget"].height()
+            complete_groups += 1
+        if truncated:
+            # The tree's bottom margin exists only after its final group. When
+            # more groups follow, ending on that hypothetical margin exposes
+            # the first pixels of the next header inside the viewport.
+            return max(1, height + self.tree_layout.spacing())
+        return max(1, height + margins.bottom())
+
+    def _sync_toolbar_gutter(self, scrolling):
+        margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
+        gutter = 0
+        if scrolling:
+            gutter = self.dialog.style().pixelMetric(
+                self.QtWidgets.QStyle.PixelMetric.PM_ScrollBarExtent,
+                None,
+                self.tree_scroll.verticalScrollBar(),
+            )
+        self.top_controls.layout().setContentsMargins(
+            margin,
+            0,
+            margin + max(0, gutter),
+            0,
+        )
+
+    def _refresh_tree_hover(self, *_args):
+        for group in self.groups:
+            for child in group["children"]:
+                hover_filter = getattr(
+                    child["row"],
+                    "_rizum_hover_filter",
+                    None,
+                )
+                if hover_filter is not None:
+                    hover_filter.refresh_hovered()
+
     def _sync_tree_height(self):
+        self.tree_layout.activate()
         content_height = self._expanded_tree_height()
-        viewport_height = min(content_height, self._metric(300, 225))
-        self.tree.setMinimumHeight(content_height)
+        viewport_height = self._quantized_tree_height(
+            content_height,
+            self._metric(300, 225),
+        )
+        self.tree.setFixedHeight(content_height)
         self.tree_scroll.setFixedHeight(viewport_height)
+        self._sync_toolbar_gutter(content_height > viewport_height)
+        self.QtCore.QTimer.singleShot(0, self._refresh_tree_hover)
 
     def _apply_ui_scale(self, _scale):
         margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)

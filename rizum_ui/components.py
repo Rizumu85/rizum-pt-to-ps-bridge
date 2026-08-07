@@ -1655,7 +1655,7 @@ def compact_top_controls_width(
 
 def bind_hover_state(host, row, *widgets, property_name="hovered"):
     """Keep a row hover property stable while moving across child widgets."""
-    from PySide6 import QtCore
+    from PySide6 import QtCore, QtGui, QtWidgets
 
     watched = [widget for widget in (host, row, *widgets) if widget is not None]
 
@@ -1675,13 +1675,26 @@ def bind_hover_state(host, row, *widgets, property_name="hovered"):
             self.set_row_property(property_name, is_hovered)
 
         def refresh_hovered(self):
-            self.set_hovered(any(widget.underMouse() for widget in watched))
+            hovered_widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            while hovered_widget is not None:
+                if hovered_widget in watched:
+                    self.set_hovered(True)
+                    return
+                hovered_widget = hovered_widget.parentWidget()
+            self.set_hovered(False)
 
         def eventFilter(self, obj, event):
             event_type = event.type()
-            if event_type == QtCore.QEvent.Type.Enter:
+            if event_type in (
+                QtCore.QEvent.Type.Enter,
+                QtCore.QEvent.Type.HoverEnter,
+                QtCore.QEvent.Type.HoverMove,
+            ):
                 self.set_hovered(True)
-            elif event_type == QtCore.QEvent.Type.Leave:
+            elif event_type in (
+                QtCore.QEvent.Type.Leave,
+                QtCore.QEvent.Type.HoverLeave,
+            ):
                 QtCore.QTimer.singleShot(0, self.refresh_hovered)
             elif event_type in (
                 QtCore.QEvent.Type.MouseButtonPress,
@@ -1695,6 +1708,7 @@ def bind_hover_state(host, row, *widgets, property_name="hovered"):
 
     for widget in watched:
         widget.setMouseTracking(True)
+        widget.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
     hover_filter = _TreeHoverFilter()
     for widget in watched:
         widget.installEventFilter(hover_filter)
@@ -1713,9 +1727,7 @@ def _make_control_slot(widget, size=24, align_right=False):
     slot.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground, True)
     slot.setAutoFillBackground(False)
     slot.setCursor(widget.cursor())
-    slot.setFixedSize(size, size)
     layout = QtWidgets.QHBoxLayout(slot)
-    layout.setContentsMargins(0, 0, 3 if align_right else 0, 0)
     layout.setSpacing(0)
     alignment = QtCore.Qt.AlignmentFlag.AlignVCenter
     alignment |= (
@@ -1725,12 +1737,75 @@ def _make_control_slot(widget, size=24, align_right=False):
     )
     layout.addWidget(widget, 0, alignment)
 
+    def set_compact_size(next_size, right_padding=None):
+        next_size = max(18, int(round(next_size)))
+        if right_padding is None:
+            right_padding = 3 if align_right else 0
+        right_padding = max(0, int(round(right_padding)))
+        slot._rizum_compact_size = next_size
+        slot._rizum_right_padding = right_padding
+        slot.setFixedSize(next_size, next_size)
+        layout.setContentsMargins(0, 0, right_padding, 0)
+        slot.updateGeometry()
+
     def press(event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             widget.mousePressEvent(event)
 
     slot.mousePressEvent = press
+    slot.setCompactSize = set_compact_size
+    set_compact_size(size)
     return slot
+
+
+def _make_eliding_label(text, object_name):
+    """Create a single-line label that yields width before trailing controls."""
+    from PySide6 import QtCore, QtWidgets
+
+    class _ElidingLabel(QtWidgets.QLabel):
+        def __init__(self, value):
+            super().__init__("")
+            self._rizum_full_text = ""
+            self.setObjectName(object_name)
+            self.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+            self.setMinimumWidth(0)
+            self.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Ignored,
+                QtWidgets.QSizePolicy.Policy.Preferred,
+            )
+            self.setText(value)
+
+        def setText(self, value):
+            self._rizum_full_text = str(value or "")
+            self._sync_elision()
+
+        def fullText(self):
+            return self._rizum_full_text
+
+        def _sync_elision(self):
+            available = max(0, self.contentsRect().width())
+            shown = self.fontMetrics().elidedText(
+                self._rizum_full_text,
+                QtCore.Qt.TextElideMode.ElideRight,
+                available,
+            )
+            QtWidgets.QLabel.setText(self, shown)
+            self.setAccessibleName(self._rizum_full_text)
+            self.setToolTip(self._rizum_full_text if shown != self._rizum_full_text else "")
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            self._sync_elision()
+
+        def changeEvent(self, event):
+            super().changeEvent(event)
+            if event.type() in (
+                QtCore.QEvent.Type.FontChange,
+                QtCore.QEvent.Type.ApplicationFontChange,
+            ):
+                self._sync_elision()
+
+    return _ElidingLabel(text)
 
 
 def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
@@ -1755,11 +1830,9 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         row_layout.setSpacing(10)
         row_layout.addSpacing(0)
 
-        label = QtWidgets.QLabel(name)
-        label.setObjectName("RizumExportItemName")
+        label = _make_eliding_label(name, "RizumExportItemName")
         label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        row_layout.addWidget(label)
-        row_layout.addStretch(1)
+        row_layout.addWidget(label, 1)
         checkbox_slot = _make_control_slot(checkbox, align_right=True)
         row_layout.addWidget(checkbox_slot)
         host_layout.addWidget(row)
@@ -1772,22 +1845,58 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         host._rizum_right_inset = 4
         host._rizum_right_padding = 4
 
+        def set_compact_height(height):
+            height = max(24, int(round(height)))
+            scale = height / 32.0
+            indent = max(18, int(round(24 * scale)))
+            inset = max(3, int(round(4 * scale)))
+            left_padding = max(6, int(round(8 * scale)))
+            vertical_padding = max(3, int(round(4 * scale)))
+            right_padding = max(3, int(round(4 * scale)))
+            spacing = max(8, int(round(10 * scale)))
+            slot_size = max(18, int(round(24 * scale)))
+            slot_padding = max(2, int(round(3 * scale)))
+            host._rizum_left_indent = indent
+            host._rizum_left_padding = left_padding
+            host._rizum_right_inset = inset
+            host._rizum_right_padding = right_padding
+            host_layout.setContentsMargins(indent, 0, inset, 0)
+            row_layout.setContentsMargins(
+                left_padding,
+                vertical_padding,
+                right_padding,
+                vertical_padding,
+            )
+            row_layout.setSpacing(spacing)
+            checkbox_slot.setCompactSize(slot_size, slot_padding)
+            host_layout.invalidate()
+            row_layout.invalidate()
+            row.updateGeometry()
+
         def set_right_inset(inset, padding):
             inset = max(3, int(round(inset)))
             padding = max(3, int(round(padding)))
             host._rizum_right_inset = inset
             host._rizum_right_padding = padding
-            host_layout.setContentsMargins(24, 0, inset, 0)
+            host_layout.setContentsMargins(
+                host._rizum_left_indent,
+                0,
+                inset,
+                0,
+            )
+            row_margins = row_layout.contentsMargins()
             row_layout.setContentsMargins(
-                8,
-                4,
+                row_margins.left(),
+                row_margins.top(),
                 padding,
-                4,
+                row_margins.bottom(),
             )
             host_layout.invalidate()
             row.updateGeometry()
 
         host.setRightInset = set_right_inset
+        host.setCompactHeight = set_compact_height
+        set_compact_height(32)
         update_export_tree_item(host, name)
         def refresh_host(name_text=None, meta_text=None):
             update_export_tree_item(host, name_text, meta_text)
@@ -1806,8 +1915,7 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
     row_layout.setSpacing(10)
     row_layout.addWidget(make_svg_label("chevron-down.svg", 14))
 
-    label = QtWidgets.QLabel(name)
-    label.setObjectName("RizumExportItemName")
+    label = _make_eliding_label(name, "RizumExportItemName")
     label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
     meta_label = None
     if meta:
@@ -1817,13 +1925,11 @@ def make_export_tree_item(name, checkbox, meta="", child=False, parent=None):
         meta_label = QtWidgets.QLabel(meta)
         meta_label.setObjectName("RizumExportMeta")
         meta_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        text_stack.addWidget(label)
+        text_stack.addWidget(label, 1)
         text_stack.addWidget(meta_label)
-        text_stack.addStretch(1)
-        row_layout.addLayout(text_stack)
+        row_layout.addLayout(text_stack, 1)
     else:
-        row_layout.addWidget(label)
-    row_layout.addStretch(1)
+        row_layout.addWidget(label, 1)
     checkbox_slot = _make_control_slot(checkbox, align_right=True)
     row_layout.addWidget(checkbox_slot)
     row._rizum_label = label
@@ -1861,6 +1967,9 @@ def update_export_tree_item(widget, name=None, meta=None, minimum_height=None):
     for candidate in metrics_widgets:
         text_height = max(text_height, candidate.fontMetrics().height())
     height = max(minimum_height, text_height + 14)
+
+    if is_child and hasattr(widget, "setCompactHeight"):
+        widget.setCompactHeight(minimum_height)
 
     row.setFixedHeight(height)
     if row is not widget:
@@ -2020,11 +2129,8 @@ def make_collapsible_group(
     if leading_widget is not None:
         header_layout.addWidget(leading_widget)
 
-    title_label = QtWidgets.QLabel(title)
-    title_label.setObjectName("RizumCollapsibleTitle")
-    header_layout.addWidget(title_label)
-
-    header_layout.addStretch(1)
+    title_label = _make_eliding_label(title, "RizumCollapsibleTitle")
+    header_layout.addWidget(title_label, 1)
     subtitle_label = None
     if subtitle:
         subtitle_label = QtWidgets.QLabel(subtitle)
@@ -2033,9 +2139,11 @@ def make_collapsible_group(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
         header_layout.addWidget(subtitle_label)
+    trailing_slot = None
     if trailing_widget is not None:
         if trailing_widget.objectName() == "RizumMockCheckbox":
-            trailing_widget = _make_control_slot(trailing_widget, align_right=True)
+            trailing_slot = _make_control_slot(trailing_widget, align_right=True)
+            trailing_widget = trailing_slot
             header_layout.setContentsMargins(8, 4, 8, 4)
         header_layout.addWidget(trailing_widget)
     group_layout.addWidget(header)
@@ -2134,6 +2242,11 @@ def make_collapsible_group(
         content_layout.setSpacing(max(2, int(round(2 * scale))))
         if chevron is not None:
             chevron.setSize(max(11, int(round(14 * scale))))
+        if trailing_slot is not None:
+            trailing_slot.setCompactSize(
+                max(18, int(round(24 * scale))),
+                max(2, int(round(3 * scale))),
+            )
         refresh_layout()
 
     def set_expanded(next_expanded):
