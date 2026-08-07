@@ -15,6 +15,7 @@ from .exporter import (
     list_export_targets,
     write_build_bundles,
 )
+from .handoff import export_list_handoff
 
 
 def _load_vendored_ui():
@@ -725,8 +726,8 @@ class SettingsDialog:
         )
         self._settings_rows.append(auto_row)
         self.auto_texts = self._make_text_block(
-            "Auto-open Photoshop",
-            "Launch after a successful export",
+            "Auto-build in Photoshop",
+            "Hand off after a successful export",
         )
         auto_layout.addWidget(self.auto_texts)
         auto_layout.addStretch(1)
@@ -2228,6 +2229,7 @@ QLabel#RizumSvgLabel:hover {{
 
         settings = self.panel.user_settings
         if settings.get("auto_open_photoshop"):
+            self.panel.publish_photoshop_handoff(result["export_list"])
             launched, message = self.panel.launch_photoshop()
             if not launched:
                 _show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
@@ -2465,7 +2467,7 @@ class SmokeTestPanel:
             "photoshop_path": store.value("photoshop_path", "", str) or "",
             "infinite_padding": _to_bool(store.value("infinite_padding", False)),
             "dilation": _optional_int(store.value("dilation", 8)) or 8,
-            "auto_open_photoshop": _to_bool(store.value("auto_open_photoshop", False)),
+            "auto_open_photoshop": _to_bool(store.value("auto_open_photoshop", True)),
             "bit_depth": bit_depth,
         }
 
@@ -2790,6 +2792,14 @@ class SmokeTestPanel:
 
         self.QtWidgets.QApplication.clipboard().setText(str(self.last_export_list_path))
         self.status.setText("Copied last export list path.")
+
+    def publish_photoshop_handoff(self, export_list_path):
+        # Clipboard is the only zero-setup signal shared by Painter and UXP;
+        # the structured prefix prevents ordinary copied paths from auto-building.
+        self.QtWidgets.QApplication.clipboard().setText(
+            export_list_handoff(export_list_path)
+        )
+        self.status.setText("Export complete. Handing off to Photoshop...")
 
     def open_output_folder(self):
         if self.last_output_dir is None:
