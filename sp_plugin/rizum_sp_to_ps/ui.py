@@ -13,7 +13,6 @@ from .exporter import (
     ExportCancelled,
     default_output_dir,
     list_export_targets,
-    write_mask_probe,
     write_build_bundles,
 )
 
@@ -2775,54 +2774,6 @@ class SmokeTestPanel:
             "export_list": self.last_export_list_path,
             "paths": list(all_paths),
         }
-
-    def _run_mask_probe(self, label, settings):
-        if not self._project_is_open():
-            return "Open a Painter project before probing masks."
-        if not self._project_is_ready():
-            return "Painter project is still loading or not editable."
-
-        self._running = True
-        self._set_action_buttons_enabled(False)
-        self.status.setText("Probing mask structure...")
-        self.QtWidgets.QApplication.processEvents()
-        try:
-            output_dir = default_output_dir(settings)
-            path, report = write_mask_probe(output_dir, settings=settings)
-        except Exception as exc:  # noqa: BLE001 - show host errors to the user.
-            self.status.setText("Mask probe failed.")
-            return f"{type(exc).__name__}: {exc}"
-        finally:
-            self._running = False
-            self._set_action_buttons_enabled(True)
-
-        self.last_output_dir = Path(output_dir)
-        self.open_output_button.setEnabled(True)
-        self.status.setText("Mask probe written.")
-        summary = report.get("summary") or {}
-        lines = [
-            "Mask probe written.",
-            f"Path: {path}",
-            f"Stacks with masks: {summary.get('stacks_with_masks', 0)}",
-            f"Masked nodes: {summary.get('masked_nodes', 0)}",
-            f"Mask effects: {summary.get('mask_effects', 0)}",
-        ]
-        hints = summary.get("rebuild_hints") or {}
-        if hints:
-            lines.append("")
-            lines.append("Rebuild hints:")
-            lines.extend(f"- {key}: {value}" for key, value in sorted(hints.items()))
-        effect_kinds = summary.get("effect_kinds") or {}
-        if effect_kinds:
-            lines.append("")
-            lines.append("Mask effect kinds:")
-            lines.extend(f"- {key}: {value}" for key, value in sorted(effect_kinds.items()))
-        source_types = summary.get("source_types") or {}
-        if source_types:
-            lines.append("")
-            lines.append("Mask source types:")
-            lines.extend(f"- {key}: {value}" for key, value in sorted(source_types.items()))
-        return "\n".join(lines)
 
     def copy_last_request_path(self):
         if not self.last_paths:
