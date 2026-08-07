@@ -141,6 +141,31 @@ def export_layer_png_raw(
     return _evaluate_json(script)
 
 
+def export_mask_png(
+    uid,
+    out_path,
+    *,
+    padding="Infinite",
+    dilation=0,
+    resolution=None,
+    bit_depth=8,
+    keep_alpha=False,
+):
+    """Export the rendered Painter mask attached to a layer or folder."""
+    # Painter's Python layerstack API exposes mask structure but not rendered
+    # pixels, so keep this host-specific dependency behind the bridge boundary.
+    return export_layer_png_raw(
+        uid,
+        "mask",
+        out_path,
+        padding=padding,
+        dilation=dilation,
+        resolution=resolution,
+        bit_depth=bit_depth,
+        keep_alpha=keep_alpha,
+    )
+
+
 def channel_identifier(channel_name):
     """Return the legacy JS mapexport channel identifier for a Python name."""
     if channel_name is None:

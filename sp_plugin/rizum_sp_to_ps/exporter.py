@@ -1110,25 +1110,14 @@ def _annotate_node_assets(node, asset_path, request_channel=None, in_mask_stack=
         not in_mask_stack
         and node.get("has_mask")
         and node.get("mask_enabled")
-        and node.get("asset") is not None
     ):
         node["mask_asset"] = _asset_record(
             node,
             request_channel="mask",
             path=asset_path / f"uid_{node['uid_hex']}_mask.png",
         )
-        node["mask_asset"]["source"] = "layer_alpha_fallback"
-        node["mask_asset"]["fidelity"] = "approximate_visual_alpha"
-        node["mask_asset"]["warning"] = (
-            "SP 12.1+ no longer exports true layer masks through "
-            "alg.mapexport.save([uid, 'mask']). This mask is derived from the "
-            "exported layer PNG alpha and is not a lossless Painter mask."
-        )
-    elif not in_mask_stack and node.get("has_mask") and node.get("mask_enabled"):
-        node["mask_asset_unavailable"] = {
-            "reason": "no_layer_png_alpha_source",
-            "intended_strategy": "future_python_layerstack_mask_export",
-        }
+        node["mask_asset"]["source"] = "painter_layer_mask"
+        node["mask_asset"]["fidelity"] = "lossless"
 
     for child in node.get("children", []):
         _annotate_node_assets(child, asset_path, request_channel=request_channel)
@@ -1184,7 +1173,6 @@ def _iter_assets(nodes, request_channel=None):
             yield {
                 **mask_asset,
                 "kind": "mask",
-                "fallback_layer_path": asset.get("path") if asset is not None else None,
             }
 
         yield from _iter_assets(node.get("children", []), request_channel)
@@ -1193,7 +1181,7 @@ def _iter_assets(nodes, request_channel=None):
 
 def _export_asset_png(asset, export_settings, channel_candidates):
     if asset["kind"] == "mask":
-        _export_mask_asset_png(asset)
+        _export_mask_asset_png(asset, export_settings)
         return
 
     candidates = [asset["channel"]]
@@ -1228,52 +1216,16 @@ def _export_asset_png(asset, export_settings, channel_candidates):
         raise RuntimeError("; ".join(errors))
 
 
-def _export_mask_asset_png(asset):
-    source_path = asset.get("fallback_layer_path")
-    if not source_path or not Path(source_path).exists():
-        return
-    _write_mask_png_from_layer_alpha(source_path, asset["path"])
-
-
-def _write_mask_png_from_layer_alpha(source_path, mask_path):
-    try:
-        from PySide6 import QtGui
-    except Exception as exc:
-        raise RuntimeError("PySide6 is required for alpha-derived mask export") from exc
-
-    image = QtGui.QImage(str(source_path))
-    if image.isNull():
-        raise RuntimeError(f"Could not read layer PNG for mask fallback: {source_path}")
-
-    rgba_format = getattr(QtGui.QImage, "Format_RGBA8888", None)
-    if rgba_format is None:
-        rgba_format = QtGui.QImage.Format.Format_RGBA8888
-    rgba = image.convertToFormat(rgba_format)
-    data = rgba.constBits()
-    if hasattr(data, "tobytes"):
-        raw = data.tobytes()
-    else:
-        data.setsize(rgba.sizeInBytes())
-        raw = bytes(data)
-
-    mask_bytes = bytearray(len(raw))
-    for index in range(0, len(raw), 4):
-        alpha = raw[index + 3]
-        mask_bytes[index] = alpha
-        mask_bytes[index + 1] = alpha
-        mask_bytes[index + 2] = alpha
-        mask_bytes[index + 3] = 255
-
-    mask_image = QtGui.QImage(
-        mask_bytes,
-        rgba.width(),
-        rgba.height(),
-        rgba.bytesPerLine(),
-        rgba_format,
+def _export_mask_asset_png(asset, export_settings):
+    bridge.export_mask_png(
+        asset["uid"],
+        asset["path"],
+        padding=export_settings["padding"],
+        dilation=export_settings["dilation"],
+        resolution=export_settings["resolution"],
+        bit_depth=export_settings["bit_depth"],
+        keep_alpha=export_settings["keep_alpha"],
     )
-    Path(mask_path).parent.mkdir(parents=True, exist_ok=True)
-    if not mask_image.save(str(mask_path), "PNG"):
-        raise RuntimeError(f"Could not write alpha-derived mask PNG: {mask_path}")
 
 
 def _remove_asset_by_path(nodes, asset_path):
