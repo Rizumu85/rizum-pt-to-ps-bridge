@@ -825,11 +825,11 @@ class SettingsDialog:
         auto_layout.addWidget(self.auto_texts)
         auto_layout.addStretch(1)
         auto_layout.addWidget(self.auto_open_photoshop)
-        body_layout.addWidget(auto_row)
 
         photoshop_section = _settings_section(self.QtWidgets, "Photoshop")
         self._settings_sections.append(photoshop_section)
         body_layout.addWidget(photoshop_section)
+        body_layout.addWidget(auto_row)
         path_row, path_row_layout = _settings_frame_row(
             self.QtWidgets,
             PAINTER_SETTINGS_LAYOUT.row_height.design,
