@@ -63,8 +63,6 @@ install_compact_tooltip = _components.install_compact_tooltip
 make_combo_input = _components.make_combo_input
 make_collapsible_group = _components.make_collapsible_group
 make_compact_action_bar = _components.make_compact_action_bar
-make_compact_dock_card = _components.make_compact_dock_card
-make_compact_dock_layout = _components.make_compact_dock_layout
 make_compact_icon_toolbar = _components.make_compact_icon_toolbar
 make_compact_stepper = _components.make_compact_stepper
 make_export_tree_item = _components.make_export_tree_item
@@ -75,6 +73,7 @@ set_compact_footer_button_width = _components.set_compact_footer_button_width
 update_export_tree_item = _components.update_export_tree_item
 PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
+IconActionButton = _settings_controls.IconActionButton
 SecondaryActionButton = _settings_controls.SecondaryActionButton
 PAINTER_SETTINGS_LAYOUT = _settings_layout.PAINTER_SETTINGS_LAYOUT
 default_theme = _vendored_ui.default_theme
@@ -86,9 +85,10 @@ _ACTIVE_PANEL = None
 _ACTIVE_DOCK = None
 
 BRIDGE_DOCK_BG = "#2b2b2b"
-BRIDGE_DOCK_ACTIONS_WIDTH = 260
+BRIDGE_DOCK_MIN_WIDTH = 210
+BRIDGE_DOCK_TOOLBAR_HEIGHT = 44
 BRIDGE_DOCK_DEFAULT_WIDTH = 290
-BRIDGE_DOCK_DEFAULT_HEIGHT = 99
+BRIDGE_DOCK_DEFAULT_HEIGHT = 78
 
 
 BRIDGE_DIALOG_STYLESHEET = """
@@ -530,200 +530,98 @@ def _show_modal_message(QtWidgets, parent, title, message):
     dialog.exec()
 
 
-def _bridge_icon_pixmap(QtCore, QtGui, QtWidgets, icon_name, size, color):
-    try:
-        from PySide6 import QtSvg
-    except Exception:
-        QtSvg = None
+def _make_bridge_dock_toolbar(QtCore, QtWidgets):
+    """Create the responsive primary-action strip used by the live dock."""
+    toolbar = QtWidgets.QWidget()
+    toolbar.setObjectName("RizumBridgeDockToolbar")
+    toolbar.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+    toolbar.setStyleSheet(
+        "QWidget#RizumBridgeDockToolbar { background: transparent; border: 0; }"
+    )
+    layout = QtWidgets.QHBoxLayout(toolbar)
 
-    icon_path = Path(__file__).resolve().parents[2] / "icons" / icon_name
-    dpr = QtWidgets.QApplication.primaryScreen().devicePixelRatio() if QtWidgets.QApplication.primaryScreen() else 1.0
-    pixel_size = max(1, int(round(size * dpr)))
-    if QtSvg is None:
-        pixmap = QtGui.QIcon(str(icon_path)).pixmap(QtCore.QSize(pixel_size, pixel_size))
-        pixmap.setDevicePixelRatio(dpr)
-        return pixmap
-
-    source = icon_path.read_text(encoding="utf-8")
-    source = source.replace('stroke="#9E9E9E"', f'stroke="{color}"')
-    source = source.replace('stroke="#9e9e9e"', f'stroke="{color}"')
-    source = source.replace('viewBox="0 0 24 24"', 'viewBox="-2 -2 28 28"')
-    pixmap = QtGui.QPixmap(pixel_size, pixel_size)
-    pixmap.setDevicePixelRatio(dpr)
-    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-    painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
-    renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(source.encode("utf-8")))
-    renderer.render(painter, QtCore.QRectF(0, 0, size, size))
-    painter.end()
-    return pixmap
-
-
-def _make_bridge_dock_action_button(QtCore, QtGui, QtWidgets, label, icon_name, primary=False):
-    class _BridgeDockActionButton(QtWidgets.QAbstractButton):
-        def __init__(self):
-            super().__init__()
-            self.setObjectName("RizumBridgeDockActionButton")
-            self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-            self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-            self.setFixedSize(70, 48)
-            self.setSizePolicy(
-                QtWidgets.QSizePolicy.Policy.Fixed,
-                QtWidgets.QSizePolicy.Policy.Fixed,
-            )
-            self._visual_scale = 1.0
-            self._animation = None
-
-        def sizeHint(self):
-            return QtCore.QSize(70, 48)
-
-        def minimumSizeHint(self):
-            return QtCore.QSize(70, 48)
-
-        def getVisualScale(self):
-            return self._visual_scale
-
-        def setVisualScale(self, value):
-            self._visual_scale = float(value)
-            self.update()
-
-        visualScale = QtCore.Property(float, getVisualScale, setVisualScale)
-
-        def mousePressEvent(self, event):
-            if event.button() == QtCore.Qt.MouseButton.LeftButton:
-                self._animate_scale(0.92, 120)
-            super().mousePressEvent(event)
-
-        def mouseReleaseEvent(self, event):
-            super().mouseReleaseEvent(event)
-            self._animate_scale(1.0, 280)
-
-        def leaveEvent(self, event):
-            super().leaveEvent(event)
-            if not self.isDown():
-                self._animate_scale(1.0, 220)
-
-        def _animate_scale(self, scale, duration):
-            if self._animation is not None:
-                self._animation.stop()
-            animation = QtCore.QPropertyAnimation(self, b"visualScale", self)
-            animation.setDuration(duration)
-            animation.setStartValue(self._visual_scale)
-            animation.setEndValue(float(scale))
-            animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-            self._animation = animation
-            animation.start()
-
-        def paintEvent(self, event):
-            painter = QtGui.QPainter(self)
-            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-            painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
-
-            base_rect = QtCore.QRectF(0.5, 0.5, 69, 47)
-            scale = max(0.1, min(1.0, self._visual_scale))
-            rect = QtCore.QRectF(
-                base_rect.center().x() - base_rect.width() * scale / 2,
-                base_rect.center().y() - base_rect.height() * scale / 2,
-                base_rect.width() * scale,
-                base_rect.height() * scale,
-            )
-
-            hovered = self.underMouse()
-            if primary:
-                fill = QtGui.QColor("#ffffff")
-                if hovered:
-                    fill.setAlphaF(0.9)
-                text_color = QtGui.QColor("#1b1b1b")
-            else:
-                fill = QtGui.QColor("#262626" if hovered else "#222222")
-                text_color = QtGui.QColor("#e0e0e0" if hovered else "#9e9e9e")
-            if self.isDown():
-                fill = QtGui.QColor("#dedede") if primary else QtGui.QColor(255, 255, 255, 8)
-
-            painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            for offset_y, spread, alpha in ((3, 1, 34), (7, 4, 18), (10, 7, 8)):
-                shadow_rect = rect.adjusted(-spread, -spread, spread, spread).translated(0, offset_y)
-                painter.setBrush(QtGui.QColor(0, 0, 0, alpha))
-                painter.drawRoundedRect(shadow_rect, 12 + spread, 12 + spread)
-
-            painter.setBrush(fill)
-            painter.drawRoundedRect(rect, 12, 12)
-
-            icon_size = max(14, min(20, int(round(18 * scale))))
-            icon_gap = max(3, int(round(4 * scale)))
-            label_height = 12
-            content_height = icon_size + icon_gap + label_height
-            content_top = rect.top() + (rect.height() - content_height) / 2 - 1
-            icon_pixmap = _bridge_icon_pixmap(
-                QtCore,
-                QtGui,
-                QtWidgets,
-                icon_name,
-                icon_size,
-                text_color.name(),
-            )
-            icon_x = int(rect.center().x() - icon_size / 2)
-            icon_y = int(round(content_top))
-            painter.drawPixmap(QtCore.QPoint(icon_x, icon_y), icon_pixmap)
-
-            font = QtGui.QFont(self.font())
-            font.setFamilies(["Segoe UI", "Arial", "sans-serif"])
-            font.setPixelSize(max(8, int(round(10 * scale))))
-            font.setWeight(QtGui.QFont.Weight.DemiBold)
-            painter.setFont(font)
-            painter.setPen(text_color)
-            text_rect = QtCore.QRectF(
-                rect.left() + 5,
-                icon_y + icon_size + icon_gap,
-                rect.width() - 10,
-                max(10, int(round(label_height * scale))),
-            )
-            painter.drawText(
-                text_rect,
-                QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
-                label,
-            )
-            painter.end()
-
-    return _BridgeDockActionButton()
-
-
-def _make_bridge_dock_actions_panel(QtCore, QtGui, QtWidgets):
-    class _BridgeDockActionsPanel(QtWidgets.QFrame):
-        def __init__(self):
-            super().__init__()
-            self.setObjectName("RizumBridgeDockActionsPanel")
-            self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
-            self.setAutoFillBackground(False)
-
-        def paintEvent(self, event):
-            painter = QtGui.QPainter(self)
-            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-            rect = QtCore.QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
-            painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.setBrush(QtGui.QColor("#1b1b1b"))
-            painter.drawRoundedRect(rect, 10, 10)
-            painter.end()
-
-    panel = _BridgeDockActionsPanel()
-    panel.setFixedSize(BRIDGE_DOCK_ACTIONS_WIDTH, 78)
-    panel.setSizePolicy(
-        QtWidgets.QSizePolicy.Policy.Fixed,
+    theme = PAINTER_DIALOG_STYLE
+    export_button = IconActionButton(
+        "Export",
+        "action-export.svg",
+        theme["accent"],
+        theme["accent_hover"],
+        theme["accent_pressed"],
+        theme["accent_text"],
+        default_theme.radius_small,
+    )
+    export_button.setObjectName("RizumBridgeDockExport")
+    export_button.setSizePolicy(
+        QtWidgets.QSizePolicy.Policy.Expanding,
         QtWidgets.QSizePolicy.Policy.Fixed,
     )
-    layout = QtWidgets.QHBoxLayout(panel)
-    layout.setContentsMargins(15, 15, 15, 15)
-    layout.setSpacing(8)
-    buttons = [
-        _make_bridge_dock_action_button(QtCore, QtGui, QtWidgets, "Export", "action-export.svg", True),
-        _make_bridge_dock_action_button(QtCore, QtGui, QtWidgets, "Bridge", "action-bridge.svg", False),
-        _make_bridge_dock_action_button(QtCore, QtGui, QtWidgets, "Settings", "action-sun.svg", False),
-    ]
-    for button in buttons:
-        layout.addWidget(button)
-    panel.actionButtons = lambda: list(buttons)
-    return panel
+
+    bridge_button = make_icon_button(
+        "action-bridge.svg",
+        "Layer mapping is not available yet. Export, then build in Photoshop.",
+    )
+    bridge_button.setObjectName("RizumBridgeDockBridge")
+    bridge_button.setEnabled(False)
+    bridge_button.setAttribute(
+        QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips,
+        True,
+    )
+    bridge_button.setToolTip(
+        "Layer mapping is not available yet. Export, then build in Photoshop."
+    )
+
+    settings_button = make_icon_button("action-sun.svg", "Settings")
+    settings_button.setObjectName("RizumBridgeDockSettings")
+
+    layout.addWidget(export_button, 1)
+    layout.addWidget(bridge_button)
+    layout.addWidget(settings_button)
+
+    def set_ui_scale(scale):
+        scale = max(0.75, min(2.0, float(scale)))
+
+        def metric(value, minimum):
+            return max(minimum, int(round(value * scale)))
+
+        margin = metric(12, 9)
+        spacing = metric(6, 5)
+        control_height = metric(28, 21)
+        icon_frame = metric(22, 17)
+        icon_size = metric(16, 12)
+        toolbar_height = metric(BRIDGE_DOCK_TOOLBAR_HEIGHT, 33)
+
+        layout.setContentsMargins(margin, 0, margin, 0)
+        layout.setSpacing(spacing)
+        export_button.setCompactHeight(control_height)
+        export_button.setMinimumWidth(metric(96, 72))
+        for button in (bridge_button, settings_button):
+            button.setStyleSheet(
+                f"QPushButton#{button.objectName()} {{"
+                f" min-width: {icon_frame}px; max-width: {icon_frame}px;"
+                f" min-height: {icon_frame}px; max-height: {icon_frame}px;"
+                " padding: 0; margin: 0; border: 0; background: transparent; }"
+            )
+            button.setFixedSize(icon_frame, icon_frame)
+            button.setPaintedIconSize(icon_size)
+            if hasattr(button, "setCompactTooltipScale"):
+                button.setCompactTooltipScale(scale)
+
+        toolbar.setFixedHeight(toolbar_height)
+        toolbar.setMinimumWidth(
+            margin * 2
+            + export_button.minimumWidth()
+            + icon_frame * 2
+            + spacing * 2
+        )
+        toolbar.updateGeometry()
+
+    toolbar.setUiScale = set_ui_scale
+    toolbar.actionButtons = lambda: (
+        export_button,
+        bridge_button,
+        settings_button,
+    )
+    return toolbar
 
 
 class SettingsDialog:
@@ -2062,13 +1960,15 @@ class SmokeTestPanel:
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsSmokeTestPanel")
         self.widget.setWindowTitle("PT Bridge")
-        self.widget.setMinimumSize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT)
-        self.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT)
+        self.widget.setMinimumSize(BRIDGE_DOCK_MIN_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
+        self.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
         apply_theme(self.widget, mode="overlay")
         _apply_bridge_dock_surface(self.widget)
         self.widget.setStyleSheet(self.widget.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
 
-        outer_layout = make_compact_dock_layout(self.widget)
+        outer_layout = QtWidgets.QVBoxLayout(self.widget)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
         self.export_pngs = QtWidgets.QCheckBox("Export PNGs")
         self.export_pngs.setChecked(True)
@@ -2114,37 +2014,57 @@ class SmokeTestPanel:
         self.output.setReadOnly(True)
         self.output.setMinimumHeight(120)
 
-        card = make_compact_dock_card()
-        card_layout = card.layout()
-        outer_layout.addWidget(card)
-
-        content = QtWidgets.QWidget()
-        content.setObjectName("RizumTransparent")
-        content_layout = QtWidgets.QVBoxLayout(content)
-        content_layout.setContentsMargins(12, 12, 12, 6)
-        content_layout.setSpacing(10)
-
-        dock_actions = _make_bridge_dock_actions_panel(QtCore, QtGui, QtWidgets)
+        dock_actions = _make_bridge_dock_toolbar(QtCore, QtWidgets)
+        self._dock_toolbar = dock_actions
         self.dock_export_button, self.dock_bridge_button, self.dock_settings_button = (
             dock_actions.actionButtons()
         )
         self.dock_export_button.clicked.connect(self.open_export_dialog)
-        self.dock_bridge_button.setEnabled(False)
-        self.dock_bridge_button.setToolTip(
-            "Layer mapping is not available yet. Export, then build in Photoshop."
-        )
         self.dock_settings_button.clicked.connect(self.open_settings_dialog)
-        content_layout.addWidget(
+        outer_layout.addWidget(
             dock_actions,
             0,
-            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignHCenter,
+            QtCore.Qt.AlignmentFlag.AlignTop,
         )
-        content_layout.addStretch(1)
-        card_layout.addWidget(content)
+        outer_layout.addStretch(1)
+
+        class _DockScaleFilter(QtCore.QObject):
+            def eventFilter(filter_self, watched, event):
+                del filter_self, watched
+                if event.type() in (
+                    QtCore.QEvent.Type.FontChange,
+                    QtCore.QEvent.Type.ApplicationFontChange,
+                ):
+                    QtCore.QTimer.singleShot(0, self._apply_dock_ui_scale)
+                return False
+
+        self._dock_scale_filter = _DockScaleFilter(self.widget)
+        self.widget.installEventFilter(self._dock_scale_filter)
+        self._apply_dock_ui_scale()
 
     def close(self):
         """Stop owned Qt helpers before Painter removes the dock."""
         pass
+
+    def _current_ui_scale(self):
+        app = self.QtWidgets.QApplication.instance()
+        value = app.property("rizumUiFontScale") if app is not None else 1.0
+        try:
+            return max(0.75, min(2.0, float(value or 1.0)))
+        except (TypeError, ValueError):
+            return 1.0
+
+    def _apply_dock_ui_scale(self):
+        scale = self._current_ui_scale()
+        self._dock_toolbar.setUiScale(scale)
+        minimum_width = max(
+            int(round(BRIDGE_DOCK_MIN_WIDTH * scale)),
+            self._dock_toolbar.minimumWidth(),
+        )
+        self.widget.setMinimumSize(minimum_width, self._dock_toolbar.height())
+        self.widget.updateGeometry()
+        if _ACTIVE_PANEL is self and _ACTIVE_DOCK is not None:
+            _resize_floating_dock(_ACTIVE_DOCK, self)
 
     def _project_is_open(self):
         try:
@@ -2801,8 +2721,18 @@ def _connect_floating_resize(dock, panel):
 def _resize_floating_dock(dock, panel):
     if dock is None or panel is None:
         return
+    scale = panel._current_ui_scale()
+    minimum_width = panel.widget.minimumWidth()
+    minimum_height = max(
+        panel._dock_toolbar.height(),
+        int(round(BRIDGE_DOCK_DEFAULT_HEIGHT * scale)),
+    )
+    default_width = max(
+        minimum_width,
+        int(round(BRIDGE_DOCK_DEFAULT_WIDTH * scale)),
+    )
     try:
-        dock.setMinimumSize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT)
+        dock.setMinimumSize(minimum_width, minimum_height)
     except Exception:
         pass
     try:
@@ -2811,17 +2741,17 @@ def _resize_floating_dock(dock, panel):
     except Exception:
         pass
     try:
-        dock.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT)
+        dock.resize(default_width, minimum_height)
     except Exception:
         pass
     try:
-        panel.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT)
+        panel.widget.resize(default_width, panel._dock_toolbar.height())
     except Exception:
         pass
     try:
         panel.QtCore.QTimer.singleShot(
             0,
-            lambda: dock.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_DEFAULT_HEIGHT),
+            lambda: dock.resize(default_width, minimum_height),
         )
     except Exception:
         pass
