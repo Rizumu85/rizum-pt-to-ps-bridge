@@ -11,6 +11,11 @@ from .settings_dialog import (
     PAINTER_SETTINGS_FRAME_WIDTH,
     PainterSettingsDialog,
 )
+from .settings_layout import (
+    PAINTER_SETTINGS_LAYOUT,
+    PainterSettingsLayoutSpec,
+    ScaledSettingsMetric,
+)
 from .settings_controls import (
     AnimatedSaveButton,
     ModeParameterSlot,
@@ -106,7 +111,9 @@ __all__ = [
     "PillButton",
     "PAINTER_SETTINGS_FRAME_COLOR",
     "PAINTER_SETTINGS_FRAME_WIDTH",
+    "PAINTER_SETTINGS_LAYOUT",
     "PainterSettingsDialog",
+    "PainterSettingsLayoutSpec",
     "ModeParameterSlot",
     "PAINTER_DIALOG_STYLE",
     "SecondaryActionButton",
@@ -115,6 +122,7 @@ __all__ = [
     "ShortcutCaptureField",
     "TextActionButton",
     "Theme",
+    "ScaledSettingsMetric",
     "apply_compact_dock_surface",
     "bind_hover_state",
     "apply_theme",

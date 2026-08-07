@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-08-05T17:50:06.747930+00:00",
+  "generated_at": "2026-08-06T19:13:11+00:00",
   "source_root": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-ui-prettier",
-  "source_git_head": "f6d3ad5",
+  "source_git_head": "1ba8d4de88b2229469faf5a22c7485037c04579b",
   "source_git_status": "",
   "managed_roots": [
     "rizum_ui",
@@ -14,6 +14,7 @@
     "rizum_ui/host_style.py",
     "rizum_ui/settings_controls.py",
     "rizum_ui/settings_dialog.py",
+    "rizum_ui/settings_layout.py",
     "rizum_ui/stylesheet.py",
     "rizum_ui/theme.py",
     "icons/action-bridge.svg",
