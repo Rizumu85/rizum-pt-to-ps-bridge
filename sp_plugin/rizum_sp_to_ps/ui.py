@@ -1175,6 +1175,8 @@ class ExportDialog:
         self.groups = []
         self._updating_checks = False
         self._target_error = ""
+        self._height_animation = None
+        self._height_animation_token = 0
 
         self.dialog = PainterSettingsDialog(panel.widget)
         self.dialog.setObjectName("RizumExportDialog")
@@ -1188,7 +1190,7 @@ class ExportDialog:
 
         self.scope_combo = make_combo_input([("Current Stack", "current"), ("All Stacks", "all")])
         self.scope_combo.setObjectName("RizumExportScopeInput")
-        self.scope_combo.currentIndexChanged.connect(self.refresh_tree)
+        self.scope_combo.currentIndexChanged.connect(self._scope_changed)
 
         self.expand_button = make_icon_button("chevrons-down.svg", "Expand all")
         self.collapse_button = make_icon_button("chevrons-up.svg", "Collapse all")
@@ -1243,12 +1245,41 @@ class ExportDialog:
             self.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.tree_scroll.setVerticalScrollBarPolicy(
-            self.QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            self.QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.tree_scroll.viewport().setAutoFillBackground(False)
-        self.tree_scroll.verticalScrollBar().valueChanged.connect(
+        internal_scrollbar = self.tree_scroll.verticalScrollBar()
+        internal_scrollbar.setObjectName("RizumExportInternalScrollbar")
+        internal_scrollbar.setStyleSheet(
+            "QScrollBar#RizumExportInternalScrollbar {"
+            " min-width: 0; max-width: 0; width: 0;"
+            " background: transparent; border: 0; }"
+        )
+        internal_scrollbar.setFixedWidth(0)
+        internal_scrollbar.valueChanged.connect(
             self._refresh_tree_hover
         )
+
+        # Painter can reclaim a native scrollbar lane even under AlwaysOn.
+        # Keep scrolling internal, but render it through a fixed-width proxy.
+        self.tree_scrollbar = self.QtWidgets.QScrollBar(
+            self.QtCore.Qt.Orientation.Vertical
+        )
+        self.tree_scrollbar.setObjectName("RizumExportTreeScrollbar")
+        self.tree_scrollbar.setFocusPolicy(
+            self.QtCore.Qt.FocusPolicy.NoFocus
+        )
+        self.tree_scrollbar.valueChanged.connect(internal_scrollbar.setValue)
+        internal_scrollbar.valueChanged.connect(self.tree_scrollbar.setValue)
+        internal_scrollbar.rangeChanged.connect(self._sync_scrollbar_range)
+
+        self.tree_container = self.QtWidgets.QWidget()
+        self.tree_container.setObjectName("RizumExportTreeContainer")
+        tree_container_layout = self.QtWidgets.QHBoxLayout(self.tree_container)
+        tree_container_layout.setContentsMargins(0, 0, 0, 0)
+        tree_container_layout.setSpacing(0)
+        tree_container_layout.addWidget(self.tree_scroll, 1)
+        tree_container_layout.addWidget(self.tree_scrollbar)
 
         self.tree = self.QtWidgets.QFrame()
         self.tree.setObjectName("RizumExportTree")
@@ -1268,7 +1299,7 @@ class ExportDialog:
         self.tree_layout.addWidget(self.status)
         self.tree_layout.addStretch(1)
         self.tree_scroll.setWidget(self.tree)
-        surface_layout.addWidget(self.tree_scroll, 1)
+        surface_layout.addWidget(self.tree_container, 1)
 
         self.export_pngs = self.QtWidgets.QCheckBox("Export PNGs")
         self.export_pngs.setChecked(True)
@@ -1454,15 +1485,9 @@ class ExportDialog:
             return max(1, height + self.tree_layout.spacing())
         return max(1, height + margins.bottom())
 
-    def _sync_toolbar_gutter(self, scrolling):
+    def _sync_toolbar_gutter(self):
         margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
-        gutter = 0
-        if scrolling:
-            gutter = self.dialog.style().pixelMetric(
-                self.QtWidgets.QStyle.PixelMetric.PM_ScrollBarExtent,
-                None,
-                self.tree_scroll.verticalScrollBar(),
-            )
+        gutter = self._metric(10, 8)
         self.top_controls.layout().setContentsMargins(
             margin,
             0,
@@ -1481,7 +1506,75 @@ class ExportDialog:
                 if hover_filter is not None:
                     hover_filter.refresh_hovered()
 
-    def _sync_tree_height(self):
+    def _sync_scrollbar_range(self, minimum, maximum):
+        internal = self.tree_scroll.verticalScrollBar()
+        self.tree_scrollbar.setRange(minimum, maximum)
+        self.tree_scrollbar.setPageStep(internal.pageStep())
+        self.tree_scrollbar.setSingleStep(internal.singleStep())
+        self.tree_scrollbar.setValue(internal.value())
+
+    def _dialog_height_for_viewport(self, viewport_height):
+        return (
+            self.top_controls.height()
+            + self.top_separator.height()
+            + int(round(viewport_height))
+            + self.footer_separator.height()
+            + self.footer.height()
+        )
+
+    def _set_viewport_height(self, viewport_height):
+        viewport_height = max(1, int(round(viewport_height)))
+        self.tree_container.setFixedHeight(viewport_height)
+        self.tree_scroll.setFixedHeight(viewport_height)
+        self.dialog.setFixedHeight(
+            self._dialog_height_for_viewport(viewport_height)
+        )
+        self.dialog.updateGeometry()
+
+    def _stop_height_animation(self):
+        animation = self._height_animation
+        self._height_animation = None
+        if animation is not None:
+            self._height_animation_token += 1
+            animation.stop()
+            animation.deleteLater()
+
+    def _animate_viewport_height(self, target_height):
+        start_height = max(1, self.tree_scroll.height())
+        target_height = max(1, int(round(target_height)))
+        threshold = self._metric(32, 24)
+        if (
+            not self.dialog.isVisible()
+            or abs(target_height - start_height) < threshold
+        ):
+            self._stop_height_animation()
+            self._set_viewport_height(target_height)
+            return
+
+        self._stop_height_animation()
+        self._height_animation_token += 1
+        token = self._height_animation_token
+        animation = self.QtCore.QVariantAnimation(self.dialog)
+        animation.setDuration(165)
+        animation.setStartValue(start_height)
+        animation.setEndValue(target_height)
+        animation.setEasingCurve(
+            self.QtCore.QEasingCurve.Type.OutCubic
+        )
+        animation.valueChanged.connect(self._set_viewport_height)
+
+        def finish():
+            if token != self._height_animation_token:
+                return
+            self._set_viewport_height(target_height)
+            self._height_animation = None
+            animation.deleteLater()
+
+        animation.finished.connect(finish)
+        self._height_animation = animation
+        animation.start()
+
+    def _sync_tree_height(self, animate=False, reset_scroll=False):
         self.tree_layout.activate()
         content_height = self._expanded_tree_height()
         viewport_height = self._quantized_tree_height(
@@ -1489,11 +1582,29 @@ class ExportDialog:
             self._metric(300, 225),
         )
         self.tree.setFixedHeight(content_height)
-        self.tree_scroll.setFixedHeight(viewport_height)
-        self._sync_toolbar_gutter(content_height > viewport_height)
+        scrollbar = self.tree_scroll.verticalScrollBar()
+        scrolling = content_height > viewport_height
+        if self.tree_scrollbar.property("scrollable") != scrolling:
+            self.tree_scrollbar.setProperty("scrollable", scrolling)
+            self.tree_scrollbar.style().unpolish(self.tree_scrollbar)
+            self.tree_scrollbar.style().polish(self.tree_scrollbar)
+            self.tree_scrollbar.update()
+        if reset_scroll:
+            scrollbar.setValue(0)
+        self._sync_toolbar_gutter()
+        if animate:
+            self._animate_viewport_height(viewport_height)
+        else:
+            self._stop_height_animation()
+            self._set_viewport_height(viewport_height)
         self.QtCore.QTimer.singleShot(0, self._refresh_tree_hover)
 
-    def _apply_ui_scale(self, _scale):
+    def _apply_ui_scale(
+        self,
+        _scale,
+        animate_height=False,
+        reset_scroll=False,
+    ):
         margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
         self.top_controls.setFixedHeight(
             PAINTER_SETTINGS_LAYOUT.row_height.resolve(self.dialog)
@@ -1604,16 +1715,14 @@ class ExportDialog:
             button.setFixedSize(icon_frame, icon_frame)
         self.icon_bar.layout().invalidate()
         self.icon_bar.layout().activate()
+        scrollbar_gutter = self._metric(10, 8)
+        self.tree_scroll.verticalScrollBar().setFixedWidth(0)
+        self.tree_scrollbar.setFixedWidth(scrollbar_gutter)
         self.dialog.setFixedWidth(self._required_width())
-        self._sync_tree_height()
-        self.dialog.setFixedHeight(
-            self.top_controls.height()
-            + self.top_separator.height()
-            + self.tree_scroll.height()
-            + self.footer_separator.height()
-            + self.footer.height()
+        self._sync_tree_height(
+            animate=animate_height,
+            reset_scroll=reset_scroll,
         )
-        self.dialog.updateGeometry()
 
     def _restyle(self):
         theme = PAINTER_DIALOG_STYLE
@@ -1628,6 +1737,7 @@ QFrame#RizumPainterSettingsSurface {{
     background: {theme["surface"]};
 }}
 QWidget#RizumExportTopControls,
+QWidget#RizumExportTreeContainer,
 QScrollArea#RizumExportTreeScroll,
 QScrollArea#RizumExportTreeScroll > QWidget > QWidget,
 QFrame#RizumExportTree,
@@ -1641,6 +1751,38 @@ QWidget#RizumCollapsibleContentInner,
 QFrame#RizumExportTreeItemHost {{
     background: transparent;
     border: 0;
+}}
+QScrollBar#RizumExportTreeScrollbar {{
+    background: transparent;
+    border: 0;
+    margin: 0;
+    width: {self._metric(10, 8)}px;
+}}
+QScrollBar#RizumExportTreeScrollbar::handle:vertical {{
+    background: #515151;
+    border: 0;
+    border-radius: {max(3, self._metric(4, 3))}px;
+    min-height: {self._metric(28, 21)}px;
+    margin: {self._metric(2, 1)}px;
+}}
+QScrollBar#RizumExportTreeScrollbar::handle:vertical:hover {{
+    background: #686868;
+}}
+QScrollBar#RizumExportTreeScrollbar::handle:vertical:pressed {{
+    background: #777777;
+}}
+QScrollBar#RizumExportTreeScrollbar[scrollable="false"]::handle:vertical {{
+    background: transparent;
+}}
+QScrollBar#RizumExportTreeScrollbar::add-line:vertical,
+QScrollBar#RizumExportTreeScrollbar::sub-line:vertical {{
+    background: transparent;
+    border: 0;
+    height: 0;
+}}
+QScrollBar#RizumExportTreeScrollbar::add-page:vertical,
+QScrollBar#RizumExportTreeScrollbar::sub-page:vertical {{
+    background: transparent;
 }}
 QWidget#RizumExportTopDivider QFrame#RizumInsetSeparator,
 QWidget#RizumExportFooterDivider QFrame#RizumInsetSeparator {{
@@ -1754,7 +1896,18 @@ QLabel#RizumSvgLabel:hover {{
         self.status.setText(message)
         self.status.setVisible(bool(message))
 
-    def refresh_tree(self, *_args):
+    def _scope_changed(self, *_args):
+        self.refresh_tree(
+            animate_height=self.dialog.isVisible(),
+            reset_scroll=True,
+        )
+
+    def refresh_tree(
+        self,
+        *_args,
+        animate_height=False,
+        reset_scroll=False,
+    ):
         self._updating_checks = True
         self._clear_groups()
 
@@ -1778,7 +1931,11 @@ QLabel#RizumSvgLabel:hover {{
             self._show_tree_message(message)
             self.run_button.setEnabled(False)
             self._updating_checks = False
-            self._apply_ui_scale(self.dialog.settingsUiScale())
+            self._apply_ui_scale(
+                self.dialog.settingsUiScale(),
+                animate_height=animate_height,
+                reset_scroll=reset_scroll,
+            )
             return
 
         select_current = self.scope_combo.currentText() == "Current Stack"
@@ -1789,7 +1946,11 @@ QLabel#RizumSvgLabel:hover {{
 
         self._updating_checks = False
         self._refresh_selection_state()
-        self._apply_ui_scale(self.dialog.settingsUiScale())
+        self._apply_ui_scale(
+            self.dialog.settingsUiScale(),
+            animate_height=animate_height,
+            reset_scroll=reset_scroll,
+        )
 
     def _add_group(self, target, checked):
         parent_checkbox = make_mock_checkbox(checked)
