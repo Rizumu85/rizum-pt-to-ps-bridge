@@ -1167,6 +1167,9 @@ QPushButton[variant="icon"]:pressed {{
 class ExportDialog:
     """Focused target/channel export dialog launched from the Painter dock."""
 
+    DEFAULT_TREE_VIEWPORT_HEIGHT = 500
+    MINIMUM_TREE_VIEWPORT_HEIGHT = 375
+
     def __init__(self, panel):
         self.panel = panel
         self.QtCore = panel.QtCore
@@ -1363,6 +1366,13 @@ class ExportDialog:
 
     def open(self):
         self.refresh_targets()
+        self._position_for_default_expansion()
+        # Windows recenters a parented modal as exec() begins, so repeat the
+        # placement after the native window has completed its first show.
+        self.QtCore.QTimer.singleShot(
+            0,
+            self._position_for_default_expansion,
+        )
         return self.dialog.exec()
 
     def tree_expand_all(self):
@@ -1544,6 +1554,48 @@ class ExportDialog:
             + self.footer.height()
         )
 
+    def _position_for_default_expansion(self):
+        parent_window = self.dialog.parentWidget()
+        if parent_window is not None:
+            parent_window = parent_window.window()
+        parent_geometry = (
+            parent_window.frameGeometry()
+            if parent_window is not None and parent_window.isVisible()
+            else None
+        )
+        screen = None
+        if parent_geometry is not None:
+            screen = self.QtGui.QGuiApplication.screenAt(
+                parent_geometry.center()
+            )
+        screen = screen or self.dialog.screen()
+        screen = screen or self.QtGui.QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+
+        available = screen.availableGeometry()
+        anchor = parent_geometry or available
+        frame_width = max(1, self.dialog.frameGeometry().width())
+        reserve_height = min(
+            available.height(),
+            self._dialog_height_for_viewport(
+                self._metric(
+                    self.DEFAULT_TREE_VIEWPORT_HEIGHT,
+                    self.MINIMUM_TREE_VIEWPORT_HEIGHT,
+                )
+            ),
+        )
+        x = anchor.center().x() - frame_width // 2
+        x = max(
+            available.left(),
+            min(x, available.right() - frame_width + 1),
+        )
+        y = available.top() + max(
+            0,
+            (available.height() - reserve_height) // 2,
+        )
+        self.dialog.move(x, y)
+
     def _set_viewport_height(self, viewport_height):
         viewport_height = max(1, int(round(viewport_height)))
         self.dialog.resize(
@@ -1600,7 +1652,10 @@ class ExportDialog:
         content_height = self._expanded_tree_height()
         viewport_height = self._quantized_tree_height(
             content_height,
-            self._metric(400, 300),
+            self._metric(
+                self.DEFAULT_TREE_VIEWPORT_HEIGHT,
+                self.MINIMUM_TREE_VIEWPORT_HEIGHT,
+            ),
         )
         self.tree.setFixedHeight(content_height)
         scrollbar = self.tree_scroll.verticalScrollBar()

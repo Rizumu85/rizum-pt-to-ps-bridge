@@ -150,7 +150,7 @@ class ExportDialogLayoutTests(unittest.TestCase):
 
         self.assertGreater(
             self.export.tree_scroll.viewport().height(),
-            self.export._metric(300, 225),
+            self.export._metric(400, 300),
         )
         viewport_height = self.export.tree_scroll.viewport().height()
         partial_groups = [
@@ -171,6 +171,23 @@ class ExportDialogLayoutTests(unittest.TestCase):
 
         self.assertEqual(self.export.dialog.height(), requested_height)
         self.assertGreater(self.export.tree_scroll.viewport().height(), 0)
+
+    def test_default_position_reserves_room_for_all_stacks_growth(self):
+        screen = self.export.dialog.screen() or self.app.primaryScreen()
+        available = screen.availableGeometry()
+        centered_current_top = available.top() + max(
+            0,
+            (available.height() - self.export.dialog.height()) // 2,
+        )
+
+        self.export._position_for_default_expansion()
+
+        self.assertGreaterEqual(self.export.dialog.y(), available.top())
+        self.assertLess(self.export.dialog.y(), centered_current_top)
+        self.assertLessEqual(
+            self.export.dialog.geometry().bottom(),
+            available.bottom(),
+        )
 
     def test_export_action_uses_save_style_disabled_feedback(self):
         self.export.scope_combo.setCurrentIndex(1)
