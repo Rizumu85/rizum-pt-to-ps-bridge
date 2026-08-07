@@ -555,6 +555,16 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         QtWidgets.QSizePolicy.Policy.Expanding,
         QtWidgets.QSizePolicy.Policy.Fixed,
     )
+    export_host = QtWidgets.QWidget()
+    export_host.setObjectName("RizumBridgeDockExportHost")
+    export_host.setStyleSheet(
+        "QWidget#RizumBridgeDockExportHost { background: transparent; border: 0; }"
+    )
+    export_layout = QtWidgets.QHBoxLayout(export_host)
+    export_layout.setContentsMargins(0, 0, 0, 0)
+    export_layout.setSpacing(0)
+    export_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+    export_layout.addWidget(export_button)
 
     bridge_button = make_icon_button(
         "action-bridge.svg",
@@ -570,10 +580,10 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         "Layer mapping is not available yet. Export, then build in Photoshop."
     )
 
-    settings_button = make_icon_button("action-sun.svg", "Settings")
+    settings_button = make_icon_button("settings.svg", "Settings")
     settings_button.setObjectName("RizumBridgeDockSettings")
 
-    layout.addWidget(export_button, 1)
+    layout.addWidget(export_host, 1)
     layout.addWidget(bridge_button)
     layout.addWidget(settings_button)
 
@@ -594,6 +604,7 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         layout.setSpacing(spacing)
         export_button.setCompactHeight(control_height)
         export_button.setMinimumWidth(metric(96, 72))
+        export_button.setMaximumWidth(metric(200, 150))
         for button in (bridge_button, settings_button):
             button.setStyleSheet(
                 f"QPushButton#{button.objectName()} {{"
