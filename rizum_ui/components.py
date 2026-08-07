@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from html import escape
 from pathlib import Path
 
@@ -22,6 +23,8 @@ PAINTER_FOOTER_MARGIN_BOTTOM = 14
 PAINTER_TITLE_BAR_HEIGHT = 32
 PAINTER_WINDOW_CONTENT_RADIUS = 10
 PAINTER_WINDOW_CONTENT_BOTTOM_RADIUS = 8
+
+_ACTIVE_HOVER_FILTER_REF = None
 
 
 def make_segmented_control(options=None, current=None, parent=None):
@@ -1655,13 +1658,14 @@ def compact_top_controls_width(
 
 def bind_hover_state(host, row, *widgets, property_name="hovered"):
     """Keep a row hover property stable while moving across child widgets."""
-    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore
 
     watched = [widget for widget in (host, row, *widgets) if widget is not None]
 
     class _TreeHoverFilter(QtCore.QObject):
         def __init__(self):
             super().__init__(host)
+            self._property_name = property_name
 
         def set_row_property(self, name, value):
             if row.property(name) == value:
@@ -1672,16 +1676,28 @@ def bind_hover_state(host, row, *widgets, property_name="hovered"):
             row.update()
 
         def set_hovered(self, is_hovered):
+            global _ACTIVE_HOVER_FILTER_REF
+            active_filter = (
+                _ACTIVE_HOVER_FILTER_REF()
+                if _ACTIVE_HOVER_FILTER_REF is not None
+                else None
+            )
+            if is_hovered:
+                if active_filter is not None and active_filter is not self:
+                    try:
+                        active_filter.set_row_property(
+                            active_filter._property_name,
+                            False,
+                        )
+                    except RuntimeError:
+                        pass
+                _ACTIVE_HOVER_FILTER_REF = weakref.ref(self)
+            elif active_filter is self:
+                _ACTIVE_HOVER_FILTER_REF = None
             self.set_row_property(property_name, is_hovered)
 
         def refresh_hovered(self):
-            hovered_widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-            while hovered_widget is not None:
-                if hovered_widget in watched:
-                    self.set_hovered(True)
-                    return
-                hovered_widget = hovered_widget.parentWidget()
-            self.set_hovered(False)
+            self.set_hovered(any(widget.underMouse() for widget in watched))
 
         def eventFilter(self, obj, event):
             event_type = event.type()

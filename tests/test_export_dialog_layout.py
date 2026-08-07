@@ -187,6 +187,23 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.assertTrue(self.export.run_button.isEnabled())
         self.assertEqual(self.export.run_button.activationProgress(), 1.0)
 
+    def test_child_hover_does_not_accumulate_across_rows(self):
+        self.export.scope_combo.setCurrentIndex(1)
+        QtTest.QTest.qWait(220)
+        self.app.processEvents()
+        children = self.export.groups[2]["children"][:2]
+        first_filter = children[0]["row"]._rizum_hover_filter
+        second_filter = children[1]["row"]._rizum_hover_filter
+
+        first_filter.set_hovered(True)
+        second_filter.set_hovered(True)
+
+        self.assertFalse(children[0]["row"]._rizum_row.property("hovered"))
+        self.assertTrue(children[1]["row"]._rizum_row.property("hovered"))
+
+        second_filter.refresh_hovered()
+        self.assertFalse(children[1]["row"]._rizum_row.property("hovered"))
+
 
 if __name__ == "__main__":
     unittest.main()
