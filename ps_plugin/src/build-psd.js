@@ -126,6 +126,19 @@ async function buildPsdFromExportList(options = {}) {
   return result;
 }
 
+async function buildPsdFromExportListPath(path, options = {}) {
+  const cleanPath = cleanUserPath(path);
+  if (!cleanPath) {
+    throw new Error("Painter handoff did not include an export-list path.");
+  }
+
+  const file = await getExistingFileEntryForPath(cleanPath);
+  return buildPsdFromExportList({
+    ...options,
+    file
+  });
+}
+
 async function pickBuildRequestFile() {
   return pickJsonFile();
 }
@@ -1603,6 +1616,7 @@ function cleanUserPath(path) {
 
 module.exports = {
   buildPsdFromExportList,
+  buildPsdFromExportListPath,
   buildPsdFromFolder,
   buildPsdFromPath,
   buildPsdFromRequest,

@@ -2,7 +2,12 @@
 
 const { entrypoints } = require("uxp");
 
-const PLUGIN_VERSION = "0.1.60";
+const PLUGIN_VERSION = "0.1.61";
+const HANDOFF_PREFIX = "RIZUM_PT_TO_PS_HANDOFF_V1\n";
+
+let activeHandoffUi = null;
+let handoffBuildInFlight = false;
+let lastCompletedHandoffId = null;
 
 console.log(`[Rizum] main.js loaded ${PLUGIN_VERSION}`);
 scheduleStartupRender();
@@ -36,6 +41,7 @@ entrypoints.setup({
       },
       hide(rootNode) {
         console.log("[Rizum] panel.hide", describeNode(rootNode));
+        activeHandoffUi = null;
       },
       destroy(rootNode) {
         console.log("[Rizum] panel.destroy", describeNode(rootNode));
@@ -136,6 +142,7 @@ function renderDiagnosticPanel(rootNode, phase) {
   const buildPathButton = makeButton("Build Request Path");
   const buildFolderButton = makeButton("Build Request Folder");
   const buildListButton = makeButton("Build Export List");
+  const buildPendingButton = makeButton("Build Pending Painter Export");
   const exportAppliedButton = makeButton("Export Selected (Applied Mask)");
   const exportSeparateButton = makeButton("Export Selected + Masks");
   const copyButton = makeButton("Copy Details");
@@ -175,6 +182,7 @@ function renderDiagnosticPanel(rootNode, phase) {
   panel.appendChild(buildPathButton);
   panel.appendChild(buildFolderButton);
   panel.appendChild(buildListButton);
+  panel.appendChild(buildPendingButton);
   panel.appendChild(exportAppliedButton);
   panel.appendChild(exportSeparateButton);
   panel.appendChild(copyButton);
@@ -196,6 +204,9 @@ function renderDiagnosticPanel(rootNode, phase) {
   buildListButton.addEventListener("click", () => {
     handleBuildExportList(buildListButton, details);
   });
+  buildPendingButton.addEventListener("click", () => {
+    tryBuildPainterHandoff(buildPendingButton, details, false);
+  });
   exportAppliedButton.addEventListener("click", () => {
     handleExportSelected(exportAppliedButton, details, "applied");
   });
@@ -206,7 +217,105 @@ function renderDiagnosticPanel(rootNode, phase) {
     handleCopyDetails(copyButton, details);
   });
 
+  activeHandoffUi = { button: buildPendingButton, details };
+  setTimeout(() => tryBuildPainterHandoff(buildPendingButton, details, true), 0);
   console.log("[Rizum] panel rendered plain HTML", describeNode(rootNode));
+}
+
+async function tryBuildPainterHandoff(button, details, automatic) {
+  if (handoffBuildInFlight) {
+    return;
+  }
+
+  let handoff;
+  try {
+    handoff = await readPainterHandoff();
+  } catch (error) {
+    if (!automatic) {
+      setDetailsText(details, `Could not read Painter handoff:\n${error.message || error}`);
+    }
+    return;
+  }
+  if (!handoff || handoff.id === lastCompletedHandoffId) {
+    if (!automatic && !handoff) {
+      setDetailsText(details, "No pending Painter export was found on the clipboard.");
+    }
+    return;
+  }
+
+  handoffBuildInFlight = true;
+  button.disabled = true;
+  setDetailsText(details, `Painter export received.\n\nBuilding:\n${handoff.path}`);
+  try {
+    const { buildPsdFromExportListPath } = loadBuildPsdModule();
+    const result = await buildPsdFromExportListPath(handoff.path, {
+      createSkeleton: true,
+      placeTopLevelAssets: true,
+      closeAfterSave: false
+    });
+    lastCompletedHandoffId = handoff.id;
+    setDetailsText(details, formatExportListBuildSummary(result));
+    await clearCompletedHandoff(handoff.id);
+  } catch (error) {
+    console.log("[Rizum] Painter handoff build failed", error && error.stack ? error.stack : error);
+    setDetailsText(details, `Could not build Painter handoff:\n${error.message || error}`);
+  } finally {
+    handoffBuildInFlight = false;
+    button.disabled = false;
+  }
+}
+
+async function readPainterHandoff() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    throw new Error("Photoshop clipboard access is unavailable.");
+  }
+  const text = await navigator.clipboard.readText();
+  if (!text || !text.startsWith(HANDOFF_PREFIX)) {
+    return null;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(text.slice(HANDOFF_PREFIX.length));
+  } catch (error) {
+    throw new Error(`Painter handoff JSON is invalid: ${error.message}`);
+  }
+  if (
+    payload.protocol !== "rizum-pt-to-ps"
+    || payload.version !== 1
+    || payload.action !== "build_export_list"
+    || !payload.id
+    || !payload.path
+  ) {
+    throw new Error("Painter handoff uses an unsupported contract.");
+  }
+  return payload;
+}
+
+async function clearCompletedHandoff(handoffId) {
+  if (!navigator.clipboard || !navigator.clipboard.readText || !navigator.clipboard.writeText) {
+    return;
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.startsWith(HANDOFF_PREFIX)) {
+      return;
+    }
+    const payload = JSON.parse(text.slice(HANDOFF_PREFIX.length));
+    if (payload.id === handoffId) {
+      await navigator.clipboard.writeText("");
+    }
+  } catch (error) {
+    console.log("[Rizum] Could not clear completed Painter handoff", error);
+  }
+}
+
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("focus", () => {
+    if (activeHandoffUi) {
+      tryBuildPainterHandoff(activeHandoffUi.button, activeHandoffUi.details, true);
+    }
+  });
 }
 
 async function handlePasteRequestPath(button, details, pathInput) {
