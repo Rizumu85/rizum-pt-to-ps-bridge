@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .components import FOOTER_BUTTON_PADDING_X
+from .components import FOOTER_BUTTON_PADDING_X, render_svg_pixmap
 from .theme import default_theme
 
 
@@ -325,6 +325,118 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         painter.setFont(self._font())
         painter.setPen(self._text_color)
         painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.end()
+
+
+class IconActionButton(SecondaryActionButton):
+    """Compact action that centers an SVG icon next to its label.
+
+    Painted icon geometry follows the font-scale standard: the icon size
+    lives on ``self`` and can be changed at runtime via
+    ``setPaintedIconSize`` (cache invalidation + base x 0.75 floor), and
+    ``setCompactHeight`` re-derives it from the 28 px baseline so callers
+    only need the one call.
+    """
+
+    BASE_ICON_SIZE = 14
+    MIN_ICON_SIZE = 10  # round(14 x 0.75)
+    ICON_GAP = 6
+
+    def __init__(self, text: str, icon_name: str, *args, **kwargs) -> None:
+        self._icon_name = icon_name
+        self._icon_size = self.BASE_ICON_SIZE
+        self._icon_cache: dict = {}
+        super().__init__(text, *args, **kwargs)
+
+    def paintedIconSize(self) -> int:
+        return self._icon_size
+
+    def setPaintedIconSize(self, icon_size: int) -> None:
+        new_size = max(self.MIN_ICON_SIZE, int(round(icon_size)))
+        if new_size == self._icon_size:
+            return
+        self._icon_size = new_size
+        self._icon_cache.clear()
+        self.updateGeometry()
+        self.update()
+
+    def setCompactHeight(self, height: int) -> None:
+        super().setCompactHeight(height)
+        self.setPaintedIconSize(
+            round(self.BASE_ICON_SIZE * self._compact_height / float(self.BASE_HEIGHT))
+        )
+
+    def _icon_gap(self) -> int:
+        return max(4, int(round(self.ICON_GAP * self._scale())))
+
+    def sizeHint(self) -> QtCore.QSize:
+        hint = super().sizeHint()
+        return QtCore.QSize(
+            hint.width() + self._icon_size + self._icon_gap(),
+            hint.height(),
+        )
+
+    def _icon_pixmap(self, color: str) -> QtGui.QPixmap:
+        dpr = self.devicePixelRatioF()
+        key = (color, self._icon_size, round(dpr, 2))
+        pixmap = self._icon_cache.get(key)
+        if pixmap is None:
+            pixmap = render_svg_pixmap(self._icon_name, self._icon_size, color)
+            self._icon_cache[key] = pixmap
+        return pixmap
+
+    def paintEvent(self, event) -> None:
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing, True)
+        painter.setRenderHint(
+            QtGui.QPainter.RenderHint.SmoothPixmapTransform, True
+        )
+        if self.isDown():
+            background = self._pressed_background
+        else:
+            hover_progress = max(
+                self._hover_progress,
+                1.0 if self.hasFocus() else 0.0,
+            )
+            background = self._blend(
+                self._background,
+                self._hover_background,
+                hover_progress,
+            )
+        radius = max(4.0, self._radius * self._scale())
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        painter.drawRoundedRect(
+            QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            radius,
+            radius,
+        )
+        font = self._font()
+        painter.setFont(font)
+        icon_size = self._icon_size
+        icon_gap = self._icon_gap()
+        text_width = QtGui.QFontMetrics(font).horizontalAdvance(self.text())
+        content_width = icon_size + icon_gap + text_width
+        left = max(0.0, (self.width() - content_width) / 2.0)
+        painter.drawPixmap(
+            int(round(left)),
+            int(round((self.height() - icon_size) / 2.0)),
+            self._icon_pixmap(self._text_color.name()),
+        )
+        painter.setPen(self._text_color)
+        painter.drawText(
+            QtCore.QRectF(
+                left + icon_size + icon_gap,
+                0,
+                text_width + 1,
+                self.height(),
+            ),
+            QtCore.Qt.AlignmentFlag.AlignLeft
+            | QtCore.Qt.AlignmentFlag.AlignVCenter,
+            self.text(),
+        )
         painter.end()
 
 

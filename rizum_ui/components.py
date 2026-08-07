@@ -2705,6 +2705,17 @@ def _render_svg_pixmap(QtCore, QtGui, QtWidgets, icon_name, size, color=None):
     return pixmap
 
 
+def render_svg_pixmap(icon_name, size, color=None):
+    """Public boundary for rendering a shared-folder SVG icon to a pixmap.
+
+    Shared components outside this module must use this instead of the
+    private ``_render_svg_pixmap`` worker.
+    """
+    from PySide6 import QtCore, QtGui, QtWidgets
+
+    return _render_svg_pixmap(QtCore, QtGui, QtWidgets, icon_name, size, color)
+
+
 def make_svg_label(icon_name, size, color=None):
     """Create a passive SVG label that does not take its own hover state."""
     from PySide6 import QtCore, QtGui, QtWidgets

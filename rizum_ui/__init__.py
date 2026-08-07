@@ -18,6 +18,7 @@ from .settings_layout import (
 )
 from .settings_controls import (
     AnimatedSaveButton,
+    IconActionButton,
     ModeParameterSlot,
     PAINTER_DIALOG_STYLE,
     SecondaryActionButton,
@@ -114,6 +115,7 @@ __all__ = [
     "PAINTER_SETTINGS_LAYOUT",
     "PainterSettingsDialog",
     "PainterSettingsLayoutSpec",
+    "IconActionButton",
     "ModeParameterSlot",
     "PAINTER_DIALOG_STYLE",
     "SecondaryActionButton",
