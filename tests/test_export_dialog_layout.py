@@ -35,6 +35,8 @@ def _targets():
             ("M_clothes", ["basecolor"]),
             ("M_coat", ["basecolor", "normal"]),
             ("M_face", ["basecolor", "normal"]),
+            ("M_hair", ["basecolor", "roughness"]),
+            ("M_shoes", ["basecolor", "normal"]),
         )
     ]
 
@@ -103,8 +105,13 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.app.processEvents()
 
         viewport_height = self.export.tree_scroll.viewport().height()
-        next_group_y = self.export.groups[3]["widget"].y()
-        self.assertLessEqual(viewport_height, next_group_y)
+        partial_groups = [
+            group
+            for group in self.export.groups
+            if group["widget"].y() < viewport_height
+            and group["widget"].y() + group["widget"].height() > viewport_height
+        ]
+        self.assertEqual(partial_groups, [])
 
     def test_rapid_scope_reversal_finishes_at_the_latest_height(self):
         current_height = self.export.dialog.height()
@@ -119,6 +126,66 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.assertIsNone(self.export._height_animation)
         self.assertEqual(self.export.dialog.height(), current_height)
         self.assertEqual(self.export.tree_scroll.viewport().width(), current_width)
+
+    def test_collapsing_groups_removes_the_blank_scroll_range(self):
+        self.export.scope_combo.setCurrentIndex(1)
+        QtTest.QTest.qWait(220)
+        self.app.processEvents()
+        self.assertGreater(self.export.tree_scrollbar.maximum(), 0)
+
+        self.export.tree_collapse_all()
+        QtTest.QTest.qWait(350)
+        self.app.processEvents()
+
+        self.assertEqual(self.export.tree_scrollbar.maximum(), 0)
+        self.assertEqual(
+            self.export.tree_scroll.verticalScrollBar().maximum(),
+            0,
+        )
+
+    def test_many_stacks_open_with_a_taller_complete_group_viewport(self):
+        self.export.scope_combo.setCurrentIndex(1)
+        QtTest.QTest.qWait(220)
+        self.app.processEvents()
+
+        self.assertGreater(
+            self.export.tree_scroll.viewport().height(),
+            self.export._metric(300, 225),
+        )
+        viewport_height = self.export.tree_scroll.viewport().height()
+        partial_groups = [
+            group
+            for group in self.export.groups
+            if group["widget"].y() < viewport_height
+            and group["widget"].y() + group["widget"].height() > viewport_height
+        ]
+        self.assertEqual(partial_groups, [])
+
+    def test_dialog_height_can_be_resized_by_the_user(self):
+        initial_height = self.export.dialog.height()
+        requested_height = initial_height + 80
+
+        self.assertGreater(self.export.dialog.maximumHeight(), initial_height)
+        self.export.dialog.resize(self.export.dialog.width(), requested_height)
+        self.app.processEvents()
+
+        self.assertEqual(self.export.dialog.height(), requested_height)
+        self.assertGreater(self.export.tree_scroll.viewport().height(), 0)
+
+    def test_export_action_uses_save_style_disabled_feedback(self):
+        self.export.scope_combo.setCurrentIndex(1)
+        QtTest.QTest.qWait(220)
+        self.app.processEvents()
+
+        self.assertFalse(self.export.run_button.isEnabled())
+        self.assertEqual(self.export.run_button.activationProgress(), 0.0)
+
+        self.export.set_all_checked(True)
+        QtTest.QTest.qWait(220)
+        self.app.processEvents()
+
+        self.assertTrue(self.export.run_button.isEnabled())
+        self.assertEqual(self.export.run_button.activationProgress(), 1.0)
 
 
 if __name__ == "__main__":

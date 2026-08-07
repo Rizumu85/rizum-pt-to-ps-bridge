@@ -73,6 +73,7 @@ set_compact_footer_button_width = _components.set_compact_footer_button_width
 update_export_tree_item = _components.update_export_tree_item
 PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
+AnimatedSaveButton = _settings_controls.AnimatedSaveButton
 IconActionButton = _settings_controls.IconActionButton
 SecondaryActionButton = _settings_controls.SecondaryActionButton
 PAINTER_SETTINGS_LAYOUT = _settings_layout.PAINTER_SETTINGS_LAYOUT
@@ -1184,7 +1185,7 @@ class ExportDialog:
         self.dialog.setModal(True)
         self.dialog.setSizePolicy(
             self.QtWidgets.QSizePolicy.Policy.Fixed,
-            self.QtWidgets.QSizePolicy.Policy.Fixed,
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
         )
         surface_layout = self.dialog.settingsSurfaceLayout()
 
@@ -1275,6 +1276,10 @@ class ExportDialog:
 
         self.tree_container = self.QtWidgets.QWidget()
         self.tree_container.setObjectName("RizumExportTreeContainer")
+        self.tree_container.setSizePolicy(
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         tree_container_layout = self.QtWidgets.QHBoxLayout(self.tree_container)
         tree_container_layout.setContentsMargins(0, 0, 0, 0)
         tree_container_layout.setSpacing(0)
@@ -1299,6 +1304,10 @@ class ExportDialog:
         self.tree_layout.addWidget(self.status)
         self.tree_layout.addStretch(1)
         self.tree_scroll.setWidget(self.tree)
+        self.tree_scroll.setSizePolicy(
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         surface_layout.addWidget(self.tree_container, 1)
 
         self.export_pngs = self.QtWidgets.QCheckBox("Export PNGs")
@@ -1337,14 +1346,7 @@ class ExportDialog:
             default_theme.radius_small,
         )
         self.cancel_button.setObjectName("RizumExportCancel")
-        self.run_button = SecondaryActionButton(
-            "Export",
-            theme["accent"],
-            theme["accent_hover"],
-            theme["accent_pressed"],
-            theme["accent_text"],
-            default_theme.radius_small,
-        )
+        self.run_button = AnimatedSaveButton("Export")
         self.run_button.setObjectName("RizumExportConfirm")
         self.cancel_button.clicked.connect(self.dialog.reject)
         self.run_button.clicked.connect(self.export_checked)
@@ -1512,6 +1514,26 @@ class ExportDialog:
         self.tree_scrollbar.setPageStep(internal.pageStep())
         self.tree_scrollbar.setSingleStep(internal.singleStep())
         self.tree_scrollbar.setValue(internal.value())
+        self._set_tree_scrollable(maximum > minimum)
+
+    def _set_tree_scrollable(self, scrolling):
+        scrolling = bool(scrolling)
+        if self.tree_scrollbar.property("scrollable") == scrolling:
+            return
+        self.tree_scrollbar.setProperty("scrollable", scrolling)
+        self.tree_scrollbar.style().unpolish(self.tree_scrollbar)
+        self.tree_scrollbar.style().polish(self.tree_scrollbar)
+        self.tree_scrollbar.update()
+
+    def _sync_tree_content_height(self):
+        self.tree_layout.activate()
+        content_height = self._expanded_tree_height()
+        self.tree.setFixedHeight(content_height)
+        viewport_height = max(1, self.tree_scroll.viewport().height())
+        scrolling = content_height > viewport_height
+        self._set_tree_scrollable(scrolling)
+        if not scrolling:
+            self.tree_scroll.verticalScrollBar().setValue(0)
 
     def _dialog_height_for_viewport(self, viewport_height):
         return (
@@ -1524,10 +1546,9 @@ class ExportDialog:
 
     def _set_viewport_height(self, viewport_height):
         viewport_height = max(1, int(round(viewport_height)))
-        self.tree_container.setFixedHeight(viewport_height)
-        self.tree_scroll.setFixedHeight(viewport_height)
-        self.dialog.setFixedHeight(
-            self._dialog_height_for_viewport(viewport_height)
+        self.dialog.resize(
+            self.dialog.width(),
+            self._dialog_height_for_viewport(viewport_height),
         )
         self.dialog.updateGeometry()
 
@@ -1579,16 +1600,12 @@ class ExportDialog:
         content_height = self._expanded_tree_height()
         viewport_height = self._quantized_tree_height(
             content_height,
-            self._metric(300, 225),
+            self._metric(400, 300),
         )
         self.tree.setFixedHeight(content_height)
         scrollbar = self.tree_scroll.verticalScrollBar()
         scrolling = content_height > viewport_height
-        if self.tree_scrollbar.property("scrollable") != scrolling:
-            self.tree_scrollbar.setProperty("scrollable", scrolling)
-            self.tree_scrollbar.style().unpolish(self.tree_scrollbar)
-            self.tree_scrollbar.style().polish(self.tree_scrollbar)
-            self.tree_scrollbar.update()
+        self._set_tree_scrollable(scrolling)
         if reset_scroll:
             scrollbar.setValue(0)
         self._sync_toolbar_gutter()
@@ -1718,6 +1735,13 @@ class ExportDialog:
         scrollbar_gutter = self._metric(10, 8)
         self.tree_scroll.verticalScrollBar().setFixedWidth(0)
         self.tree_scrollbar.setFixedWidth(scrollbar_gutter)
+        minimum_viewport_height = self._metric(72, 54)
+        self.tree_container.setMinimumHeight(minimum_viewport_height)
+        self.tree_scroll.setMinimumHeight(minimum_viewport_height)
+        self.dialog.setMinimumHeight(
+            self._dialog_height_for_viewport(minimum_viewport_height)
+        )
+        self.dialog.setMaximumHeight(16777215)
         self.dialog.setFixedWidth(self._required_width())
         self._sync_tree_height(
             animate=animate_height,
@@ -1929,7 +1953,10 @@ QLabel#RizumSvgLabel:hover {{
             else:
                 message = "No exportable channels were found."
             self._show_tree_message(message)
-            self.run_button.setEnabled(False)
+            self.run_button.setDirty(
+                False,
+                animate=self.dialog.isVisible(),
+            )
             self._updating_checks = False
             self._apply_ui_scale(
                 self.dialog.settingsUiScale(),
@@ -2029,6 +2056,16 @@ QLabel#RizumSvgLabel:hover {{
         group["subtitle"] = subtitle
         self.tree_layout.insertWidget(self.tree_layout.count() - 1, widget)
         self.groups.append(group)
+        # Follow every animation frame so a collapsed tree cannot retain the
+        # expanded content height as a blank scroll range.
+        content = widget._rizum_content
+        sync_group_height = content._height_changed
+
+        def sync_export_tree_height(value, sync_group=sync_group_height):
+            sync_group(value)
+            self._sync_tree_content_height()
+
+        content._height_changed = sync_export_tree_height
 
     def _update_group(self, group, refresh_total=True):
         selected = sum(
@@ -2095,7 +2132,10 @@ QLabel#RizumSvgLabel:hover {{
             for child in group["children"]
             if child["checkbox"].isChecked()
         )
-        self.run_button.setEnabled(selected_total > 0)
+        self.run_button.setDirty(
+            selected_total > 0,
+            animate=self.dialog.isVisible(),
+        )
 
     def selected_exports(self):
         selections = []
@@ -2112,7 +2152,10 @@ QLabel#RizumSvgLabel:hover {{
     def export_checked(self):
         selections = self.selected_exports()
         if not selections:
-            self.run_button.setEnabled(False)
+            self.run_button.setDirty(
+                False,
+                animate=self.dialog.isVisible(),
+            )
             return
 
         result = self.panel._run_export_selections(
