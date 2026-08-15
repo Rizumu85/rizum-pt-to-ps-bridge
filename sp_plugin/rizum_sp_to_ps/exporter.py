@@ -504,7 +504,11 @@ def _build_export_requests(modules, settings):
                             "uv_tile": uv_tile,
                             "normal_map_format": settings.get("normal_map_format"),
                             "baseline_cache_key": None,
-                            "layers": _layers_for_uv_tile(layer_records, uv_tile),
+                            "layers": _layers_for_uv_tile(
+                                layer_records,
+                                uv_tile,
+                                channel_name,
+                            ),
                         }
                     )
 
@@ -651,9 +655,38 @@ def _geometry_mask_record(node):
     }
 
 
-def _layers_for_uv_tile(layer_records, uv_tile):
+def _layers_for_uv_tile(layer_records, uv_tile, channel_name):
     layers = deepcopy(layer_records)
-    return _filter_nodes_for_uv_tile(layers, uv_tile)
+    layers = _filter_nodes_for_uv_tile(layers, uv_tile)
+    _project_nodes_for_channel(layers, channel_name)
+    return layers
+
+
+def _project_nodes_for_channel(nodes, channel_name, in_mask_stack=False):
+    for node in nodes:
+        decision_key = "mask" if in_mask_stack else channel_name
+        decision = (node.get("blend_decisions") or {}).get(decision_key)
+        if decision is not None:
+            # A PSD request represents one channel. Letting another channel's
+            # blend mode win here collapses otherwise editable folder trees.
+            node["bake_policy"] = decision["bake_policy"]
+            node["sync_direction"] = decision["sync_direction"]
+            node["ps_blend_mode"] = decision["ps_blend_mode"]
+            node["warnings"] = list(decision.get("warnings") or [])
+
+        _project_nodes_for_channel(
+            node.get("children", []),
+            channel_name,
+        )
+        _project_nodes_for_channel(
+            node.get("content_effects", []),
+            channel_name,
+        )
+        _project_nodes_for_channel(
+            node.get("mask_effects", []),
+            channel_name,
+            in_mask_stack=True,
+        )
 
 
 def _filter_nodes_for_uv_tile(nodes, uv_tile):
