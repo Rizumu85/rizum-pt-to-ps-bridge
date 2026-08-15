@@ -9,6 +9,7 @@
     };
     var previousDialogs = app.displayDialogs;
     var previousRulerUnits = app.preferences.rulerUnits;
+    var progress = null;
 
     app.displayDialogs = DialogModes.NO;
     app.preferences.rulerUnits = Units.PIXELS;
@@ -17,17 +18,21 @@
     try {
         var exportList = readJson(exportListPath);
         var requestPaths = buildRequestPaths(exportList);
+        progress = createImportProgress(requestPaths.length);
         for (var index = 0; index < requestPaths.length; index += 1) {
             var requestPath = requestPaths[index];
+            progress.beginRequest(index, requestPath);
             try {
                 var request = readJson(requestPath);
-                buildRequest(request);
+                buildRequest(request, progress);
                 result.built.push(request.psd_file);
+                progress.finishRequest(index, "Saved " + File(request.psd_file).name);
             } catch (error) {
                 result.errors.push({
                     request: requestPath,
                     message: errorMessage(error)
                 });
+                progress.finishRequest(index, "Failed: " + errorMessage(error));
             }
         }
     } catch (error) {
@@ -36,6 +41,9 @@
             message: errorMessage(error)
         });
     } finally {
+        if (progress) {
+            progress.close();
+        }
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
         writeResult(resultPath, exportListPath, result);
@@ -49,10 +57,16 @@
         );
     }
 
-    function buildRequest(request) {
+    function buildRequest(request, progress) {
         validateRequest(request);
         var resolution = request.uv_tile.resolution;
         var documentName = fileStem(request.psd_file);
+        var progressState = {
+            completed: 0,
+            total: countImportUnits(request.layers || []) + 2
+        };
+        progress.configureRequest(request, progressState.total);
+        progress.describe("Creating " + documentName);
         var document = app.documents.add(
             UnitValue(Number(resolution.width), "px"),
             UnitValue(Number(resolution.height), "px"),
@@ -61,6 +75,7 @@
             NewDocumentMode.RGB,
             DocumentFill.TRANSPARENT
         );
+        advanceImportProgress(progress, progressState, "Created " + documentName);
         var defaultLayer = document.activeLayer;
 
         try {
@@ -68,7 +83,9 @@
                 request.layers || [],
                 document,
                 document,
-                request.channel
+                request.channel,
+                progress,
+                progressState
             );
 
             // Hold the original layer object instead of deleting by name;
@@ -76,8 +93,13 @@
             if (document.layers.length > 1) {
                 defaultLayer.remove();
             }
-
+            progress.describe("Saving " + File(request.psd_file).name);
             savePsd(document, request.psd_file);
+            advanceImportProgress(
+                progress,
+                progressState,
+                "Saved " + File(request.psd_file).name
+            );
         } catch (error) {
             try {
                 document.close(SaveOptions.DONOTSAVECHANGES);
@@ -86,23 +108,43 @@
         }
     }
 
-    function placeNodes(nodes, document, parent, channel) {
+    function placeNodes(nodes, document, parent, channel, progress, progressState) {
         for (var index = nodes.length - 1; index >= 0; index -= 1) {
-            placeNode(nodes[index], document, parent, channel);
+            placeNode(
+                nodes[index],
+                document,
+                parent,
+                channel,
+                progress,
+                progressState
+            );
         }
     }
 
-    function placeNode(node, document, parent, channel) {
+    function placeNode(node, document, parent, channel, progress, progressState) {
         if (!node) {
             return null;
         }
 
         var placed = null;
         if (node.asset && node.asset.path) {
+            progress.describe("Importing " + nodeDisplayName(node));
             placed = duplicatePngLayer(node.asset.path, document, parent);
+            advanceImportProgress(
+                progress,
+                progressState,
+                "Imported " + nodeDisplayName(node)
+            );
         } else if (hasBuildableChildren(node)) {
             placed = parent.layerSets.add();
-            placeNodes(node.children || [], document, placed, channel);
+            placeNodes(
+                node.children || [],
+                document,
+                placed,
+                channel,
+                progress,
+                progressState
+            );
         } else {
             return null;
         }
@@ -110,7 +152,13 @@
         applyNodeProperties(placed, node, channel);
         if (node.mask_asset && node.mask_asset.path) {
             try {
+                progress.describe("Applying mask: " + nodeDisplayName(node));
                 applyMask(document, placed, node.mask_asset.path);
+                advanceImportProgress(
+                    progress,
+                    progressState,
+                    "Applied mask: " + nodeDisplayName(node)
+                );
             } catch (error) {
                 throw new Error(
                     "Could not apply mask for " + placed.name + ": " +
@@ -119,6 +167,118 @@
             }
         }
         return placed;
+    }
+
+    function countImportUnits(nodes) {
+        var total = 0;
+        for (var index = 0; index < nodes.length; index += 1) {
+            var node = nodes[index];
+            if (!node) {
+                continue;
+            }
+
+            var buildable = false;
+            if (node.asset && node.asset.path) {
+                total += 1;
+                buildable = true;
+            } else if (hasBuildableChildren(node)) {
+                total += countImportUnits(node.children || []);
+                buildable = true;
+            }
+
+            if (buildable && node.mask_asset && node.mask_asset.path) {
+                total += 1;
+            }
+        }
+        return total;
+    }
+
+    function advanceImportProgress(progress, state, detail) {
+        state.completed += 1;
+        progress.updateRequest(state.completed, state.total, detail);
+    }
+
+    function nodeDisplayName(node) {
+        return String(node.name || node.kind || "Painter Layer");
+    }
+
+    function createImportProgress(requestCount) {
+        var requestTotal = Math.max(1, requestCount);
+
+        // The automatic path runs as ExtendScript without requiring the UXP
+        // panel to be open, so progress must live in Photoshop's own ScriptUI.
+        var win = new Window(
+            "palette",
+            "Rizum PT-to-PS Bridge",
+            undefined,
+            {
+                closeButton: false,
+                maximizeButton: false,
+                minimizeButton: false
+            }
+        );
+        win.orientation = "column";
+        win.alignChildren = ["fill", "top"];
+        win.status = win.add("statictext", undefined, "Preparing Photoshop import...");
+        win.detail = win.add("statictext", undefined, "Reading Painter export list");
+        win.bar = win.add("progressbar", undefined, 0, requestTotal * 100);
+        win.status.preferredSize = [420, 20];
+        win.detail.preferredSize = [420, 20];
+        win.bar.preferredSize = [420, 18];
+        win.requestIndex = 0;
+        win.requestLabel = "Painter export";
+        win.requestSteps = 1;
+
+        win.renderProgress = function (value, detail) {
+            var clamped = Math.max(0, Math.min(requestTotal * 100, value));
+            var percent = Math.round((clamped / (requestTotal * 100)) * 100);
+            win.bar.value = clamped;
+            win.status.text =
+                "Building " + (win.requestIndex + 1) + " of " + requestCount +
+                " - " + percent + "%";
+            win.detail.text = detail || win.requestLabel;
+            win.update();
+            win.show();
+        };
+
+        win.beginRequest = function (index, requestPath) {
+            win.requestIndex = index;
+            win.requestLabel = File(requestPath).name;
+            win.requestSteps = 1;
+            win.renderProgress(index * 100, "Reading " + win.requestLabel);
+        };
+
+        win.configureRequest = function (request, totalSteps) {
+            win.requestLabel = requestDisplayName(request);
+            win.requestSteps = Math.max(1, totalSteps);
+            win.renderProgress(win.requestIndex * 100, win.requestLabel);
+        };
+
+        win.describe = function (detail) {
+            var value = win.requestIndex * 100;
+            win.renderProgress(value + win.bar.value % 100, detail);
+        };
+
+        win.updateRequest = function (completed, totalSteps, detail) {
+            var stepTotal = Math.max(1, totalSteps || win.requestSteps);
+            var fraction = Math.max(0, Math.min(1, completed / stepTotal));
+            win.renderProgress(win.requestIndex * 100 + fraction * 100, detail);
+        };
+
+        win.finishRequest = function (index, detail) {
+            win.requestIndex = index;
+            win.renderProgress((index + 1) * 100, detail);
+        };
+
+        win.center();
+        win.show();
+        return win;
+    }
+
+    function requestDisplayName(request) {
+        var textureSet = String(request.texture_set || "Texture Set");
+        var channel = String(request.channel || "Channel");
+        return textureSet + " / " + channel;
     }
 
     function hasBuildableChildren(node) {
