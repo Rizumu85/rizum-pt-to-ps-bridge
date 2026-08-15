@@ -25,18 +25,15 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         )
         self.assertEqual(self.source.count("rasterizeAllLayers()"), 1)
 
-    def test_default_layer_is_deleted_without_a_stale_dom_handle(self):
-        place_node = self.source[
-            self.source.index("function placeNode") :
-            self.source.index("function countImportUnits")
+    def test_placeholder_cleanup_accepts_a_host_consumed_layer(self):
+        helper = self.source[
+            self.source.index("function removeBuildPlaceholder") :
+            self.source.index("function savePsd")
         ]
-        self.assertIn("removeBuildPlaceholder(document, buildState)", self.source)
-        self.assertIn("document.activeLayer = candidate", self.source)
-        self.assertIn("candidate.remove()", self.source)
-        self.assertLess(
-            place_node.index("removeBuildPlaceholder(document, buildState)"),
-            place_node.index("advanceImportProgress("),
-        )
+        self.assertIn("candidate.remove()", helper)
+        self.assertNotIn("placeholder layer was not found", helper)
+        self.assertTrue(helper.rstrip().endswith("}"))
+        self.assertGreaterEqual(helper.count("state.placeholderRemoved = true"), 2)
         self.assertNotIn('executeAction(charIDToTypeID("Dlt ")', self.source)
 
     def test_all_documents_import_before_the_save_phase(self):

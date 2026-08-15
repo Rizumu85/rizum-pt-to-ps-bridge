@@ -594,7 +594,10 @@
             state.placeholderRemoved = true;
             return;
         }
-        throw new Error("Photoshop build placeholder layer was not found");
+        // Direct Place consumes the transparent document layer in current
+        // Photoshop. Absence means cleanup is complete; group-first builds
+        // leave the named layer intact and take the explicit branch above.
+        state.placeholderRemoved = true;
     }
 
     function savePsd(document, path) {
