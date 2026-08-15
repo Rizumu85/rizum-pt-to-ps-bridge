@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bridge, export_naming, geometry_mask, pixel_export
+from . import bridge, edge_smoothing, export_naming, geometry_mask, pixel_export
 from .blend_map import decide_node_blending
 from .udim import uv_to_udim
 
@@ -434,6 +434,13 @@ def export_request_assets(
         if owns_baker:
             geometry_baker.close()
 
+    # Final masks may combine Painter and Geometry Mask payloads. Filtering at
+    # this boundary smooths each delivered layer/mask once and leaves UV guides exact.
+    build_request["edge_smoothing"] = _smooth_exported_assets(
+        build_request,
+        progress_callback=progress_callback,
+        progress_prefix=progress_prefix,
+    )
     build_request["empty_layer_assets_removed"] = _count_pruned_assets(
         build_request["layers"]
     )
@@ -1273,6 +1280,54 @@ def _count_layer_assets(nodes):
         total += _count_layer_assets(node.get("children", []))
         total += _count_layer_assets(node.get("content_effects", []))
     return total
+
+
+def _smooth_exported_assets(build_request, progress_callback=None, progress_prefix=""):
+    assets = [
+        asset
+        for asset in _iter_assets(
+            build_request["layers"],
+            build_request.get("channel_identifier"),
+        )
+        if asset["kind"] in {"layer", "mask"}
+    ]
+    changed_pixels = 0
+    layer_count = 0
+    mask_count = 0
+    for index, asset in enumerate(assets, start=1):
+        label = (
+            asset.get("label")
+            or asset.get("uid_hex")
+            or Path(asset["path"]).name
+        )
+        prefix = f"{progress_prefix}: " if progress_prefix else ""
+        _notify_progress(
+            progress_callback,
+            stage="smoothing",
+            value=index - 1,
+            total=len(assets),
+            text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
+        )
+        result = edge_smoothing.smooth_png(asset["path"])
+        changed_pixels += result["changed_pixels"]
+        if asset["kind"] == "layer":
+            layer_count += 1
+        else:
+            mask_count += 1
+        _notify_progress(
+            progress_callback,
+            stage="smoothing",
+            value=index,
+            total=len(assets),
+            text=f"{prefix}smoothed PNG {index} of {len(assets)}: {label}",
+        )
+
+    return {
+        "algorithm": edge_smoothing.ALGORITHM_ID,
+        "layer_assets": layer_count,
+        "mask_assets": mask_count,
+        "changed_pixels": changed_pixels,
+    }
 
 
 def _finalize_geometry_masks(nodes):
