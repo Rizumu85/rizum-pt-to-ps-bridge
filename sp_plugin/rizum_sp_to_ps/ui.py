@@ -2968,6 +2968,14 @@ class SmokeTestPanel:
         return progress
 
     def _update_export_progress(self, progress, event):
+        if event.get("stage") == "heartbeat":
+            # Painter host exports must stay on its UI thread. Geometry work
+            # therefore yields cooperatively so returning to Painter still
+            # repaints the dialog and lets Cancel or the title-bar X respond.
+            progress.dialog.repaint()
+            self.QtWidgets.QApplication.processEvents()
+            return not progress.wasCanceled()
+
         total = int(event.get("total") or 0)
         value = int(event.get("value") or 0)
         text = event.get("text") or "Exporting..."
@@ -2978,6 +2986,7 @@ class SmokeTestPanel:
             progress.setRange(0, 0)
         progress.setLabelText(text)
         self.status.setText(text)
+        progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()
 

@@ -18,7 +18,7 @@ class GeometryMaskExportError(RuntimeError):
 class GeometryMaskBaker:
     """Export the project mesh once and rasterize mesh selections in UV space."""
 
-    def __init__(self):
+    def __init__(self, checkpoint=None):
         self._temporary_dir = None
         self._faces = None
         self._available_names = set()
@@ -27,6 +27,7 @@ class GeometryMaskBaker:
         self._indexed_faces = None
         self._face_indices_by_name = {}
         self._coverage_path_cache = {}
+        self._checkpoint_callback = checkpoint
 
     def close(self):
         if self._temporary_dir is not None:
@@ -35,6 +36,7 @@ class GeometryMaskBaker:
         self._coverage_path_cache.clear()
 
     def bake(self, asset, output_path):
+        self._checkpoint()
         self._ensure_mesh()
         width, height = [int(value) for value in asset["resolution"]]
         tile = asset["uv_tile"]
@@ -88,6 +90,7 @@ class GeometryMaskBaker:
             padding=padding,
             dilation=dilation,
         )
+        self._checkpoint()
         output.write_bytes(png_bytes)
         self._cache[cache_key] = (png_bytes, matched_names, face_count)
         return self._diagnostic(
@@ -116,6 +119,7 @@ class GeometryMaskBaker:
             str(mesh_path),
             painter_export.MeshExportOption.BaseMesh,
         )
+        self._checkpoint()
         if not mesh_path.exists():
             raise GeometryMaskExportError(
                 "Painter did not produce the temporary OBJ required for Geometry Masks.",
@@ -128,7 +132,7 @@ class GeometryMaskBaker:
             self._faces,
             self._available_names,
             self._available_materials,
-        ) = _parse_obj(mesh_path)
+        ) = _parse_obj(mesh_path, checkpoint=self._checkpoint)
 
     def _matched_names(self, requested_names):
         aliases = {}
@@ -229,6 +233,8 @@ class GeometryMaskBaker:
             return
         indices_by_name = {}
         for index, (names, _material_name, _uvs) in enumerate(self._faces):
+            if index % 2048 == 0:
+                self._checkpoint()
             for name in names:
                 indices_by_name.setdefault(name, []).append(index)
         self._face_indices_by_name = indices_by_name
@@ -253,7 +259,9 @@ class GeometryMaskBaker:
         path = QtGui.QPainterPath()
         path.setFillRule(winding_fill)
         face_count = 0
-        for index in sorted(face_indices):
+        for offset, index in enumerate(sorted(face_indices)):
+            if offset % 2048 == 0:
+                self._checkpoint()
             _names, material_name, uvs = self._faces[index]
             if matching_materials and material_name not in matching_materials:
                 continue
@@ -288,7 +296,9 @@ class GeometryMaskBaker:
             return cached
         path = QtGui.QPainterPath()
         path.setFillRule(winding_fill)
-        for _names, material_name, uvs in self._faces:
+        for index, (_names, material_name, uvs) in enumerate(self._faces):
+            if index % 2048 == 0:
+                self._checkpoint()
             if material_name not in matching_materials:
                 continue
             if not _face_intersects_tile(uvs, tile_u, tile_v):
@@ -296,6 +306,10 @@ class GeometryMaskBaker:
             _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height)
         self._coverage_path_cache[key] = path
         return path
+
+    def _checkpoint(self):
+        if self._checkpoint_callback is not None:
+            self._checkpoint_callback()
 
     def _diagnostic(self, asset, matched_names, cached, face_count=0):
         return {
@@ -371,7 +385,7 @@ def _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height):
     path.closeSubpath()
 
 
-def _parse_obj(path):
+def _parse_obj(path, checkpoint=None):
     texture_coordinates = [None]
     faces = []
     available_names = set()
@@ -384,7 +398,11 @@ def _parse_obj(path):
     # OBJ files from production characters can be large; streaming and sharing
     # repeated face-name sets keeps Geometry Mask export bounded by mesh data.
     with Path(path).open("r", encoding="utf-8", errors="replace") as obj_file:
-        for raw_line in obj_file:
+        for line_index, raw_line in enumerate(obj_file):
+            # Large production meshes can otherwise monopolize Painter's UI
+            # thread long enough for Windows to present the export as hung.
+            if checkpoint is not None and line_index % 2048 == 0:
+                checkpoint()
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue

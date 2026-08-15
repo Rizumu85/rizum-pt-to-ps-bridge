@@ -151,6 +151,19 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         self.assertEqual(len(baker._coverage_path_cache), 1)
         self.assertIs(first_path, next(iter(baker._coverage_path_cache.values())))
 
+    def test_large_geometry_path_builds_yield_to_the_host(self):
+        checkpoints = []
+        baker = GeometryMaskBaker(checkpoint=lambda: checkpoints.append(True))
+        names = frozenset({"mesh"})
+        face = (names, "material", ((0.1, 0.1), (0.9, 0.1), (0.9, 0.9)))
+        baker._faces = [face] * 4097
+
+        baker._rasterize(
+            {"mesh"}, {"material"}, {"u": 0, "v": 0}, 32, 32
+        )
+
+        self.assertGreaterEqual(len(checkpoints), 6)
+
 
 if __name__ == "__main__":
     unittest.main()

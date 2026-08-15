@@ -178,7 +178,15 @@ def write_build_bundles(
     )
 
     written = []
-    geometry_baker = geometry_mask.GeometryMaskBaker()
+    geometry_baker = geometry_mask.GeometryMaskBaker(
+        checkpoint=lambda: _notify_progress(
+            progress_callback,
+            stage="heartbeat",
+            value=0,
+            total=0,
+            text="",
+        )
+    )
     try:
         for index, request in enumerate(requests, start=1):
             _notify_progress(
@@ -338,7 +346,15 @@ def export_request_assets(
     total += len(geometry_assets)
     owns_baker = geometry_baker is None
     if owns_baker:
-        geometry_baker = geometry_mask.GeometryMaskBaker()
+        geometry_baker = geometry_mask.GeometryMaskBaker(
+            checkpoint=lambda: _notify_progress(
+                progress_callback,
+                stage="heartbeat",
+                value=0,
+                total=0,
+                text="",
+            )
+        )
     try:
         diagnostics = []
         for asset in geometry_assets:
