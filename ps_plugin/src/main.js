@@ -551,6 +551,7 @@ function formatRequestSummary(result) {
     `PNG assets: ${summary.assetCount}`,
     `Mask assets: ${summary.maskAssetCount}`,
     `Baked assets: ${summary.bakedAssetCount}`,
+    `UV Map asset: ${summary.uvMapPath ? "yes" : "no"}`,
     `Empty layer PNGs removed: ${summary.emptyLayerAssetsRemoved || 0}`,
     `Unplaced request nodes: ${formatUnplacedCounts(summary)}`,
     `PNG files exported: ${result.request.assets_exported === false ? "no (JSON-only bundle)" : "yes/unknown"}`,
@@ -576,6 +577,9 @@ function formatRequestSummary(result) {
       `Sidecar written: ${result.build.sidecarWritten ? "yes" : "no"}`,
       `Saved: ${result.build.saved ? "yes" : "no"}`
     );
+    if (summary.uvMapPath) {
+      lines.push(`UV Map placed: ${result.build.uvMapPlaced ? "yes" : "no"}`);
+    }
     if (result.build.blendGammaError) {
       lines.push(`Blend gamma warning: ${result.build.blendGammaError}`);
     }

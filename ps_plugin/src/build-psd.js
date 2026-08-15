@@ -276,6 +276,7 @@ function summarizeBuildRequest(request) {
       ? `${request.uv_tile.resolution.width}x${request.uv_tile.resolution.height}`
       : "unknown",
     psdFile: request.psd_file,
+    uvMapPath: request.uv_map_asset && request.uv_map_asset.path || null,
     topLevelLayers: request.layers.length,
     assetCount: assets.length,
     maskAssetCount: assets.filter((asset) => asset.kind === "mask").length,
@@ -333,6 +334,8 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     placedLayerCount: 0,
     placedLayers: [],
     placedGroups: [],
+    uvMapPlaced: false,
+    uvMapPath: request.uv_map_asset && request.uv_map_asset.path || null,
     sidecarPath: sidecarPathForPsd(request.psd_file),
     sidecarWritten: false,
     sidecarError: null,
@@ -365,6 +368,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
 
     if (options.placeTopLevelAssets) {
       await placeTopLevelBuildItems(app, document, buildItems, build);
+      await placeUvMapLayer(app, document, request, build);
       await removeResidualDefaultLayerIfSafe(document, build, buildItems);
     }
 
@@ -397,6 +401,44 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
   }
 
   return build;
+}
+
+async function placeUvMapLayer(app, targetDocument, request, build) {
+  const asset = request && request.uv_map_asset;
+  if (!asset || !asset.path) {
+    return null;
+  }
+
+  const name = asset.label || "UV Map";
+  const node = {
+    name,
+    kind: "UtilityLayer",
+    visible: true,
+    asset
+  };
+  try {
+    const { constants } = require("photoshop");
+    const placed = await placeRasterNode(app, targetDocument, node, build.channel);
+    const topLayer = targetDocument.layers && targetDocument.layers[0];
+    // UXP duplicate order varies between Photoshop hosts, so enforce the
+    // user-facing contract instead of relying on the current host's default.
+    if (topLayer && topLayer.id !== placed.id) {
+      await placed.move(topLayer, constants.ElementPlacement.PLACEBEFORE);
+    }
+    placed.name = name;
+    placed.visible = true;
+    build.uvMapPlaced = true;
+    return placed;
+  } catch (error) {
+    build.placementErrors.push({
+      order: -1,
+      sourceIndex: -1,
+      name,
+      path: asset.path,
+      error: error && error.message ? error.message : String(error)
+    });
+    return null;
+  }
 }
 
 async function placeTopLevelBuildItems(app, targetDocument, items, build) {

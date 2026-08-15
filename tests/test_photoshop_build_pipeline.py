@@ -47,6 +47,16 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertIn('"\\\"save_ms\\\":"', writer)
         self.assertIn('"\\\"total_ms\\\":"', writer)
 
+    def test_optional_uv_map_is_imported_after_the_layer_tree(self):
+        builder = self.source[
+            self.source.index("function buildRequest") :
+            self.source.index("function placeNodes")
+        ]
+        self.assertIn("request.uv_map_asset", builder)
+        self.assertIn('"Imported UV Map"', builder)
+        self.assertLess(builder.index("placeNodes("), builder.index("placePngLayer("))
+        self.assertLess(builder.index("placePngLayer("), builder.index("rasterizeAllLayers()"))
+
 
 if __name__ == "__main__":
     unittest.main()

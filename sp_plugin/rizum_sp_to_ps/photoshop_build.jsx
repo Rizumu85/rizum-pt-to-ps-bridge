@@ -98,9 +98,10 @@
         validateRequest(request);
         var resolution = request.uv_tile.resolution;
         var documentName = fileStem(request.psd_file);
+        var hasUvMap = request.uv_map_asset && request.uv_map_asset.path;
         var progressState = {
             completed: 0,
-            total: countImportUnits(request.layers || []) + 2
+            total: countImportUnits(request.layers || []) + 2 + (hasUvMap ? 1 : 0)
         };
         progress.configureRequest(request, progressState.total);
         var document = app.documents.add(
@@ -128,6 +129,19 @@
                 progressState,
                 buildState
             );
+
+            if (hasUvMap) {
+                // Import this after the Painter tree because PLACEATBEGINNING
+                // guarantees the optional reference wireframe stays topmost.
+                var uvMapLayer = placePngLayer(
+                    request.uv_map_asset.path,
+                    document,
+                    document
+                );
+                uvMapLayer.name = String(request.uv_map_asset.label || "UV Map");
+                uvMapLayer.visible = true;
+                advanceImportProgress(progress, progressState, "Imported UV Map");
+            }
 
             if (!buildState.placeholderRemoved) {
                 throw new Error("Photoshop build did not replace its initial layer");
