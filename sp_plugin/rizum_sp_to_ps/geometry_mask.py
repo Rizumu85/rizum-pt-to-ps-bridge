@@ -24,11 +24,15 @@ class GeometryMaskBaker:
         self._available_names = set()
         self._available_materials = set()
         self._cache = {}
+        self._indexed_faces = None
+        self._face_indices_by_name = {}
+        self._coverage_path_cache = {}
 
     def close(self):
         if self._temporary_dir is not None:
             self._temporary_dir.cleanup()
             self._temporary_dir = None
+        self._coverage_path_cache.clear()
 
     def bake(self, asset, output_path):
         self._ensure_mesh()
@@ -161,42 +165,34 @@ class GeometryMaskBaker:
         image = QtGui.QImage(width, height, image_format)
         black = QtGui.QColor(0, 0, 0, 255)
         white = QtGui.QColor(255, 255, 255, 255)
-        selection_path = QtGui.QPainterPath()
-        exclusion_path = QtGui.QPainterPath()
         winding_fill = getattr(QtCore.Qt, "WindingFill", None)
         if winding_fill is None:
             winding_fill = QtCore.Qt.FillRule.WindingFill
-        selection_path.setFillRule(winding_fill)
-        exclusion_path.setFillRule(winding_fill)
 
         tile_u = int(tile["u"])
         tile_v = int(tile["v"])
-        face_count = 0
-        for names, material_name, uvs in self._faces:
-            if matching_materials and material_name not in matching_materials:
-                continue
-            if not _face_intersects_tile(uvs, tile_u, tile_v):
-                continue
-            selected = bool(names.intersection(matched_names))
-            if not selected and not matching_materials:
-                continue
-            polygon = QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(
-                        (u - tile_u) * width,
-                        (1.0 - (v - tile_v)) * height,
-                    )
-                    for u, v in uvs
-                ]
-            )
-            target_path = selection_path if selected else exclusion_path
-            # Painter Geometry Masks select mesh regions, not individual UV
-            # faces. Filling one combined path keeps shared triangle edges from
-            # being antialiased against black and appearing as a wireframe.
-            target_path.addPolygon(polygon)
-            target_path.closeSubpath()
-            if selected:
-                face_count += 1
+        self._ensure_face_index()
+        selection_path, face_count = self._selection_path(
+            QtCore,
+            QtGui,
+            winding_fill,
+            matched_names,
+            matching_materials,
+            tile_u,
+            tile_v,
+            width,
+            height,
+        )
+        coverage_path = self._coverage_path(
+            QtCore,
+            QtGui,
+            winding_fill,
+            matching_materials,
+            tile_u,
+            tile_v,
+            width,
+            height,
+        )
 
         padding_mode = str(padding or "Transparent").casefold()
         if padding_mode == "infinite" and face_count:
@@ -214,11 +210,12 @@ class GeometryMaskBaker:
             dilation_pen = QtGui.QPen(white)
             dilation_pen.setWidthF(float(dilation * 2))
             painter.strokePath(selection_path, dilation_pen)
+        if coverage_path is not None:
+            # Restore every UV island before filling the selected meshes. This
+            # protects excluded geometry without rebuilding its large path for
+            # each Geometry Mask in the stack.
+            painter.fillPath(coverage_path, black)
         painter.fillPath(selection_path, white)
-        if matching_materials:
-            # Dilation may enter empty UV space, but it must never enable a mesh
-            # that Painter's Geometry Mask explicitly excludes.
-            painter.fillPath(exclusion_path, black)
         painter.end()
 
         buffer = QtCore.QBuffer()
@@ -226,6 +223,79 @@ class GeometryMaskBaker:
         if not image.save(buffer, "PNG"):
             raise GeometryMaskExportError("Could not encode the Geometry Mask PNG.")
         return bytes(buffer.data()), face_count
+
+    def _ensure_face_index(self):
+        if self._faces is self._indexed_faces:
+            return
+        indices_by_name = {}
+        for index, (names, _material_name, _uvs) in enumerate(self._faces):
+            for name in names:
+                indices_by_name.setdefault(name, []).append(index)
+        self._face_indices_by_name = indices_by_name
+        self._coverage_path_cache.clear()
+        self._indexed_faces = self._faces
+
+    def _selection_path(
+        self,
+        QtCore,
+        QtGui,
+        winding_fill,
+        matched_names,
+        matching_materials,
+        tile_u,
+        tile_v,
+        width,
+        height,
+    ):
+        face_indices = set()
+        for name in matched_names:
+            face_indices.update(self._face_indices_by_name.get(name, ()))
+        path = QtGui.QPainterPath()
+        path.setFillRule(winding_fill)
+        face_count = 0
+        for index in sorted(face_indices):
+            _names, material_name, uvs = self._faces[index]
+            if matching_materials and material_name not in matching_materials:
+                continue
+            if not _face_intersects_tile(uvs, tile_u, tile_v):
+                continue
+            _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height)
+            face_count += 1
+        return path, face_count
+
+    def _coverage_path(
+        self,
+        QtCore,
+        QtGui,
+        winding_fill,
+        matching_materials,
+        tile_u,
+        tile_v,
+        width,
+        height,
+    ):
+        if not matching_materials:
+            return None
+        key = (
+            tuple(sorted(matching_materials)),
+            tile_u,
+            tile_v,
+            width,
+            height,
+        )
+        cached = self._coverage_path_cache.get(key)
+        if cached is not None:
+            return cached
+        path = QtGui.QPainterPath()
+        path.setFillRule(winding_fill)
+        for _names, material_name, uvs in self._faces:
+            if material_name not in matching_materials:
+                continue
+            if not _face_intersects_tile(uvs, tile_u, tile_v):
+                continue
+            _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height)
+        self._coverage_path_cache[key] = path
+        return path
 
     def _diagnostic(self, asset, matched_names, cached, face_count=0):
         return {
@@ -283,6 +353,22 @@ def write_error_diagnostics(path, error):
         json.dumps(error.diagnostics, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height):
+    polygon = QtGui.QPolygonF(
+        [
+            QtCore.QPointF(
+                (u - tile_u) * width,
+                (1.0 - (v - tile_v)) * height,
+            )
+            for u, v in uvs
+        ]
+    )
+    # Painter Geometry Masks select mesh regions, not individual UV faces.
+    # One winding path prevents shared triangle edges from becoming wireframe.
+    path.addPolygon(polygon)
+    path.closeSubpath()
 
 
 def _parse_obj(path):

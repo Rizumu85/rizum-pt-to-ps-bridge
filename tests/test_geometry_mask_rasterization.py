@@ -125,6 +125,32 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         self.assertEqual(node["geometry_mask_asset"]["padding"], "Transparent")
         self.assertEqual(node["geometry_mask_asset"]["dilation"], 12)
 
+    def test_material_coverage_path_is_reused_between_geometry_masks(self):
+        baker = GeometryMaskBaker()
+        baker._faces = [
+            (
+                frozenset({"first"}),
+                "material",
+                ((0.1, 0.1), (0.4, 0.1), (0.4, 0.4)),
+            ),
+            (
+                frozenset({"second"}),
+                "material",
+                ((0.6, 0.6), (0.9, 0.6), (0.9, 0.9)),
+            ),
+        ]
+
+        baker._rasterize(
+            {"first"}, {"material"}, {"u": 0, "v": 0}, 64, 64, dilation=4
+        )
+        first_path = next(iter(baker._coverage_path_cache.values()))
+        baker._rasterize(
+            {"second"}, {"material"}, {"u": 0, "v": 0}, 64, 64, dilation=4
+        )
+
+        self.assertEqual(len(baker._coverage_path_cache), 1)
+        self.assertIs(first_path, next(iter(baker._coverage_path_cache.values())))
+
 
 if __name__ == "__main__":
     unittest.main()
