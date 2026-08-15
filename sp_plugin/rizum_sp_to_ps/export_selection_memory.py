@@ -1,4 +1,4 @@
-"""Per-project persistence for Painter export channel choices."""
+"""Per-project persistence for Painter export choices."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import json
 
 
 SETTINGS_KEY_PREFIX = "export/channelSelections"
+SCOPE_SETTINGS_KEY_PREFIX = "export/scopeSelection"
+VALID_SCOPES = frozenset({"current", "all"})
 
 
 def current_project_identity():
@@ -38,10 +40,15 @@ class ExportSelectionMemory:
         self._organization = organization
         self._application = application
         self._settings_key = None
+        self._scope_settings_key = None
         self._targets = {}
+        self._scope = None
         if project_identity:
             digest = hashlib.sha256(project_identity.encode("utf-8")).hexdigest()
             self._settings_key = f"{SETTINGS_KEY_PREFIX}/{digest}"
+            # Scope shares the project identity with channel choices so an
+            # all-stack decision cannot leak into an unrelated production file.
+            self._scope_settings_key = f"{SCOPE_SETTINGS_KEY_PREFIX}/{digest}"
             self._load()
 
     def checked(self, target_key, channel, default):
@@ -56,6 +63,13 @@ class ExportSelectionMemory:
             for channel, checked in channel_states.items()
         }
 
+    def scope(self, default="current"):
+        return self._scope if self._scope in VALID_SCOPES else default
+
+    def remember_scope(self, scope):
+        if scope in VALID_SCOPES:
+            self._scope = scope
+
     def save(self):
         if self._settings_key is None:
             return
@@ -64,10 +78,15 @@ class ExportSelectionMemory:
             self._settings_key,
             json.dumps(self._targets, ensure_ascii=True, separators=(",", ":")),
         )
+        if self._scope in VALID_SCOPES:
+            store.setValue(self._scope_settings_key, self._scope)
         store.sync()
 
     def _load(self):
         store = self._QtCore.QSettings(self._organization, self._application)
+        scope = store.value(self._scope_settings_key, "", str) or ""
+        if scope in VALID_SCOPES:
+            self._scope = scope
         raw = store.value(self._settings_key, "", str) or ""
         try:
             payload = json.loads(raw) if raw else {}

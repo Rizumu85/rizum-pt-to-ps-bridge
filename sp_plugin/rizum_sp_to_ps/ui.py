@@ -1968,6 +1968,12 @@ QLabel#RizumSvgLabel:hover {{
             SETTINGS_APP,
             current_project_identity(),
         )
+        remembered_scope = self._selection_memory.scope()
+        remembered_index = self.scope_combo.findData(remembered_scope)
+        if remembered_index >= 0:
+            previous_signal_state = self.scope_combo.blockSignals(True)
+            self.scope_combo.setCurrentIndex(remembered_index)
+            self.scope_combo.blockSignals(previous_signal_state)
 
         try:
             self.targets = list_export_targets(settings=self.panel._base_export_settings())
@@ -1989,6 +1995,11 @@ QLabel#RizumSvgLabel:hover {{
         self.status.setVisible(bool(message))
 
     def _scope_changed(self, *_args):
+        if self._selection_memory is not None:
+            self._selection_memory.remember_scope(
+                self.scope_combo.currentData()
+            )
+            self._selection_memory.save()
         self.refresh_tree(
             animate_height=self.dialog.isVisible(),
             reset_scroll=True,
