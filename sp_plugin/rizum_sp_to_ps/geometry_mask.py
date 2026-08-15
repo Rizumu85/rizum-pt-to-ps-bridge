@@ -27,6 +27,7 @@ class GeometryMaskBaker:
         self._indexed_faces = None
         self._face_indices_by_name = {}
         self._coverage_path_cache = {}
+        self._uv_map_cache = {}
         self._checkpoint_callback = checkpoint
 
     def close(self):
@@ -34,6 +35,7 @@ class GeometryMaskBaker:
             self._temporary_dir.cleanup()
             self._temporary_dir = None
         self._coverage_path_cache.clear()
+        self._uv_map_cache.clear()
 
     def bake(self, asset, output_path):
         self._checkpoint()
@@ -99,6 +101,55 @@ class GeometryMaskBaker:
             cached=False,
             face_count=face_count,
         )
+
+    def bake_uv_map(self, asset, output_path):
+        """Rasterize the current texture-set UV wireframe with transparency."""
+        self._checkpoint()
+        self._ensure_mesh()
+        width, height = [int(value) for value in asset["resolution"]]
+        tile = asset["uv_tile"]
+        matching_materials = _matching_materials(
+            self._available_materials,
+            asset.get("texture_set"),
+            asset.get("texture_set_original"),
+        )
+        diagnostics = {
+            "texture_set": asset.get("texture_set"),
+            "texture_set_original": asset.get("texture_set_original"),
+            "uv_tile": tile,
+            "matched_obj_materials": sorted(matching_materials),
+            "available_obj_materials": sorted(self._available_materials),
+        }
+        if not matching_materials:
+            raise GeometryMaskExportError(
+                "Painter texture set did not match an exported project mesh material "
+                "for UV Map generation.",
+                diagnostics,
+            )
+
+        cache_key = (
+            tuple(sorted(matching_materials)),
+            int(tile["u"]),
+            int(tile["v"]),
+            width,
+            height,
+        )
+        png_bytes = self._uv_map_cache.get(cache_key)
+        cached = png_bytes is not None
+        if png_bytes is None:
+            png_bytes = self._rasterize_uv_map(
+                matching_materials,
+                tile,
+                width,
+                height,
+            )
+            self._uv_map_cache[cache_key] = png_bytes
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(png_bytes)
+        diagnostics["cached"] = cached
+        return diagnostics
 
     def _ensure_mesh(self):
         if self._faces is not None:
@@ -232,6 +283,58 @@ class GeometryMaskBaker:
         if not image.save(buffer, "PNG"):
             raise GeometryMaskExportError("Could not encode the Geometry Mask PNG.")
         return bytes(buffer.data()), face_count
+
+    def _rasterize_uv_map(self, matching_materials, tile, width, height):
+        try:
+            from PySide6 import QtCore, QtGui
+        except ImportError as exc:
+            raise GeometryMaskExportError(
+                "PySide6 is required to rasterize the UV Map."
+            ) from exc
+
+        image_format = getattr(QtGui.QImage, "Format_ARGB32", None)
+        if image_format is None:
+            image_format = QtGui.QImage.Format.Format_ARGB32
+        image = QtGui.QImage(width, height, image_format)
+        image.fill(0)
+        image.setDotsPerMeterX(2835)
+        image.setDotsPerMeterY(2835)
+
+        winding_fill = getattr(QtCore.Qt, "WindingFill", None)
+        if winding_fill is None:
+            winding_fill = QtCore.Qt.FillRule.WindingFill
+        tile_u = int(tile["u"])
+        tile_v = int(tile["v"])
+        self._ensure_face_index()
+        coverage_path = self._coverage_path(
+            QtCore,
+            QtGui,
+            winding_fill,
+            matching_materials,
+            tile_u,
+            tile_v,
+            width,
+            height,
+        )
+        if coverage_path is None or coverage_path.isEmpty():
+            raise GeometryMaskExportError(
+                "No UV faces were found for this texture set and UV tile."
+            )
+
+        painter = QtGui.QPainter(image)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        # A transparent white wireframe remains independent of the exported
+        # channel and gives the user one removable utility layer in Photoshop.
+        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 255))
+        pen.setWidthF(max(1.0, min(width, height) / 2048.0))
+        painter.strokePath(coverage_path, pen)
+        painter.end()
+
+        buffer = QtCore.QBuffer()
+        buffer.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
+        if not image.save(buffer, "PNG"):
+            raise GeometryMaskExportError("Could not encode the UV Map PNG.")
+        return bytes(buffer.data())
 
     def _ensure_face_index(self):
         if self._faces is self._indexed_faces:

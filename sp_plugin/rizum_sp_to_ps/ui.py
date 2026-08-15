@@ -724,6 +724,25 @@ class SettingsDialog:
         bit_depth_layout.addWidget(self.bit_depth)
         body_layout.addWidget(bit_depth_row)
 
+        self.export_uv_map = _make_settings_toggle(
+            self.QtCore,
+            self.QtGui,
+            self.QtWidgets,
+        )
+        uv_map_row, uv_map_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(uv_map_row)
+        self.uv_map_texts = self._make_text_block(
+            "UV map",
+            "Add wireframe as the top Photoshop layer",
+        )
+        uv_map_layout.addWidget(self.uv_map_texts)
+        uv_map_layout.addStretch(1)
+        uv_map_layout.addWidget(self.export_uv_map)
+        body_layout.addWidget(uv_map_row)
+
         self.auto_open_photoshop = _make_settings_toggle(self.QtCore, self.QtGui, self.QtWidgets)
         auto_row, auto_layout = _settings_frame_row(
             self.QtWidgets,
@@ -833,6 +852,7 @@ class SettingsDialog:
         self._footer_layout = footer_layout
 
         self._bind_toggle_row(padding_row, self.infinite_padding)
+        self._bind_toggle_row(uv_map_row, self.export_uv_map)
         self._bind_toggle_row(auto_row, self.auto_open_photoshop)
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
 
@@ -918,7 +938,19 @@ class SettingsDialog:
             + self.auto_open_photoshop.width()
             + 2 * body_margin
         )
-        return max(metric(338, 254), footer_need, bit_depth_need, auto_need)
+        uv_map_need = (
+            self.uv_map_texts.sizeHint().width()
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.export_uv_map.width()
+            + 2 * body_margin
+        )
+        return max(
+            metric(338, 254),
+            footer_need,
+            bit_depth_need,
+            auto_need,
+            uv_map_need,
+        )
 
     def _apply_ui_scale(self, _scale):
         metric = self._metric
@@ -962,6 +994,7 @@ class SettingsDialog:
                 )
 
         self.infinite_padding.setCompactHeight(metric(20))
+        self.export_uv_map.setCompactHeight(metric(20))
         self.auto_open_photoshop.setCompactHeight(metric(20))
         self.dilation_stepper.setCompactHeight(
             PAINTER_SETTINGS_LAYOUT.stepper_height.resolve(self.dialog)
@@ -1133,6 +1166,7 @@ QPushButton[variant="icon"]:pressed {{
         self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
         self.dilation_stepper.setValue(int(settings.get("dilation") or 8), emit=False)
         self.auto_open_photoshop.setChecked(bool(settings.get("auto_open_photoshop")))
+        self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
         self._sync_padding_mode(animate=False)
 
         bit_depth = settings.get("bit_depth")
@@ -1163,6 +1197,7 @@ QPushButton[variant="icon"]:pressed {{
                 "infinite_padding": self.infinite_padding.isChecked(),
                 "dilation": self.dilation_stepper.value(),
                 "auto_open_photoshop": self.auto_open_photoshop.isChecked(),
+                "export_uv_map": self.export_uv_map.isChecked(),
                 "bit_depth": self.bit_depth.currentData(),
             }
         )
@@ -2532,6 +2567,7 @@ class SmokeTestPanel:
             "infinite_padding": _to_bool(store.value("infinite_padding", False)),
             "dilation": _optional_int(store.value("dilation", 8)) or 8,
             "auto_open_photoshop": _to_bool(store.value("auto_open_photoshop", True)),
+            "export_uv_map": _to_bool(store.value("export_uv_map", False)),
             "bit_depth": bit_depth,
         }
 
@@ -2541,6 +2577,7 @@ class SmokeTestPanel:
         store.setValue("infinite_padding", bool(values.get("infinite_padding")))
         store.setValue("dilation", int(values.get("dilation") or 8))
         store.setValue("auto_open_photoshop", bool(values.get("auto_open_photoshop")))
+        store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         bit_depth = values.get("bit_depth")
         if bit_depth:
             store.setValue("bit_depth", int(bit_depth))
@@ -2907,6 +2944,7 @@ class SmokeTestPanel:
             "infinite_padding": bool(self.user_settings.get("infinite_padding")),
             "dilation": int(self.user_settings.get("dilation") or 8),
             "keep_alpha": True,
+            "export_uv_map": bool(self.user_settings.get("export_uv_map")),
         }
         bit_depth = self.user_settings.get("bit_depth")
         if bit_depth:
@@ -2926,6 +2964,7 @@ class SmokeTestPanel:
                 "texture_sets": settings.get("texture_sets"),
                 "stacks": settings.get("stacks"),
                 "channels": settings.get("channels"),
+                "export_uv_map": bool(settings.get("export_uv_map")),
             },
             "build_requests": [
                 {

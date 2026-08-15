@@ -202,6 +202,32 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(checkpoints), 6)
 
+    def test_uv_map_is_a_transparent_wireframe_for_the_requested_material(self):
+        baker = GeometryMaskBaker()
+        names = frozenset({"mesh"})
+        baker._faces = [
+            (names, "selected", ((0.2, 0.2), (0.8, 0.2), (0.5, 0.8))),
+            (names, "excluded", ((0.1, 0.8), (0.4, 0.8), (0.2, 0.95))),
+        ]
+        baker._available_materials = {"selected", "excluded"}
+        asset = {
+            "texture_set": "selected",
+            "texture_set_original": "selected",
+            "uv_tile": {"u": 0, "v": 0},
+            "resolution": [64, 64],
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "uv_map.png"
+            baker.bake_uv_map(asset, output)
+            image = QtGui.QImage(str(output))
+
+        self.assertEqual((image.width(), image.height()), (64, 64))
+        self.assertEqual(image.dotsPerMeterX(), 2835)
+        self.assertGreater(QtGui.qAlpha(image.pixel(32, 51)), 0)
+        self.assertEqual(QtGui.qAlpha(image.pixel(32, 32)), 0)
+        self.assertEqual(QtGui.qAlpha(image.pixel(13, 13)), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

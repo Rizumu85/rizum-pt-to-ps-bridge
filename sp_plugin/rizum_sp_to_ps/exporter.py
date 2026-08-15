@@ -249,6 +249,16 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
         request
     )
     request["export_settings"] = _export_settings(request, settings)
+    if settings.get("export_uv_map"):
+        request["uv_map_asset"] = {
+            "kind": "uv_map",
+            "label": "UV Map",
+            "path": str(asset_path / "uv_map.png"),
+            "texture_set": request.get("texture_set"),
+            "texture_set_original": request.get("texture_set_original"),
+            "uv_tile": deepcopy(request["uv_tile"]),
+            "resolution": list(request["export_settings"]["resolution"]),
+        }
 
     for node in request["layers"]:
         _annotate_node_assets(
@@ -343,7 +353,8 @@ def export_request_assets(
         for asset in _iter_assets(build_request["layers"], request_channel)
         if asset["kind"] == "geometry_mask"
     ]
-    total += len(geometry_assets)
+    uv_map_asset = build_request.get("uv_map_asset")
+    total += len(geometry_assets) + int(bool(uv_map_asset))
     owns_baker = geometry_baker is None
     if owns_baker:
         geometry_baker = geometry_mask.GeometryMaskBaker(
@@ -388,6 +399,37 @@ def export_request_assets(
         if diagnostics:
             build_request["geometry_mask_diagnostics"] = diagnostics
         _finalize_geometry_masks(build_request["layers"])
+        if uv_map_asset:
+            index = completed + 1
+            prefix = f"{progress_prefix}: " if progress_prefix else ""
+            _notify_progress(
+                progress_callback,
+                stage="assets",
+                value=completed,
+                total=total,
+                text=f"{prefix}exporting UV Map {index} of {total}",
+            )
+            try:
+                build_request["uv_map_diagnostics"] = geometry_baker.bake_uv_map(
+                    uv_map_asset,
+                    uv_map_asset["path"],
+                )
+            except geometry_mask.GeometryMaskExportError as exc:
+                error_path = (
+                    Path(build_request["asset_dir"]).parent / "uv_map_error.json"
+                )
+                geometry_mask.write_error_diagnostics(error_path, exc)
+                raise RuntimeError(
+                    f"Could not export UV Map. Diagnostics: {error_path}. {exc}"
+                ) from exc
+            completed += 1
+            _notify_progress(
+                progress_callback,
+                stage="assets",
+                value=completed,
+                total=total,
+                text=f"{prefix}finished UV Map {index} of {total}",
+            )
     finally:
         if owns_baker:
             geometry_baker.close()
@@ -1039,6 +1081,7 @@ def _export_settings(request, settings):
         "dilation": dilation,
         "bit_depth": int(settings.get("bit_depth") or request["bit_depth"]),
         "keep_alpha": bool(settings.get("keep_alpha", True)),
+        "export_uv_map": bool(settings.get("export_uv_map", False)),
         "resolution": [int(resolution["width"]), int(resolution["height"])],
     }
 
