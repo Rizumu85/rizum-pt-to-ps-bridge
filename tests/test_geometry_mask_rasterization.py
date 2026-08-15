@@ -9,6 +9,24 @@ from sp_plugin.rizum_sp_to_ps.geometry_mask import GeometryMaskBaker
 
 
 class GeometryMaskRasterizationTests(unittest.TestCase):
+    def test_geometry_mask_png_uses_photoshop_document_resolution(self):
+        baker = GeometryMaskBaker()
+        baker._faces = [
+            (
+                frozenset({"mesh"}),
+                "material",
+                ((0.2, 0.2), (0.8, 0.2), (0.8, 0.8)),
+            )
+        ]
+
+        png_bytes, _ = baker._rasterize(
+            {"mesh"}, {"material"}, {"u": 0, "v": 0}, 64, 64
+        )
+        image = QtGui.QImage.fromData(png_bytes, "PNG")
+
+        self.assertEqual(image.dotsPerMeterX(), 2835)
+        self.assertEqual(image.dotsPerMeterY(), 2835)
+
     def test_adjacent_uv_faces_do_not_leave_internal_wireframe_seams(self):
         baker = GeometryMaskBaker()
         names = frozenset({"mesh"})

@@ -167,6 +167,11 @@ class GeometryMaskBaker:
         if image_format is None:
             image_format = QtGui.QImage.Format.Format_ARGB32
         image = QtGui.QImage(width, height, image_format)
+        # Photoshop Place Embedded honors PNG physical resolution. Qt's 96 dpi
+        # default shrinks a 4096 px geometry mask inside our 72 ppi PSD, so use
+        # the same 72 ppi metadata as Painter's exported layer and mask PNGs.
+        image.setDotsPerMeterX(2835)
+        image.setDotsPerMeterY(2835)
         black = QtGui.QColor(0, 0, 0, 255)
         white = QtGui.QColor(255, 255, 255, 255)
         winding_fill = getattr(QtCore.Qt, "WindingFill", None)
