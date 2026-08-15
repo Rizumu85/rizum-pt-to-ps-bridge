@@ -15,7 +15,7 @@ from .exporter import (
     list_export_targets,
     write_build_bundles,
 )
-from .handoff import export_list_handoff
+from .photoshop_automation import write_photoshop_launcher
 
 
 def _load_vendored_ui():
@@ -2229,8 +2229,17 @@ QLabel#RizumSvgLabel:hover {{
 
         settings = self.panel.user_settings
         if settings.get("auto_open_photoshop"):
-            self.panel.publish_photoshop_handoff(result["export_list"])
-            launched, message = self.panel.launch_photoshop()
+            try:
+                launcher_path = write_photoshop_launcher(result["export_list"])
+            except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
+                _show_modal_message(
+                    self.QtWidgets,
+                    self.dialog,
+                    "Photoshop",
+                    f"Could not prepare the Photoshop build script: {exc}",
+                )
+                return
+            launched, message = self.panel.launch_photoshop(launcher_path)
             if not launched:
                 _show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
                 return
@@ -2793,14 +2802,6 @@ class SmokeTestPanel:
         self.QtWidgets.QApplication.clipboard().setText(str(self.last_export_list_path))
         self.status.setText("Copied last export list path.")
 
-    def publish_photoshop_handoff(self, export_list_path):
-        # Clipboard is the only zero-setup signal shared by Painter and UXP;
-        # the structured prefix prevents ordinary copied paths from auto-building.
-        self.QtWidgets.QApplication.clipboard().setText(
-            export_list_handoff(export_list_path)
-        )
-        self.status.setText("Export complete. Handing off to Photoshop...")
-
     def open_output_folder(self):
         if self.last_output_dir is None:
             self.status.setText("No output folder to open yet.")
@@ -2813,12 +2814,18 @@ class SmokeTestPanel:
         else:
             self.status.setText(f"Could not open output folder: {path}")
 
-    def launch_photoshop(self):
+    def launch_photoshop(self, launcher_path):
         executable = Path(self.user_settings.get("photoshop_path") or "")
         if not executable.is_file():
             return False, "Set a valid Photoshop executable in Settings."
 
-        started = self.QtCore.QProcess.startDetached(str(executable), [])
+        # Passing JSX to Photoshop is the host-supported zero-click path used
+        # by the released exporter; UXP panels are lazy and cannot receive a
+        # reliable external launch event when they have never been opened.
+        started = self.QtCore.QProcess.startDetached(
+            str(executable),
+            [str(Path(launcher_path).resolve())],
+        )
         if isinstance(started, tuple):
             started = started[0]
         if not started:
