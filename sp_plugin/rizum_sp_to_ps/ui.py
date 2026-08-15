@@ -16,6 +16,11 @@ from .exporter import (
     write_build_bundles,
 )
 from .photoshop_automation import write_photoshop_launcher
+from .export_selection_memory import (
+    ExportSelectionMemory,
+    current_project_identity,
+    target_selection_key,
+)
 
 
 def _load_vendored_ui():
@@ -1177,6 +1182,7 @@ class ExportDialog:
         self.QtWidgets = panel.QtWidgets
         self.targets = []
         self.groups = []
+        self._selection_memory = None
         self._updating_checks = False
         self._target_error = ""
         self._height_animation = None
@@ -1956,6 +1962,13 @@ QLabel#RizumSvgLabel:hover {{
             )
             return
 
+        self._selection_memory = ExportSelectionMemory(
+            self.QtCore,
+            SETTINGS_ORG,
+            SETTINGS_APP,
+            current_project_identity(),
+        )
+
         try:
             self.targets = list_export_targets(settings=self.panel._base_export_settings())
         except Exception as exc:  # noqa: BLE001 - show host errors to the user.
@@ -2035,7 +2048,7 @@ QLabel#RizumSvgLabel:hover {{
         )
 
     def _add_group(self, target, checked):
-        parent_checkbox = make_mock_checkbox(checked)
+        parent_checkbox = make_mock_checkbox(False)
         group = {
             "target": target,
             "parent": parent_checkbox,
@@ -2043,9 +2056,17 @@ QLabel#RizumSvgLabel:hover {{
         }
         labels = target.get("channel_labels", {})
         child_rows = []
+        selection_key = target_selection_key(target)
 
         for channel in target.get("channels", []):
-            checkbox = make_mock_checkbox(checked)
+            remembered = checked
+            if self._selection_memory is not None:
+                remembered = self._selection_memory.checked(
+                    selection_key,
+                    channel,
+                    checked,
+                )
+            checkbox = make_mock_checkbox(remembered)
             row = make_export_tree_item(
                 labels.get(channel) or channel,
                 checkbox,
@@ -2092,9 +2113,14 @@ QLabel#RizumSvgLabel:hover {{
 
         parent_checkbox.mousePressEvent = parent_press
         total = len(group["children"])
+        selected = sum(
+            1
+            for child in group["children"]
+            if child["checkbox"].isChecked()
+        )
         widget = make_collapsible_group(
             self._target_label(target),
-            self._selection_counter(total if checked else 0, total),
+            self._selection_counter(selected, total),
             children=child_rows,
             trailing_widget=parent_checkbox,
             expanded=True,
@@ -2105,7 +2131,7 @@ QLabel#RizumSvgLabel:hover {{
             "RizumCollapsibleSubtitle",
         )
         subtitle.setTextFormat(self.QtCore.Qt.TextFormat.RichText)
-        tooltip = self._selection_tooltip(total if checked else 0, total)
+        tooltip = self._selection_tooltip(selected, total)
         install_compact_tooltip(subtitle, tooltip)
         subtitle.setAccessibleName(tooltip)
         group["subtitle"] = subtitle
@@ -2121,6 +2147,7 @@ QLabel#RizumSvgLabel:hover {{
             self._sync_tree_content_height()
 
         content._height_changed = sync_export_tree_height
+        self._update_group(group, refresh_total=False)
 
     def _update_group(self, group, refresh_total=True):
         selected = sum(
@@ -2181,6 +2208,8 @@ QLabel#RizumSvgLabel:hover {{
         self._refresh_selection_state()
 
     def _refresh_selection_state(self):
+        if not self._updating_checks:
+            self._remember_visible_selections()
         selected_total = sum(
             1
             for group in self.groups
@@ -2191,6 +2220,21 @@ QLabel#RizumSvgLabel:hover {{
             selected_total > 0,
             animate=self.dialog.isVisible(),
         )
+
+    def _remember_visible_selections(self):
+        if self._selection_memory is None:
+            return
+        # Keep choices project-scoped because production files commonly reuse
+        # texture-set names while requiring different export channel subsets.
+        for group in self.groups:
+            self._selection_memory.remember_target(
+                target_selection_key(group["target"]),
+                {
+                    child["channel"]: child["checkbox"].isChecked()
+                    for child in group["children"]
+                },
+            )
+        self._selection_memory.save()
 
     def selected_exports(self):
         selections = []
