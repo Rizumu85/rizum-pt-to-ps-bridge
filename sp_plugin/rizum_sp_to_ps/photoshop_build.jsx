@@ -112,7 +112,8 @@
             DocumentFill.TRANSPARENT
         );
         advanceImportProgress(progress, progressState, "Created " + documentName);
-        var defaultLayer = document.activeLayer;
+        var placeholderName = "__rizum_placeholder_" + new Date().getTime() + "__";
+        document.activeLayer.name = placeholderName;
 
         try {
             placeNodes(
@@ -124,10 +125,8 @@
                 progressState
             );
 
-            // Hold the original layer object instead of deleting by name;
-            // Painter layers are allowed to be named "Layer 1" too.
             if (document.layers.length > 1) {
-                defaultLayer.remove();
+                deleteLayerByName(document, placeholderName);
             }
             // Placed PNGs stay as smart objects during assembly so Photoshop
             // performs one rasterization pass instead of one pass per asset.
@@ -551,6 +550,18 @@
         // Photoshop release; activeLayer assignment avoids the unavailable
         // Action Manager Get command used to resolve that property.
         app.activeDocument.activeLayer = layer;
+    }
+
+    function deleteLayerByName(document, name) {
+        app.activeDocument = document;
+        var descriptor = new ActionDescriptor();
+        var reference = new ActionReference();
+        reference.putName(charIDToTypeID("Lyr "), name);
+        descriptor.putReference(charIDToTypeID("null"), reference);
+        // Direct Place can invalidate old DOM layer handles. Deleting the
+        // uniquely named placeholder through Action Manager avoids the hidden
+        // Select performed by ArtLayer.remove() on that stale handle.
+        executeAction(charIDToTypeID("Dlt "), descriptor, DialogModes.NO);
     }
 
     function savePsd(document, path) {
