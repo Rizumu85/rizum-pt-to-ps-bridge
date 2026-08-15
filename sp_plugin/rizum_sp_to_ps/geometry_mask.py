@@ -375,17 +375,24 @@ def write_error_diagnostics(path, error):
 
 
 def _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height):
-    polygon = QtGui.QPolygonF(
-        [
-            QtCore.QPointF(
-                (u - tile_u) * width,
-                (1.0 - (v - tile_v)) * height,
-            )
-            for u, v in uvs
-        ]
+    points = [
+        QtCore.QPointF(
+            (u - tile_u) * width,
+            (1.0 - (v - tile_v)) * height,
+        )
+        for u, v in uvs
+    ]
+    # Geometry Masks are face unions, but exported meshes can contain coincident
+    # front/back UV faces with opposite winding. Normalizing every subpath keeps
+    # WindingFill from cancelling valid interiors and leaving only UV edges.
+    signed_area = sum(
+        points[index].x() * points[(index + 1) % len(points)].y()
+        - points[(index + 1) % len(points)].x() * points[index].y()
+        for index in range(len(points))
     )
-    # Painter Geometry Masks select mesh regions, not individual UV faces.
-    # One winding path prevents shared triangle edges from becoming wireframe.
+    if signed_area < 0:
+        points.reverse()
+    polygon = QtGui.QPolygonF(points)
     path.addPolygon(polygon)
     path.closeSubpath()
 

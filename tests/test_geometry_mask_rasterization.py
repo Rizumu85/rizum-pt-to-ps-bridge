@@ -52,6 +52,26 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         ]
         self.assertEqual(min(diagonal_values), 255)
 
+    def test_overlapping_opposite_winding_faces_remain_filled(self):
+        baker = GeometryMaskBaker()
+        names = frozenset({"mesh"})
+        clockwise = ((0.2, 0.2), (0.8, 0.2), (0.5, 0.8))
+        baker._faces = [
+            (names, "material", clockwise),
+            (names, "material", tuple(reversed(clockwise))),
+        ]
+
+        png_bytes, _face_count = baker._rasterize(
+            {"mesh"},
+            {"material"},
+            {"u": 0, "v": 0},
+            64,
+            64,
+        )
+        image = QtGui.QImage.fromData(png_bytes, "PNG")
+
+        self.assertEqual(QtGui.qRed(image.pixel(32, 32)), 255)
+
     def test_custom_dilation_expands_the_selected_uv_region(self):
         baker = GeometryMaskBaker()
         names = frozenset({"mesh"})
