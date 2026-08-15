@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bridge, pixel_export
+from . import bridge, geometry_mask, pixel_export
 from .blend_map import decide_node_blending
 from .udim import uv_to_udim
 
@@ -178,45 +178,50 @@ def write_build_bundles(
     )
 
     written = []
-    for index, request in enumerate(requests, start=1):
-        _notify_progress(
-            progress_callback,
-            stage="bundles",
-            value=index - 1,
-            total=total,
-            text=f"Exporting {index} of {total}: {_request_label(request)}",
-        )
-        validate_request_preview(request)
-        bundle_path = output_path / _bundle_name(request, index)
-        asset_path = bundle_path / "png"
-        asset_path.mkdir(parents=True, exist_ok=True)
-
-        build_request = build_request_from_preview(request, bundle_path, settings)
-        build_request["assets_exported"] = bool(export_pngs)
-        if export_pngs:
-            export_request_assets(
-                build_request,
-                progress_callback=progress_callback,
-                progress_prefix=f"{index} of {total}",
+    geometry_baker = geometry_mask.GeometryMaskBaker()
+    try:
+        for index, request in enumerate(requests, start=1):
+            _notify_progress(
+                progress_callback,
+                stage="bundles",
+                value=index - 1,
+                total=total,
+                text=f"Exporting {index} of {total}: {_request_label(request)}",
             )
-            if _count_layer_assets(build_request["layers"]) == 0:
-                shutil.rmtree(bundle_path, ignore_errors=True)
-                continue
+            validate_request_preview(request)
+            bundle_path = output_path / _bundle_name(request, index)
+            asset_path = bundle_path / "png"
+            asset_path.mkdir(parents=True, exist_ok=True)
 
-        request_path = bundle_path / BUILD_REQUEST_FILENAME
-        build_request["build_request_file"] = str(request_path)
-        request_path.write_text(
-            json.dumps(build_request, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        written.append(request_path)
-        _notify_progress(
-            progress_callback,
-            stage="bundles",
-            value=index,
-            total=total,
-            text=f"Finished {index} of {total}: {_request_label(request)}",
-        )
+            build_request = build_request_from_preview(request, bundle_path, settings)
+            build_request["assets_exported"] = bool(export_pngs)
+            if export_pngs:
+                export_request_assets(
+                    build_request,
+                    progress_callback=progress_callback,
+                    progress_prefix=f"{index} of {total}",
+                    geometry_baker=geometry_baker,
+                )
+                if _count_layer_assets(build_request["layers"]) == 0:
+                    shutil.rmtree(bundle_path, ignore_errors=True)
+                    continue
+
+            request_path = bundle_path / BUILD_REQUEST_FILENAME
+            build_request["build_request_file"] = str(request_path)
+            request_path.write_text(
+                json.dumps(build_request, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            written.append(request_path)
+            _notify_progress(
+                progress_callback,
+                stage="bundles",
+                value=index,
+                total=total,
+                text=f"Finished {index} of {total}: {_request_label(request)}",
+            )
+    finally:
+        geometry_baker.close()
 
     return written
 
@@ -238,12 +243,22 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
     request["export_settings"] = _export_settings(request, settings)
 
     for node in request["layers"]:
-        _annotate_node_assets(node, asset_path, request_channel=request["channel"])
+        _annotate_node_assets(
+            node,
+            asset_path,
+            request_channel=request["channel"],
+            request=request,
+        )
 
     return request
 
 
-def export_request_assets(build_request, progress_callback=None, progress_prefix=""):
+def export_request_assets(
+    build_request,
+    progress_callback=None,
+    progress_prefix="",
+    geometry_baker=None,
+):
     """Export all PNG payloads referenced by a build request."""
     if build_request.get("request_type") != "build":
         raise ValueError("PNG export requires request_type='build'")
@@ -257,7 +272,9 @@ def export_request_assets(build_request, progress_callback=None, progress_prefix
         channel_candidates = [request_channel]
     assets = list(_iter_assets(build_request["layers"], request_channel))
     layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
-    initial_mask_count = sum(asset["kind"] == "mask" for asset in assets)
+    initial_mask_count = sum(
+        asset["kind"] in {"mask", "geometry_mask"} for asset in assets
+    )
     total = len(layer_assets) + initial_mask_count
     completed = 0
     for asset in layer_assets:
@@ -312,6 +329,52 @@ def export_request_assets(build_request, progress_callback=None, progress_prefix
             total=total,
             text=f"{prefix}finished PNG {index} of {total}: {layer_label}",
         )
+
+    geometry_assets = [
+        asset
+        for asset in _iter_assets(build_request["layers"], request_channel)
+        if asset["kind"] == "geometry_mask"
+    ]
+    total += len(geometry_assets)
+    owns_baker = geometry_baker is None
+    if owns_baker:
+        geometry_baker = geometry_mask.GeometryMaskBaker()
+    try:
+        diagnostics = []
+        for asset in geometry_assets:
+            index = completed + 1
+            layer_label = asset.get("label") or asset["uid_hex"]
+            prefix = f"{progress_prefix}: " if progress_prefix else ""
+            _notify_progress(
+                progress_callback,
+                stage="assets",
+                value=completed,
+                total=total,
+                text=f"{prefix}exporting Geometry Mask {index} of {total}: {layer_label}",
+            )
+            try:
+                diagnostics.append(geometry_baker.bake(asset, asset["path"]))
+            except geometry_mask.GeometryMaskExportError as exc:
+                error_path = Path(build_request["asset_dir"]).parent / "geometry_mask_error.json"
+                geometry_mask.write_error_diagnostics(error_path, exc)
+                raise RuntimeError(
+                    f"Could not export Geometry Mask for {layer_label}. "
+                    f"Diagnostics: {error_path}. {exc}"
+                ) from exc
+            completed += 1
+            _notify_progress(
+                progress_callback,
+                stage="assets",
+                value=completed,
+                total=total,
+                text=f"{prefix}finished Geometry Mask {index} of {total}: {layer_label}",
+            )
+        if diagnostics:
+            build_request["geometry_mask_diagnostics"] = diagnostics
+        _finalize_geometry_masks(build_request["layers"])
+    finally:
+        if owns_baker:
+            geometry_baker.close()
 
     build_request["empty_layer_assets_removed"] = _count_pruned_assets(
         build_request["layers"]
@@ -416,6 +479,10 @@ def _build_export_requests(modules, settings):
                             "generated_at": generated_at,
                             "project": project_info,
                             "texture_set": texture_set_name,
+                            "texture_set_original": _call_or_attr(
+                                texture_set,
+                                "original_name",
+                            ),
                             "stack": stack_name,
                             "channel": channel_name,
                             "channel_label": _channel_label(channel_name, channel),
@@ -563,10 +630,24 @@ def _geometry_mask_record(node):
                 for tile in params.uv_tiles
             ],
         }
+    listed_meshes = [str(mesh) for mesh in getattr(params, "meshes", [])]
+    texture_set = _call_or_attr(node, "get_texture_set")
+    all_meshes = [
+        str(mesh) for mesh in _call_or_attr(texture_set, "all_mesh_names", [])
+    ]
+    if inclusion_list:
+        enabled_meshes = listed_meshes
+    else:
+        excluded = set(listed_meshes)
+        enabled_meshes = [mesh for mesh in all_meshes if mesh not in excluded]
     return {
         "mode": "mesh",
         "inclusion_list": inclusion_list,
-        "meshes": [str(mesh) for mesh in getattr(params, "meshes", [])],
+        "meshes": listed_meshes,
+        "enabled_meshes": enabled_meshes,
+        "is_restrictive": bool(all_meshes)
+        and set(enabled_meshes) != set(all_meshes),
+        "is_empty": bool(all_meshes) and not enabled_meshes,
     }
 
 
@@ -580,6 +661,8 @@ def _filter_nodes_for_uv_tile(nodes, uv_tile):
     tile_key = (int(uv_tile["u"]), int(uv_tile["v"]))
     for node in nodes:
         geometry_mask = node.get("geometry_mask") or {}
+        if geometry_mask.get("mode") == "mesh" and geometry_mask.get("is_empty"):
+            continue
         if geometry_mask.get("mode") == "uv_tile":
             listed = {
                 (int(tile["u"]), int(tile["v"]))
@@ -911,7 +994,13 @@ def _export_settings(request, settings):
     }
 
 
-def _annotate_node_assets(node, asset_path, request_channel=None, in_mask_stack=False):
+def _annotate_node_assets(
+    node,
+    asset_path,
+    request_channel=None,
+    in_mask_stack=False,
+    request=None,
+):
     if (
         not in_mask_stack
         and _node_needs_pixel_asset(node)
@@ -937,16 +1026,51 @@ def _annotate_node_assets(node, asset_path, request_channel=None, in_mask_stack=
         node["mask_asset"]["source"] = "painter_layer_mask"
         node["mask_asset"]["fidelity"] = "lossless"
 
+    geometry = node.get("geometry_mask") or {}
+    if (
+        not in_mask_stack
+        and geometry.get("mode") == "mesh"
+        and geometry.get("is_restrictive")
+        and geometry.get("enabled_meshes")
+    ):
+        node["geometry_mask_asset"] = _asset_record(
+            node,
+            request_channel="geometry_mask",
+            path=asset_path / f"uid_{node['uid_hex']}_geometry_mask.png",
+        )
+        node["geometry_mask_asset"].update(
+            {
+                "source": "painter_geometry_mask",
+                "fidelity": "uv_rasterized",
+                "enabled_meshes": list(geometry["enabled_meshes"]),
+                "texture_set": request["texture_set"],
+                "texture_set_original": request.get("texture_set_original"),
+                "uv_tile": deepcopy(request["uv_tile"]),
+                "resolution": list(request["export_settings"]["resolution"]),
+            }
+        )
+
     for child in node.get("children", []):
-        _annotate_node_assets(child, asset_path, request_channel=request_channel)
+        _annotate_node_assets(
+            child,
+            asset_path,
+            request_channel=request_channel,
+            request=request,
+        )
     for effect in node.get("content_effects", []):
-        _annotate_node_assets(effect, asset_path, request_channel=request_channel)
+        _annotate_node_assets(
+            effect,
+            asset_path,
+            request_channel=request_channel,
+            request=request,
+        )
     for effect in node.get("mask_effects", []):
         _annotate_node_assets(
             effect,
             asset_path,
             request_channel=request_channel,
             in_mask_stack=True,
+            request=request,
         )
 
 
@@ -992,6 +1116,12 @@ def _iter_assets(nodes, request_channel=None):
                 **mask_asset,
                 "kind": "mask",
             }
+        geometry_asset = node.get("geometry_mask_asset")
+        if geometry_asset is not None:
+            yield {
+                **geometry_asset,
+                "kind": "geometry_mask",
+            }
 
         yield from _iter_assets(node.get("children", []), request_channel)
         yield from _iter_assets(node.get("content_effects", []), request_channel)
@@ -1004,6 +1134,7 @@ def _remove_asset_by_path(nodes, asset_path):
         if asset is not None and str(asset.get("path")) == target:
             node.pop("asset", None)
             node.pop("mask_asset", None)
+            node.pop("geometry_mask_asset", None)
             node["asset_pruned"] = "empty_alpha"
             return True
         if _remove_asset_by_path(node.get("children", []), asset_path):
@@ -1031,6 +1162,27 @@ def _count_layer_assets(nodes):
         total += _count_layer_assets(node.get("children", []))
         total += _count_layer_assets(node.get("content_effects", []))
     return total
+
+
+def _finalize_geometry_masks(nodes):
+    for node in nodes:
+        geometry_asset = node.get("geometry_mask_asset")
+        regular_asset = node.get("mask_asset")
+        if geometry_asset is not None:
+            if regular_asset is not None:
+                geometry_mask.combine_masks(
+                    regular_asset["path"],
+                    geometry_asset["path"],
+                )
+                _remove_file_if_exists(geometry_asset["path"])
+                regular_asset["source"] = "painter_layer_and_geometry_mask"
+                regular_asset["fidelity"] = "lossless_layer_mask_uv_rasterized_geometry"
+            else:
+                geometry_asset["channel"] = "mask"
+                node["mask_asset"] = geometry_asset
+            node.pop("geometry_mask_asset", None)
+        _finalize_geometry_masks(node.get("children", []))
+        _finalize_geometry_masks(node.get("content_effects", []))
 
 
 def _remove_file_if_exists(path):
