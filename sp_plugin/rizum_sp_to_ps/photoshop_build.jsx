@@ -5,8 +5,14 @@
     var resultPath = File(exportListPath).parent.fsName + "/_photoshop_build_result.json";
     var result = {
         built: [],
-        errors: []
+        errors: [],
+        timings: {
+            import_ms: 0,
+            save_ms: 0,
+            total_ms: 0
+        }
     };
+    var runStartedAt = new Date().getTime();
     var previousDialogs = app.displayDialogs;
     var previousRulerUnits = app.preferences.rulerUnits;
     var progress = null;
@@ -18,15 +24,21 @@
     try {
         var exportList = readJson(exportListPath);
         var requestPaths = buildRequestPaths(exportList);
+        var pendingSaves = [];
         progress = createImportProgress(requestPaths.length);
+        var importStartedAt = new Date().getTime();
         for (var index = 0; index < requestPaths.length; index += 1) {
             var requestPath = requestPaths[index];
             progress.beginRequest(index, requestPath);
             try {
                 var request = readJson(requestPath);
-                buildRequest(request, progress);
-                result.built.push(request.psd_file);
-                progress.finishRequest(index, "Saved " + File(request.psd_file).name);
+                var document = buildRequest(request, progress);
+                pendingSaves.push({
+                    requestPath: requestPath,
+                    request: request,
+                    document: document
+                });
+                progress.finishRequest(index, "Imported " + File(request.psd_file).name);
             } catch (error) {
                 result.errors.push({
                     request: requestPath,
@@ -35,12 +47,37 @@
                 progress.finishRequest(index, "Failed: " + errorMessage(error));
             }
         }
+        result.timings.import_ms = new Date().getTime() - importStartedAt;
+
+        var saveStartedAt = new Date().getTime();
+        progress.beginSavePhase(pendingSaves.length);
+        for (var saveIndex = 0; saveIndex < pendingSaves.length; saveIndex += 1) {
+            var pending = pendingSaves[saveIndex];
+            progress.beginSave(saveIndex, pending.request);
+            try {
+                app.activeDocument = pending.document;
+                savePsd(pending.document, pending.request.psd_file);
+                result.built.push(pending.request.psd_file);
+                progress.finishSave(
+                    saveIndex,
+                    "Saved " + File(pending.request.psd_file).name
+                );
+            } catch (saveError) {
+                result.errors.push({
+                    request: pending.requestPath,
+                    message: errorMessage(saveError)
+                });
+                progress.finishSave(saveIndex, "Save failed: " + errorMessage(saveError));
+            }
+        }
+        result.timings.save_ms = new Date().getTime() - saveStartedAt;
     } catch (error) {
         result.errors.push({
             request: exportListPath,
             message: errorMessage(error)
         });
     } finally {
+        result.timings.total_ms = new Date().getTime() - runStartedAt;
         if (progress) {
             progress.close();
         }
@@ -66,7 +103,6 @@
             total: countImportUnits(request.layers || []) + 2
         };
         progress.configureRequest(request, progressState.total);
-        progress.describe("Creating " + documentName);
         var document = app.documents.add(
             UnitValue(Number(resolution.width), "px"),
             UnitValue(Number(resolution.height), "px"),
@@ -93,13 +129,16 @@
             if (document.layers.length > 1) {
                 defaultLayer.remove();
             }
-            progress.describe("Saving " + File(request.psd_file).name);
-            savePsd(document, request.psd_file);
+            // Placed PNGs stay as smart objects during assembly so Photoshop
+            // performs one rasterization pass instead of one pass per asset.
+            progress.describe("Finalizing " + documentName);
+            document.rasterizeAllLayers();
             advanceImportProgress(
                 progress,
                 progressState,
-                "Saved " + File(request.psd_file).name
+                "Finalized " + documentName
             );
+            return document;
         } catch (error) {
             try {
                 document.close(SaveOptions.DONOTSAVECHANGES);
@@ -128,8 +167,7 @@
 
         var placed = null;
         if (node.asset && node.asset.path) {
-            progress.describe("Importing " + nodeDisplayName(node));
-            placed = duplicatePngLayer(node.asset.path, document, parent);
+            placed = placePngLayer(node.asset.path, document, parent);
             advanceImportProgress(
                 progress,
                 progressState,
@@ -152,7 +190,6 @@
         applyNodeProperties(placed, node, channel);
         if (node.mask_asset && node.mask_asset.path) {
             try {
-                progress.describe("Applying mask: " + nodeDisplayName(node));
                 applyMask(document, placed, node.mask_asset.path);
                 advanceImportProgress(
                     progress,
@@ -228,13 +265,17 @@
         win.requestIndex = 0;
         win.requestLabel = "Painter export";
         win.requestSteps = 1;
+        win.phaseLabel = "Importing";
+        win.phaseTotal = requestTotal;
 
         win.renderProgress = function (value, detail) {
-            var clamped = Math.max(0, Math.min(requestTotal * 100, value));
-            var percent = Math.round((clamped / (requestTotal * 100)) * 100);
+            var maximum = Math.max(1, win.phaseTotal) * 100;
+            var clamped = Math.max(0, Math.min(maximum, value));
+            var percent = Math.round((clamped / maximum) * 100);
             win.bar.value = clamped;
             win.status.text =
-                "Building " + (win.requestIndex + 1) + " of " + requestCount +
+                win.phaseLabel + " " + (win.requestIndex + 1) + " of " +
+                win.phaseTotal +
                 " - " + percent + "%";
             win.detail.text = detail || win.requestLabel;
             win.update();
@@ -242,6 +283,8 @@
         };
 
         win.beginRequest = function (index, requestPath) {
+            win.phaseLabel = "Importing";
+            win.phaseTotal = requestTotal;
             win.requestIndex = index;
             win.requestLabel = File(requestPath).name;
             win.requestSteps = 1;
@@ -270,6 +313,24 @@
             win.renderProgress((index + 1) * 100, detail);
         };
 
+        win.beginSavePhase = function (saveCount) {
+            win.phaseLabel = "Saving";
+            win.phaseTotal = Math.max(1, saveCount);
+            win.bar.maxvalue = win.phaseTotal * 100;
+            win.bar.value = 0;
+        };
+
+        win.beginSave = function (index, request) {
+            win.requestIndex = index;
+            win.requestLabel = requestDisplayName(request);
+            win.renderProgress(index * 100, "Saving " + File(request.psd_file).name);
+        };
+
+        win.finishSave = function (index, detail) {
+            win.requestIndex = index;
+            win.renderProgress((index + 1) * 100, detail);
+        };
+
         win.center();
         win.show();
         return win;
@@ -292,31 +353,50 @@
         return false;
     }
 
-    function duplicatePngLayer(path, targetDocument, parent) {
+    function placePngLayer(path, targetDocument, parent) {
         var file = File(path);
         if (!file.exists) {
             throw new Error("PNG asset does not exist: " + path);
         }
 
-        var sourceDocument = app.open(file);
+        app.activeDocument = targetDocument;
+        var anchor = parent.artLayers.add();
+        targetDocument.activeLayer = anchor;
         try {
-            var sourceLayer = sourceDocument.activeLayer;
-            if (!sourceLayer) {
-                throw new Error("PNG has no layer: " + path);
+            placeEmbeddedFile(file);
+            var placed = targetDocument.activeLayer;
+            if (!placed || placed.id === anchor.id) {
+                throw new Error("Photoshop did not create a placed layer: " + path);
             }
-            var duplicate = sourceLayer.duplicate(
-                parent,
-                ElementPlacement.PLACEATBEGINNING
-            );
-            sourceDocument.close(SaveOptions.DONOTSAVECHANGES);
-            app.activeDocument = targetDocument;
-            return duplicate;
+            anchor.remove();
+            return placed;
         } catch (error) {
             try {
-                sourceDocument.close(SaveOptions.DONOTSAVECHANGES);
+                anchor.remove();
             } catch (ignored) {}
             throw error;
         }
+    }
+
+    function placeEmbeddedFile(file) {
+        // Direct placement avoids opening and closing a full Photoshop
+        // document for every 4K layer and mask in a Painter stack.
+        var descriptor = new ActionDescriptor();
+        descriptor.putPath(charIDToTypeID("null"), file);
+        descriptor.putEnumerated(
+            charIDToTypeID("FTcs"),
+            charIDToTypeID("QCSt"),
+            charIDToTypeID("Qcsa")
+        );
+        var offset = new ActionDescriptor();
+        offset.putUnitDouble(charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), 0);
+        offset.putUnitDouble(charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), 0);
+        descriptor.putObject(
+            charIDToTypeID("Ofst"),
+            charIDToTypeID("Ofst"),
+            offset
+        );
+        executeAction(charIDToTypeID("Plc "), descriptor, DialogModes.NO);
     }
 
     function applyNodeProperties(layer, node, channel) {
@@ -401,24 +481,7 @@
             throw new Error("Mask asset does not exist: " + path);
         }
 
-        var maskDocument = app.open(file);
-        var maskLayer = null;
-        try {
-            maskLayer = maskDocument.activeLayer.duplicate(
-                targetLayer,
-                ElementPlacement.PLACEBEFORE
-            );
-            maskDocument.close(SaveOptions.DONOTSAVECHANGES);
-        } catch (error) {
-            try {
-                maskDocument.close(SaveOptions.DONOTSAVECHANGES);
-            } catch (ignored) {}
-            throw error;
-        }
-
-        // Copy inside the target document. Photoshop can invalidate pixels
-        // copied from a PNG as soon as that temporary source document closes.
-        app.activeDocument = targetDocument;
+        var maskLayer = placePngLayer(path, targetDocument, targetLayer.parent);
         targetDocument.activeLayer = maskLayer;
         targetDocument.selection.selectAll();
         executeAction(charIDToTypeID("copy"), undefined, DialogModes.NO);
@@ -568,12 +631,18 @@
                 ",\"message\":" + jsonQuote(state.errors[index].message) + "}"
             );
         }
+        var timings = state.timings || {};
         file.write(
             "{\n" +
             "  \"schema_version\": 1,\n" +
             "  \"export_list\": " + jsonQuote(sourcePath) + ",\n" +
             "  \"built\": [" + built.join(",") + "],\n" +
-            "  \"errors\": [" + errors.join(",") + "]\n" +
+            "  \"errors\": [" + errors.join(",") + "],\n" +
+            "  \"timings\": {" +
+                "\"import_ms\":" + Number(timings.import_ms || 0) + "," +
+                "\"save_ms\":" + Number(timings.save_ms || 0) + "," +
+                "\"total_ms\":" + Number(timings.total_ms || 0) +
+            "}\n" +
             "}\n"
         );
         file.close();
