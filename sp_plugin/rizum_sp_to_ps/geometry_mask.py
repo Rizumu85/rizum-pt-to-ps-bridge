@@ -157,6 +157,11 @@ class GeometryMaskBaker:
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor(255, 255, 255, 255))
+        selection_path = QtGui.QPainterPath()
+        winding_fill = getattr(QtCore.Qt, "WindingFill", None)
+        if winding_fill is None:
+            winding_fill = QtCore.Qt.FillRule.WindingFill
+        selection_path.setFillRule(winding_fill)
 
         tile_u = int(tile["u"])
         tile_v = int(tile["v"])
@@ -177,8 +182,13 @@ class GeometryMaskBaker:
                     for u, v in uvs
                 ]
             )
-            painter.drawPolygon(polygon)
+            # Painter Geometry Masks select mesh regions, not individual UV
+            # faces. Filling one combined path keeps shared triangle edges from
+            # being antialiased against black and appearing as a wireframe.
+            selection_path.addPolygon(polygon)
+            selection_path.closeSubpath()
             face_count += 1
+        painter.drawPath(selection_path)
         painter.end()
 
         buffer = QtCore.QBuffer()
