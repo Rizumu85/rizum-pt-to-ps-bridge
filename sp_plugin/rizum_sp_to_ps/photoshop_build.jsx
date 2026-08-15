@@ -112,8 +112,11 @@
             DocumentFill.TRANSPARENT
         );
         advanceImportProgress(progress, progressState, "Created " + documentName);
-        var placeholderName = "__rizum_placeholder_" + new Date().getTime() + "__";
-        document.activeLayer.name = placeholderName;
+        var buildState = {
+            placeholderName: "__rizum_placeholder_" + new Date().getTime() + "__",
+            placeholderRemoved: false
+        };
+        document.activeLayer.name = buildState.placeholderName;
 
         try {
             placeNodes(
@@ -122,11 +125,12 @@
                 document,
                 request.channel,
                 progress,
-                progressState
+                progressState,
+                buildState
             );
 
-            if (document.layers.length > 1) {
-                deleteLayerByName(document, placeholderName);
+            if (!buildState.placeholderRemoved) {
+                throw new Error("Photoshop build did not replace its initial layer");
             }
             // Placed PNGs stay as smart objects during assembly so Photoshop
             // performs one rasterization pass instead of one pass per asset.
@@ -146,7 +150,15 @@
         }
     }
 
-    function placeNodes(nodes, document, parent, channel, progress, progressState) {
+    function placeNodes(
+        nodes,
+        document,
+        parent,
+        channel,
+        progress,
+        progressState,
+        buildState
+    ) {
         for (var index = nodes.length - 1; index >= 0; index -= 1) {
             placeNode(
                 nodes[index],
@@ -154,12 +166,21 @@
                 parent,
                 channel,
                 progress,
-                progressState
+                progressState,
+                buildState
             );
         }
     }
 
-    function placeNode(node, document, parent, channel, progress, progressState) {
+    function placeNode(
+        node,
+        document,
+        parent,
+        channel,
+        progress,
+        progressState,
+        buildState
+    ) {
         if (!node) {
             return null;
         }
@@ -167,6 +188,7 @@
         var placed = null;
         if (node.asset && node.asset.path) {
             placed = placePngLayer(node.asset.path, document, parent);
+            removeBuildPlaceholder(document, buildState);
             advanceImportProgress(
                 progress,
                 progressState,
@@ -174,13 +196,15 @@
             );
         } else if (hasBuildableChildren(node)) {
             placed = parent.layerSets.add();
+            removeBuildPlaceholder(document, buildState);
             placeNodes(
                 node.children || [],
                 document,
                 placed,
                 channel,
                 progress,
-                progressState
+                progressState,
+                buildState
             );
         } else {
             return null;
@@ -552,16 +576,25 @@
         app.activeDocument.activeLayer = layer;
     }
 
-    function deleteLayerByName(document, name) {
+    function removeBuildPlaceholder(document, state) {
+        if (state.placeholderRemoved) {
+            return;
+        }
         app.activeDocument = document;
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putName(charIDToTypeID("Lyr "), name);
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        // Direct Place can invalidate old DOM layer handles. Deleting the
-        // uniquely named placeholder through Action Manager avoids the hidden
-        // Select performed by ArtLayer.remove() on that stale handle.
-        executeAction(charIDToTypeID("Dlt "), descriptor, DialogModes.NO);
+        for (var index = 0; index < document.layers.length; index += 1) {
+            var candidate = document.layers[index];
+            if (candidate.name !== state.placeholderName) {
+                continue;
+            }
+            // Remove the initial layer as soon as the first real node exists.
+            // Direct Place invalidates long-lived DOM handles, so postponing
+            // this cleanup until a large import finishes is not reliable.
+            document.activeLayer = candidate;
+            candidate.remove();
+            state.placeholderRemoved = true;
+            return;
+        }
+        throw new Error("Photoshop build placeholder layer was not found");
     }
 
     function savePsd(document, path) {

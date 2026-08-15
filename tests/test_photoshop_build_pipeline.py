@@ -26,9 +26,18 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertEqual(self.source.count("rasterizeAllLayers()"), 1)
 
     def test_default_layer_is_deleted_without_a_stale_dom_handle(self):
-        self.assertIn('reference.putName(charIDToTypeID("Lyr "), name)', self.source)
-        self.assertIn('executeAction(charIDToTypeID("Dlt ")', self.source)
-        self.assertIn("deleteLayerByName(document, placeholderName)", self.source)
+        place_node = self.source[
+            self.source.index("function placeNode") :
+            self.source.index("function countImportUnits")
+        ]
+        self.assertIn("removeBuildPlaceholder(document, buildState)", self.source)
+        self.assertIn("document.activeLayer = candidate", self.source)
+        self.assertIn("candidate.remove()", self.source)
+        self.assertLess(
+            place_node.index("removeBuildPlaceholder(document, buildState)"),
+            place_node.index("advanceImportProgress("),
+        )
+        self.assertNotIn('executeAction(charIDToTypeID("Dlt ")', self.source)
 
     def test_all_documents_import_before_the_save_phase(self):
         import_complete = self.source.index("result.timings.import_ms")
