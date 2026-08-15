@@ -437,7 +437,7 @@ def _build_export_requests(modules, settings):
                             "uv_tile": uv_tile,
                             "normal_map_format": settings.get("normal_map_format"),
                             "baseline_cache_key": None,
-                            "layers": deepcopy(layer_records),
+                            "layers": _layers_for_uv_tile(layer_records, uv_tile),
                         }
                     )
 
@@ -514,6 +514,8 @@ def _node_record(node, channel_types, settings):
         record["active_channels"] = active_channels
     if hasattr(node, "has_mask"):
         record.update(_mask_record(node))
+    if hasattr(node, "get_geometry_mask"):
+        record["geometry_mask"] = _geometry_mask_record(node)
     if hasattr(node, "sub_layers"):
         record["children"] = [
             _node_record(child, channel_types, settings)
@@ -543,6 +545,58 @@ def _mask_record(node):
         record["mask_enabled"] = False
         record["mask_background"] = None
     return record
+
+
+def _geometry_mask_record(node):
+    params = _call_or_attr(node, "get_geometry_mask")
+    inclusion_list = bool(getattr(params, "inclusion_list", True))
+    if hasattr(params, "uv_tiles"):
+        return {
+            "mode": "uv_tile",
+            "inclusion_list": inclusion_list,
+            "uv_tiles": [
+                {
+                    "u": int(tile.u),
+                    "v": int(tile.v),
+                    "name": str(getattr(tile, "name", "")),
+                }
+                for tile in params.uv_tiles
+            ],
+        }
+    return {
+        "mode": "mesh",
+        "inclusion_list": inclusion_list,
+        "meshes": [str(mesh) for mesh in getattr(params, "meshes", [])],
+    }
+
+
+def _layers_for_uv_tile(layer_records, uv_tile):
+    layers = deepcopy(layer_records)
+    return _filter_nodes_for_uv_tile(layers, uv_tile)
+
+
+def _filter_nodes_for_uv_tile(nodes, uv_tile):
+    kept = []
+    tile_key = (int(uv_tile["u"]), int(uv_tile["v"]))
+    for node in nodes:
+        geometry_mask = node.get("geometry_mask") or {}
+        if geometry_mask.get("mode") == "uv_tile":
+            listed = {
+                (int(tile["u"]), int(tile["v"]))
+                for tile in geometry_mask.get("uv_tiles", [])
+            }
+            is_enabled = tile_key in listed
+            if not geometry_mask.get("inclusion_list", True):
+                is_enabled = not is_enabled
+            if not is_enabled:
+                continue
+
+        node["children"] = _filter_nodes_for_uv_tile(
+            node.get("children", []),
+            uv_tile,
+        )
+        kept.append(node)
+    return kept
 
 
 def _blend_modes(node, channel_types):
