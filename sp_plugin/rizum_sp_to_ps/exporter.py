@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bridge, geometry_mask, pixel_export
+from . import bridge, export_naming, geometry_mask, pixel_export
 from .blend_map import decide_node_blending
 from .udim import uv_to_udim
 
@@ -470,6 +470,7 @@ def validate_request_preview(request):
 
 def _load_painter_modules():
     try:
+        import substance_painter.export as painter_export
         import substance_painter.layerstack as layerstack
         import substance_painter.project as project
         import substance_painter.textureset as textureset
@@ -479,6 +480,7 @@ def _load_painter_modules():
         ) from exc
 
     return {
+        "export": painter_export,
         "layerstack": layerstack,
         "project": project,
         "textureset": textureset,
@@ -491,6 +493,9 @@ def _build_export_requests(modules, settings):
     project = modules["project"]
 
     project_info = _project_info(project)
+    preset_name, project_preset = export_naming.load_project_preset(
+        modules.get("export")
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
     requests = []
 
@@ -507,6 +512,7 @@ def _build_export_requests(modules, settings):
                 continue
 
             channels = _call_or_attr(stack, "all_channels", {})
+            output_maps = export_naming.list_output_maps(project_preset, stack)
             used_identifiers = _used_channel_identifier_set(
                 texture_set_name,
                 stack_name,
@@ -530,8 +536,7 @@ def _build_export_requests(modules, settings):
 
                 is_color = _call_or_attr(channel, "is_color", False)
                 for uv_tile in uv_tiles:
-                    requests.append(
-                        {
+                    request = {
                             "schema_version": SCHEMA_VERSION,
                             "request_type": "preview",
                             "generated_at": generated_at,
@@ -568,7 +573,13 @@ def _build_export_requests(modules, settings):
                                 channel_name,
                             ),
                         }
+                    request["output_naming"] = export_naming.resolve_output_naming(
+                        request,
+                        preset_name,
+                        output_maps,
+                        mesh_path=project_info.get("mesh_path"),
                     )
+                    requests.append(request)
 
     return requests
 
@@ -578,6 +589,7 @@ def _project_info(project):
     return {
         "name": _call_or_attr(project, "name"),
         "path": _call_or_attr(project, "file_path"),
+        "mesh_path": _call_or_attr(project, "last_imported_mesh_path"),
         "uuid": str(uuid) if uuid is not None else None,
     }
 
@@ -1033,17 +1045,22 @@ def _matches_filter(value, accepted_values):
 
 
 def _preview_filename(request, index):
-    parts = _name_parts(request, index)
-    return "_".join(parts) + ".build_request.preview.json"
+    return f"{_bundle_name(request, index)}.build_request.preview.json"
 
 
 def _bundle_name(request, index):
+    output_stem = (request.get("output_naming") or {}).get("stem")
+    if output_stem:
+        return f"{index:04d}_{output_stem}"
     return "_".join(_name_parts(request, index))
 
 
 def _psd_path(request, bundle_path, settings):
     if settings.get("psd_file"):
         return Path(settings["psd_file"])
+    output_stem = (request.get("output_naming") or {}).get("stem")
+    if output_stem:
+        return bundle_path / f"{output_stem}.psd"
     return bundle_path / f"{_bundle_name(request, 0)[5:]}.psd"
 
 

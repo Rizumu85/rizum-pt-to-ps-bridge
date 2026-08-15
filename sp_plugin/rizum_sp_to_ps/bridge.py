@@ -45,6 +45,14 @@ def export_project_path():
     return _evaluate_json("alg.mapexport.exportPath()")
 
 
+def project_export_preset():
+    """Return the export preset currently stored on the Painter project."""
+    # Python can enumerate presets but cannot read the project's selected one;
+    # keep this small JS query as the source of truth instead of maintaining a
+    # second plugin-specific naming choice.
+    return _evaluate_json("alg.mapexport.getProjectExportPreset()")
+
+
 def used_channel_identifiers(texture_set_name, stack_name=""):
     """Return JS mapexport channel identifiers used by one texture set stack."""
     stack_path = [str(texture_set_name)]
