@@ -360,22 +360,17 @@
         }
 
         app.activeDocument = targetDocument;
-        var anchor = parent.artLayers.add();
-        targetDocument.activeLayer = anchor;
-        try {
-            placeEmbeddedFile(file);
-            var placed = targetDocument.activeLayer;
-            if (!placed) {
-                throw new Error("Photoshop did not create a placed layer: " + path);
-            }
-            anchor.remove();
-            return placed;
-        } catch (error) {
-            try {
-                anchor.remove();
-            } catch (ignored) {}
-            throw error;
+        placeEmbeddedFile(file);
+        var placed = targetDocument.activeLayer;
+        if (!placed) {
+            throw new Error("Photoshop did not create a placed layer: " + path);
         }
+        // Place Embedded already creates a layer. Moving that layer directly
+        // avoids temporary anchors whose stale DOM handles trigger unavailable
+        // Select commands in current Photoshop builds.
+        placed.move(parent, ElementPlacement.PLACEATBEGINNING);
+        targetDocument.activeLayer = placed;
+        return placed;
     }
 
     function placeEmbeddedFile(file) {

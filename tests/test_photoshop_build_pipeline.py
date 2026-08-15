@@ -18,6 +18,10 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertNotIn("app.open(file)", self.source)
         self.assertNotIn("placed.id", self.source)
         self.assertNotIn("layer.id", self.source)
+        self.assertNotIn("var anchor", self.source)
+        self.assertIn(
+            "placed.move(parent, ElementPlacement.PLACEATBEGINNING)", self.source
+        )
         self.assertEqual(self.source.count("rasterizeAllLayers()"), 1)
 
     def test_all_documents_import_before_the_save_phase(self):
