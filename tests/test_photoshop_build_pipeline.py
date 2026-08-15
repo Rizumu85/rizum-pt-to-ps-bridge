@@ -16,6 +16,8 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
     def test_pngs_are_placed_without_temporary_photoshop_documents(self):
         self.assertIn('executeAction(charIDToTypeID("Plc ")', self.source)
         self.assertNotIn("app.open(file)", self.source)
+        self.assertNotIn("placed.id", self.source)
+        self.assertNotIn("layer.id", self.source)
         self.assertEqual(self.source.count("rasterizeAllLayers()"), 1)
 
     def test_all_documents_import_before_the_save_phase(self):

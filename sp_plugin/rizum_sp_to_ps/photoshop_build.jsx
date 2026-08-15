@@ -365,7 +365,7 @@
         try {
             placeEmbeddedFile(file);
             var placed = targetDocument.activeLayer;
-            if (!placed || placed.id === anchor.id) {
+            if (!placed) {
                 throw new Error("Photoshop did not create a placed layer: " + path);
             }
             anchor.remove();
@@ -552,16 +552,10 @@
     }
 
     function selectLayer(layer) {
-        if (!layer || typeof layer.id === "undefined") {
-            app.activeDocument.activeLayer = layer;
-            return;
-        }
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putIdentifier(charIDToTypeID("Lyr "), layer.id);
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        descriptor.putBoolean(charIDToTypeID("MkVs"), false);
-        executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
+        // Placed smart objects do not expose a reliable DOM `id` in every
+        // Photoshop release; activeLayer assignment avoids the unavailable
+        // Action Manager Get command used to resolve that property.
+        app.activeDocument.activeLayer = layer;
     }
 
     function savePsd(document, path) {
