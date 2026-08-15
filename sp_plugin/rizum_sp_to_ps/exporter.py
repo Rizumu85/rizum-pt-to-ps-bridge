@@ -1080,6 +1080,8 @@ def _annotate_node_assets(
                 "texture_set_original": request.get("texture_set_original"),
                 "uv_tile": deepcopy(request["uv_tile"]),
                 "resolution": list(request["export_settings"]["resolution"]),
+                "padding": request["export_settings"]["padding"],
+                "dilation": int(request["export_settings"]["dilation"]),
             }
         )
 

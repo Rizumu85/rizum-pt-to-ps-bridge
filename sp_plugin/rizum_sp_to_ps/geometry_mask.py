@@ -35,6 +35,8 @@ class GeometryMaskBaker:
         width, height = [int(value) for value in asset["resolution"]]
         tile = asset["uv_tile"]
         mesh_names = tuple(sorted(str(name) for name in asset["enabled_meshes"]))
+        padding = str(asset.get("padding") or "Transparent")
+        dilation = max(0, int(asset.get("dilation") or 0))
         cache_key = (
             str(asset.get("texture_set") or ""),
             str(asset.get("texture_set_original") or ""),
@@ -43,6 +45,8 @@ class GeometryMaskBaker:
             int(tile["v"]),
             width,
             height,
+            padding.casefold(),
+            dilation,
         )
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +81,8 @@ class GeometryMaskBaker:
             tile,
             width,
             height,
+            padding=padding,
+            dilation=dilation,
         )
         output.write_bytes(png_bytes)
         self._cache[cache_key] = (png_bytes, matched_names, face_count)
@@ -139,6 +145,8 @@ class GeometryMaskBaker:
         tile,
         width,
         height,
+        padding="Transparent",
+        dilation=0,
     ):
         try:
             from PySide6 import QtCore, QtGui
@@ -151,27 +159,26 @@ class GeometryMaskBaker:
         if image_format is None:
             image_format = QtGui.QImage.Format.Format_ARGB32
         image = QtGui.QImage(width, height, image_format)
-        image.fill(QtGui.QColor(0, 0, 0, 255))
-
-        painter = QtGui.QPainter(image)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QColor(255, 255, 255, 255))
+        black = QtGui.QColor(0, 0, 0, 255)
+        white = QtGui.QColor(255, 255, 255, 255)
         selection_path = QtGui.QPainterPath()
+        exclusion_path = QtGui.QPainterPath()
         winding_fill = getattr(QtCore.Qt, "WindingFill", None)
         if winding_fill is None:
             winding_fill = QtCore.Qt.FillRule.WindingFill
         selection_path.setFillRule(winding_fill)
+        exclusion_path.setFillRule(winding_fill)
 
         tile_u = int(tile["u"])
         tile_v = int(tile["v"])
         face_count = 0
         for names, material_name, uvs in self._faces:
-            if not names.intersection(matched_names):
-                continue
             if matching_materials and material_name not in matching_materials:
                 continue
             if not _face_intersects_tile(uvs, tile_u, tile_v):
+                continue
+            selected = bool(names.intersection(matched_names))
+            if not selected and not matching_materials:
                 continue
             polygon = QtGui.QPolygonF(
                 [
@@ -182,13 +189,36 @@ class GeometryMaskBaker:
                     for u, v in uvs
                 ]
             )
+            target_path = selection_path if selected else exclusion_path
             # Painter Geometry Masks select mesh regions, not individual UV
             # faces. Filling one combined path keeps shared triangle edges from
             # being antialiased against black and appearing as a wireframe.
-            selection_path.addPolygon(polygon)
-            selection_path.closeSubpath()
-            face_count += 1
-        painter.drawPath(selection_path)
+            target_path.addPolygon(polygon)
+            target_path.closeSubpath()
+            if selected:
+                face_count += 1
+
+        padding_mode = str(padding or "Transparent").casefold()
+        if padding_mode == "infinite" and face_count:
+            image.fill(white)
+        else:
+            image.fill(black)
+
+        painter = QtGui.QPainter(image)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        dilation = max(0, int(dilation or 0))
+        if padding_mode != "infinite" and dilation:
+            # The Geometry Mask is generated outside mapexport, so reproduce
+            # the user's payload dilation here instead of silently clipping it
+            # back to the exact UV boundary during PSD mask composition.
+            dilation_pen = QtGui.QPen(white)
+            dilation_pen.setWidthF(float(dilation * 2))
+            painter.strokePath(selection_path, dilation_pen)
+        painter.fillPath(selection_path, white)
+        if matching_materials:
+            # Dilation may enter empty UV space, but it must never enable a mesh
+            # that Painter's Geometry Mask explicitly excludes.
+            painter.fillPath(exclusion_path, black)
         painter.end()
 
         buffer = QtCore.QBuffer()
@@ -208,6 +238,8 @@ class GeometryMaskBaker:
             "available_obj_names": sorted(self._available_names),
             "available_obj_materials": sorted(self._available_materials),
             "rasterized_faces": int(face_count),
+            "padding": str(asset.get("padding") or "Transparent"),
+            "dilation": max(0, int(asset.get("dilation") or 0)),
             "cached": bool(cached),
         }
 
