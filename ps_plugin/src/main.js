@@ -2,7 +2,7 @@
 
 const { entrypoints } = require("uxp");
 
-const PLUGIN_VERSION = "0.1.62";
+const PLUGIN_VERSION = "0.1.64";
 
 console.log(`[Rizum] main.js loaded ${PLUGIN_VERSION}`);
 scheduleStartupRender();

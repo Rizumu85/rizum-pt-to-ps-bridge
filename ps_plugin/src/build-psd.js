@@ -227,7 +227,32 @@ function validateBuildRequest(request) {
   if (!Array.isArray(request.layers)) {
     throw new Error("build_request.json field layers must be an array");
   }
+  resolvePsdBitDepth(request);
   validateColorManagement(request.color_management);
+}
+
+function resolvePsdBitDepth(request) {
+  const bitDepth = Number(
+    request && request.export_settings && request.export_settings.bit_depth
+  );
+  if (bitDepth !== 8 && bitDepth !== 16) {
+    throw new Error(`PSD bit depth must be 8 or 16, got: ${bitDepth}`);
+  }
+  return bitDepth;
+}
+
+function photoshopBitDepth(bitDepth, constants) {
+  return bitDepth === 16
+    ? constants.BitsPerChannelType.SIXTEEN
+    : constants.BitsPerChannelType.EIGHT;
+}
+
+function verifyDocumentBitDepth(document, bitDepth, constants) {
+  // Create at the final depth so placed 16-bit PNGs never pass through an
+  // 8-bit document and lose precision before the PSD is saved.
+  if (document.bitsPerChannel !== photoshopBitDepth(bitDepth, constants)) {
+    throw new Error("Photoshop created the PSD at the wrong bit depth");
+  }
 }
 
 function validateColorManagement(policy) {
@@ -340,6 +365,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
   const size = getRequestResolution(request);
   const documentName = makeDocumentName(request);
   const colorPolicy = request.color_management;
+  const psdBitDepth = resolvePsdBitDepth(request);
   const buildItems = topLevelBuildItems(request);
   const unplacedNodes = collectUnplacedNodes(request, buildItems);
   const build = {
@@ -364,6 +390,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     sidecarWritten: false,
     sidecarError: null,
     colorManagement: colorPolicy,
+    bitDepth: psdBitDepth,
     placementErrors: [],
     appliedMaskCount: 0,
     appliedMasks: [],
@@ -385,6 +412,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
       width: size.width,
       height: size.height,
       resolution: build.resolution,
+      depth: psdBitDepth,
       mode: "RGBColorMode",
       fill: "transparent"
     };
@@ -392,6 +420,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
       documentOptions.profile = colorPolicy.photoshop_profile;
     }
     const document = await app.createDocument(documentOptions);
+    verifyDocumentBitDepth(document, psdBitDepth, constants);
     if (colorPolicy.encoding === "raw") {
       document.colorProfileType = constants.ColorProfileType.NONE;
     }
@@ -1003,7 +1032,7 @@ function loadPixelHashModule() {
 
 function buildSidecarPayload(request, build) {
   return {
-    rizum_version: "0.1.59",
+    rizum_version: "0.1.64",
     schema_version: 1,
     created_at: new Date().toISOString(),
     build_request_file: request.build_request_file || null,
@@ -1026,7 +1055,8 @@ function buildSidecarPayload(request, build) {
       name: build.documentName,
       width: build.width,
       height: build.height,
-      resolution: build.resolution
+      resolution: build.resolution,
+      bit_depth: build.bitDepth
     },
     layers: [
       ...build.placedGroups.map(sidecarGroupRecord),
