@@ -212,9 +212,14 @@ def write_build_bundles(
             build_request = build_request_from_preview(request, bundle_path, settings)
             build_request["assets_exported"] = bool(export_pngs)
             if export_pngs:
+                request_progress = _scope_request_progress(
+                    progress_callback,
+                    index,
+                    total,
+                )
                 export_request_assets(
                     build_request,
-                    progress_callback=progress_callback,
+                    progress_callback=request_progress,
                     progress_prefix=f"{index} of {total}",
                     geometry_baker=geometry_baker,
                     node_exporter=node_exporter,
@@ -886,6 +891,26 @@ def _notify_progress(callback, **payload):
         return
     if callback(payload) is False:
         raise ExportCancelled("Export cancelled by user.")
+
+
+def _scope_request_progress(callback, request_index, request_total):
+    if callback is None:
+        return None
+
+    def forward(payload):
+        event = dict(payload)
+        local_total = int(event.get("total") or 0)
+        if event.get("stage") != "heartbeat" and local_total > 0:
+            scale = 1000
+            local_value = max(0, min(int(event.get("value") or 0), local_total))
+            event["value"] = (
+                (int(request_index) - 1) * scale
+                + round((local_value / local_total) * scale)
+            )
+            event["total"] = max(1, int(request_total)) * scale
+        return callback(event)
+
+    return forward
 
 
 def _request_label(request):
