@@ -125,6 +125,28 @@ class EdgeSmoothingTests(unittest.TestCase):
         self.assertEqual(result["mask_assets"], 1)
         self.assertEqual(result["changed_pixels"], 6)
 
+    def test_smoothing_continues_the_existing_export_progress_range(self):
+        request = {
+            "channel_identifier": "BaseColor",
+            "layers": [{"asset": {"path": "layer.png", "channel": "BaseColor"}}],
+        }
+        events = []
+
+        with mock.patch.object(
+            edge_smoothing,
+            "smooth_png",
+            return_value={"changed_pixels": 0},
+        ):
+            _smooth_exported_assets(
+                request,
+                progress_callback=lambda event: events.append(event),
+                progress_offset=3,
+                progress_total=4,
+            )
+
+        self.assertEqual([event["value"] for event in events], [3, 4])
+        self.assertEqual({event["total"] for event in events}, {4})
+
 
 if __name__ == "__main__":
     unittest.main()

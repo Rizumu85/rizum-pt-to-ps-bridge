@@ -83,7 +83,13 @@
         }
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
-        writeResult(resultPath, exportListPath, result);
+        if (result.errors.length > 0) {
+            writeResult(resultPath, exportListPath, result);
+        } else {
+            // PSDs live beside the temporary bundle folders, so a fully
+            // successful build can leave the user's export directory PSD-only.
+            cleanupSuccessfulExport(exportListPath, requestPaths, resultPath);
+        }
     }
 
     if (result.errors.length > 0) {
@@ -696,6 +702,47 @@
             "}\n"
         );
         file.close();
+    }
+
+    function cleanupSuccessfulExport(exportListPath, requestPaths, resultPath) {
+        var outputFolder = File(exportListPath).parent;
+        var outputKey = String(outputFolder.fsName).toLowerCase();
+        var removedFolders = {};
+        for (var index = 0; index < requestPaths.length; index += 1) {
+            var bundle = File(requestPaths[index]).parent;
+            var bundleKey = String(bundle.fsName).toLowerCase();
+            if (bundleKey === outputKey || removedFolders[bundleKey]) {
+                continue;
+            }
+            removeFolderTree(bundle);
+            removedFolders[bundleKey] = true;
+        }
+        removeFileIfPresent(File(exportListPath));
+        removeFileIfPresent(File(resultPath));
+        if ($.fileName) {
+            removeFileIfPresent(File($.fileName));
+        }
+    }
+
+    function removeFolderTree(folder) {
+        if (!folder || !folder.exists) {
+            return;
+        }
+        var entries = folder.getFiles();
+        for (var index = 0; index < entries.length; index += 1) {
+            if (entries[index] instanceof Folder) {
+                removeFolderTree(entries[index]);
+            } else {
+                removeFileIfPresent(entries[index]);
+            }
+        }
+        folder.remove();
+    }
+
+    function removeFileIfPresent(file) {
+        if (file && file.exists) {
+            file.remove();
+        }
     }
 
     function jsonQuote(value) {

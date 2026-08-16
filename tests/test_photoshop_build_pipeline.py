@@ -57,6 +57,24 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertLess(builder.index("placeNodes("), builder.index("placePngLayer("))
         self.assertLess(builder.index("placePngLayer("), builder.index("rasterizeAllLayers()"))
 
+    def test_successful_build_removes_temporary_export_artifacts(self):
+        finally_start = self.source.index("} finally {")
+        finally_block = self.source[
+            finally_start : self.source.index(
+                "if (result.errors.length > 0) {\n        alert",
+                finally_start,
+            )
+        ]
+        cleanup = self.source[
+            self.source.index("function cleanupSuccessfulExport") :
+            self.source.index("function jsonQuote")
+        ]
+
+        self.assertIn("cleanupSuccessfulExport", finally_block)
+        self.assertIn("removeFolderTree(bundle)", cleanup)
+        self.assertIn("removeFileIfPresent(File(exportListPath))", cleanup)
+        self.assertIn("removeFileIfPresent(File($.fileName))", cleanup)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -131,9 +131,11 @@ class ExportNamingTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as directory:
-            request = build_request_from_preview(preview, Path(directory))
+            bundle = Path(directory) / "0001_T_Hero_M_body_D"
+            request = build_request_from_preview(preview, bundle)
 
         self.assertEqual(Path(request["psd_file"]).name, "T_Hero_M_body_D.psd")
+        self.assertEqual(Path(request["psd_file"]).parent, Path(directory))
 
 
 if __name__ == "__main__":

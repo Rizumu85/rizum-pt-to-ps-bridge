@@ -296,10 +296,24 @@ def export_request_assets(
     request_channel = build_request["channel_identifier"]
     assets = list(_iter_assets(build_request["layers"], request_channel))
     layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
-    initial_mask_count = sum(
-        asset["kind"] in {"mask", "geometry_mask"} for asset in assets
+    initial_mask_assets = [asset for asset in assets if asset["kind"] == "mask"]
+    initial_geometry_assets = [
+        asset for asset in assets if asset["kind"] == "geometry_mask"
+    ]
+    uv_map_asset = build_request.get("uv_map_asset")
+    export_work_total = (
+        len(layer_assets)
+        + len(initial_mask_assets)
+        + len(initial_geometry_assets)
+        + int(bool(uv_map_asset))
     )
-    total = len(layer_assets) + initial_mask_count
+    smoothing_work_total = len(layer_assets) + len(
+        {
+            int(asset["uid"])
+            for asset in (*initial_mask_assets, *initial_geometry_assets)
+        }
+    )
+    total = export_work_total + smoothing_work_total
     completed = 0
     for asset in layer_assets:
         index = completed + 1
@@ -310,7 +324,10 @@ def export_request_assets(
             stage="assets",
             value=index - 1,
             total=total,
-            text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
+            text=(
+                f"{prefix}exporting PNG {index} of {export_work_total}: "
+                f"{layer_label}"
+            ),
         )
         if pixel_export.export_layer_png(
             asset,
@@ -327,7 +344,10 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=f"{prefix}finished PNG {index} of {total}: {layer_label}",
+            text=(
+                f"{prefix}finished PNG {index} of {export_work_total}: "
+                f"{layer_label}"
+            ),
         )
 
     # Re-plan masks after empty channel layers are pruned so their now-orphaned
@@ -337,7 +357,7 @@ def export_request_assets(
         for asset in _iter_assets(build_request["layers"], request_channel)
         if asset["kind"] == "mask"
     ]
-    total = len(layer_assets) + len(mask_assets)
+    completed += len(initial_mask_assets) - len(mask_assets)
     for asset in mask_assets:
         index = completed + 1
         layer_label = asset.get("label") or asset["uid_hex"]
@@ -347,7 +367,10 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
+            text=(
+                f"{prefix}exporting PNG {index} of {export_work_total}: "
+                f"{layer_label}"
+            ),
         )
         pixel_export.export_mask_png(
             asset,
@@ -361,7 +384,10 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=f"{prefix}finished PNG {index} of {total}: {layer_label}",
+            text=(
+                f"{prefix}finished PNG {index} of {export_work_total}: "
+                f"{layer_label}"
+            ),
         )
 
     geometry_assets = [
@@ -369,8 +395,7 @@ def export_request_assets(
         for asset in _iter_assets(build_request["layers"], request_channel)
         if asset["kind"] == "geometry_mask"
     ]
-    uv_map_asset = build_request.get("uv_map_asset")
-    total += len(geometry_assets) + int(bool(uv_map_asset))
+    completed += len(initial_geometry_assets) - len(geometry_assets)
     owns_baker = geometry_baker is None
     if owns_baker:
         geometry_baker = geometry_mask.GeometryMaskBaker(
@@ -393,7 +418,10 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}exporting Geometry Mask {index} of {total}: {layer_label}",
+                text=(
+                    f"{prefix}exporting Geometry Mask {index} of "
+                    f"{export_work_total}: {layer_label}"
+                ),
             )
             try:
                 diagnostics.append(geometry_baker.bake(asset, asset["path"]))
@@ -410,7 +438,10 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}finished Geometry Mask {index} of {total}: {layer_label}",
+                text=(
+                    f"{prefix}finished Geometry Mask {index} of "
+                    f"{export_work_total}: {layer_label}"
+                ),
             )
         if diagnostics:
             build_request["geometry_mask_diagnostics"] = diagnostics
@@ -423,7 +454,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}exporting UV Map {index} of {total}",
+                text=f"{prefix}exporting UV Map {index} of {export_work_total}",
             )
             try:
                 build_request["uv_map_diagnostics"] = geometry_baker.bake_uv_map(
@@ -444,7 +475,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}finished UV Map {index} of {total}",
+                text=f"{prefix}finished UV Map {index} of {export_work_total}",
             )
     finally:
         if owns_baker:
@@ -456,6 +487,19 @@ def export_request_assets(
         build_request,
         progress_callback=progress_callback,
         progress_prefix=progress_prefix,
+        progress_offset=export_work_total,
+        progress_total=total,
+    )
+    _notify_progress(
+        progress_callback,
+        stage="assets",
+        value=total,
+        total=total,
+        text=(
+            f"{progress_prefix}: export assets complete"
+            if progress_prefix
+            else "Export assets complete"
+        ),
     )
     build_request["empty_layer_assets_removed"] = _count_pruned_assets(
         build_request["layers"]
@@ -1083,8 +1127,8 @@ def _psd_path(request, bundle_path, settings):
         return Path(settings["psd_file"])
     output_stem = (request.get("output_naming") or {}).get("stem")
     if output_stem:
-        return bundle_path / f"{output_stem}.psd"
-    return bundle_path / f"{_bundle_name(request, 0)[5:]}.psd"
+        return bundle_path.parent / f"{output_stem}.psd"
+    return bundle_path.parent / f"{_bundle_name(request, 0)[5:]}.psd"
 
 
 def _name_parts(request, index):
@@ -1298,7 +1342,13 @@ def _count_layer_assets(nodes):
     return total
 
 
-def _smooth_exported_assets(build_request, progress_callback=None, progress_prefix=""):
+def _smooth_exported_assets(
+    build_request,
+    progress_callback=None,
+    progress_prefix="",
+    progress_offset=0,
+    progress_total=None,
+):
     assets = [
         asset
         for asset in _iter_assets(
@@ -1310,6 +1360,7 @@ def _smooth_exported_assets(build_request, progress_callback=None, progress_pref
     changed_pixels = 0
     layer_count = 0
     mask_count = 0
+    progress_total = int(progress_total or (progress_offset + len(assets)))
     for index, asset in enumerate(assets, start=1):
         label = (
             asset.get("label")
@@ -1320,8 +1371,8 @@ def _smooth_exported_assets(build_request, progress_callback=None, progress_pref
         _notify_progress(
             progress_callback,
             stage="smoothing",
-            value=index - 1,
-            total=len(assets),
+            value=progress_offset + index - 1,
+            total=progress_total,
             text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
         )
         result = edge_smoothing.smooth_png(asset["path"])
@@ -1333,8 +1384,8 @@ def _smooth_exported_assets(build_request, progress_callback=None, progress_pref
         _notify_progress(
             progress_callback,
             stage="smoothing",
-            value=index,
-            total=len(assets),
+            value=progress_offset + index,
+            total=progress_total,
             text=f"{prefix}smoothed PNG {index} of {len(assets)}: {label}",
         )
 
