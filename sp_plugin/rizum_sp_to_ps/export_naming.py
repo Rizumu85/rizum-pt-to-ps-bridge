@@ -158,7 +158,9 @@ def render_output_pattern(pattern, request, mesh_path=None):
 
     text = _strip_known_extension(text)
     text = _safe_output_stem(text)
-    if uses_udim and "$udim" not in str(pattern).lower() and udim:
+    pattern_key = str(pattern).lower()
+    has_tile_token = "$udim" in pattern_key or "$uvtilename" in pattern_key
+    if uses_udim and not has_tile_token and udim:
         # A multi-tile preset without $udim would overwrite sibling PSDs, so
         # append the tile while preserving the user's naming pattern.
         text = f"{text}.{udim}"

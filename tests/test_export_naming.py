@@ -110,6 +110,17 @@ class ExportNamingTests(unittest.TestCase):
 
         self.assertEqual(stem, "T_M_body_BaseColor.1002")
 
+    def test_uv_tile_name_token_already_makes_a_udim_name_unique(self):
+        request = _request(is_udim=True, udim=1002)
+        request["uv_tile"]["name"] = "Sleeve"
+
+        stem = export_naming.render_output_pattern(
+            "T_$textureSet_$uvTileName_BaseColor",
+            request,
+        )
+
+        self.assertEqual(stem, "T_M_body_Sleeve_BaseColor")
+
     def test_build_request_uses_resolved_project_preset_name_for_psd(self):
         preview = _request()
         preview["output_naming"] = {

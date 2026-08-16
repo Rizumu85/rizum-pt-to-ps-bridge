@@ -1,60 +1,33 @@
-"""Rendered pixel export adapter for Painter's legacy JS map exporter."""
+"""Rendered pixel export adapter for Painter layer-stack nodes."""
 
 from __future__ import annotations
 
-from . import bridge
+def export_layer_png(
+    asset,
+    export_settings,
+    channel_name,
+    uv_tile,
+    node_exporter,
+):
+    """Export one layer tile and report whether its payload is transparent."""
+    node_exporter.export_layer(
+        asset,
+        export_settings,
+        channel_name,
+        uv_tile,
+    )
+    return png_is_fully_transparent(asset["path"])
 
 
-def export_layer_png(asset, export_settings, channel_candidates):
-    """Export one layer and report whether every successful result was transparent."""
-    wrote_transparent = False
-    errors = []
-    for channel in channel_candidates:
-        try:
-            bridge.export_layer_png_raw(
-                asset["uid"],
-                channel,
-                asset["path"],
-                padding=export_settings["padding"],
-                dilation=export_settings["dilation"],
-                resolution=export_settings["resolution"],
-                bit_depth=export_settings["bit_depth"],
-                keep_alpha=export_settings["keep_alpha"],
-            )
-        except Exception as exc:  # noqa: BLE001 - alternate IDs are intentional.
-            errors.append(f"{channel}: {type(exc).__name__}: {exc}")
-            continue
-
-        if not png_is_fully_transparent(asset["path"]):
-            return False
-        wrote_transparent = True
-
-    if wrote_transparent:
-        return True
-    if errors:
-        raise RuntimeError("; ".join(errors))
-    return False
-
-
-def export_mask_png(asset, export_settings):
+def export_mask_png(asset, export_settings, uv_tile, node_exporter):
     """Export one lossless rendered layer or folder mask."""
     try:
-        bridge.export_mask_png(
-            asset["uid"],
-            asset["path"],
-            padding=export_settings["padding"],
-            dilation=export_settings["dilation"],
-            resolution=export_settings["resolution"],
-            bit_depth=export_settings["bit_depth"],
-            keep_alpha=export_settings["keep_alpha"],
-        )
+        node_exporter.export_mask(asset, export_settings, uv_tile)
     except Exception as exc:
-        # Alpha reconstruction is deliberately not a fallback: it loses folder
-        # masks and grayscale values, which silently changes the authored result.
         label = asset.get("label") or asset.get("uid_hex") or asset["uid"]
         raise RuntimeError(
             "Painter could not export the rendered mask for "
-            f"{label}. Painter 12.1.2 or newer is required. Host error: {exc}"
+            f"{label}. Host error: {exc}"
         ) from exc
 
 

@@ -8,7 +8,14 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import bridge, edge_smoothing, export_naming, geometry_mask, pixel_export
+from . import (
+    bridge,
+    edge_smoothing,
+    export_naming,
+    geometry_mask,
+    pixel_export,
+    stack_node_export,
+)
 from .blend_map import decide_node_blending
 from .udim import uv_to_udim
 
@@ -33,8 +40,8 @@ class ExportCancelled(RuntimeError):
 def build_export_requests(settings=None):
     """Build read-only Photoshop request previews from the active project.
 
-    M1 only emits metadata. PNG export via ``alg.mapexport.save`` is introduced
-    after this traversal contract is stable.
+    Request generation remains read-only; node rendering happens after the
+    complete bundle plan is known.
     """
     settings = settings or {}
     modules = _load_painter_modules()
@@ -187,6 +194,7 @@ def write_build_bundles(
             text="",
         )
     )
+    node_exporter = stack_node_export.StackNodeExporter()
     try:
         for index, request in enumerate(requests, start=1):
             _notify_progress(
@@ -209,6 +217,7 @@ def write_build_bundles(
                     progress_callback=progress_callback,
                     progress_prefix=f"{index} of {total}",
                     geometry_baker=geometry_baker,
+                    node_exporter=node_exporter,
                 )
                 if _count_layer_assets(build_request["layers"]) == 0:
                     shutil.rmtree(bundle_path, ignore_errors=True)
@@ -229,6 +238,7 @@ def write_build_bundles(
                 text=f"Finished {index} of {total}: {_request_label(request)}",
             )
     finally:
+        node_exporter.close()
         geometry_baker.close()
 
     return written
@@ -273,6 +283,7 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
 
 def export_request_assets(
     build_request,
+    node_exporter,
     progress_callback=None,
     progress_prefix="",
     geometry_baker=None,
@@ -283,11 +294,6 @@ def export_request_assets(
 
     export_settings = build_request["export_settings"]
     request_channel = build_request["channel_identifier"]
-    channel_candidates = build_request.get("channel_identifier_candidates") or [
-        request_channel
-    ]
-    if not str(build_request.get("channel") or "").startswith("User"):
-        channel_candidates = [request_channel]
     assets = list(_iter_assets(build_request["layers"], request_channel))
     layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
     initial_mask_count = sum(
@@ -306,8 +312,13 @@ def export_request_assets(
             total=total,
             text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
         )
-        candidates = _dedupe_text([asset["channel"], *channel_candidates])
-        if pixel_export.export_layer_png(asset, export_settings, candidates):
+        if pixel_export.export_layer_png(
+            asset,
+            export_settings,
+            build_request["channel"],
+            build_request["uv_tile"],
+            node_exporter,
+        ):
             _remove_asset_by_path(build_request["layers"], asset["path"])
             _remove_file_if_exists(asset["path"])
         completed += 1
@@ -338,7 +349,12 @@ def export_request_assets(
             total=total,
             text=f"{prefix}exporting PNG {index} of {total}: {layer_label}",
         )
-        pixel_export.export_mask_png(asset, export_settings)
+        pixel_export.export_mask_png(
+            asset,
+            export_settings,
+            build_request["uv_tile"],
+            node_exporter,
+        )
         completed += 1
         _notify_progress(
             progress_callback,

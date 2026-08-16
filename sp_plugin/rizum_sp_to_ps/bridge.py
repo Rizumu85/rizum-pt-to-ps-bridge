@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 CHANNEL_IDENTIFIERS = {
     "BaseColor": "basecolor",
@@ -99,81 +98,6 @@ def document_structure_channel_identifiers(texture_set_name, stack_name=""):
     return [str(item) for item in result]
 
 
-def export_layer_png(
-    uid,
-    channel,
-    out_path,
-    *,
-    padding="Infinite",
-    dilation=0,
-    resolution=None,
-    bit_depth=8,
-    keep_alpha=False,
-):
-    """Export one Painter layer/effect/mask contribution to a PNG file."""
-    script = build_mapexport_save_script(
-        uid,
-        channel,
-        out_path,
-        padding=padding,
-        dilation=dilation,
-        resolution=resolution,
-        bit_depth=bit_depth,
-        keep_alpha=keep_alpha,
-    )
-    return _evaluate_json(script)
-
-
-def export_layer_png_raw(
-    uid,
-    raw_channel,
-    out_path,
-    *,
-    padding="Infinite",
-    dilation=0,
-    resolution=None,
-    bit_depth=8,
-    keep_alpha=False,
-):
-    """Export one Painter layer/effect/mask using an exact JS channel string."""
-    script = build_mapexport_save_script_raw(
-        uid,
-        raw_channel,
-        out_path,
-        padding=padding,
-        dilation=dilation,
-        resolution=resolution,
-        bit_depth=bit_depth,
-        keep_alpha=keep_alpha,
-    )
-    return _evaluate_json(script)
-
-
-def export_mask_png(
-    uid,
-    out_path,
-    *,
-    padding="Infinite",
-    dilation=0,
-    resolution=None,
-    bit_depth=8,
-    keep_alpha=False,
-):
-    """Export the rendered Painter mask attached to a layer or folder."""
-    # Painter's Python layerstack API exposes mask structure but not rendered
-    # pixels, so keep this host-specific dependency behind the bridge boundary.
-    return export_layer_png_raw(
-        uid,
-        "mask",
-        out_path,
-        padding=padding,
-        dilation=dilation,
-        resolution=resolution,
-        bit_depth=bit_depth,
-        keep_alpha=keep_alpha,
-    )
-
-
 def channel_identifier(channel_name):
     """Return the legacy JS mapexport channel identifier for a Python name."""
     if channel_name is None:
@@ -186,64 +110,6 @@ def channel_identifier(channel_name):
     if text.startswith("User"):
         return text.lower()
     return text
-
-
-def build_mapexport_save_script(
-    uid,
-    channel,
-    out_path,
-    *,
-    padding="Infinite",
-    dilation=0,
-    resolution=None,
-    bit_depth=8,
-    keep_alpha=False,
-):
-    """Build the JS source for `alg.mapexport.save` without executing it."""
-    target = [int(uid), channel_identifier(channel)] if channel else [int(uid)]
-    options = {
-        "padding": padding,
-        "dilation": int(dilation),
-        "bitDepth": int(bit_depth),
-        "keepAlpha": bool(keep_alpha),
-    }
-    if resolution is not None:
-        options["resolution"] = [int(resolution[0]), int(resolution[1])]
-
-    path_text = str(Path(out_path))
-    return (
-        f"alg.mapexport.save({json.dumps(target)}, "
-        f"{json.dumps(path_text)}, {json.dumps(options, sort_keys=True)})"
-    )
-
-
-def build_mapexport_save_script_raw(
-    uid,
-    raw_channel,
-    out_path,
-    *,
-    padding="Infinite",
-    dilation=0,
-    resolution=None,
-    bit_depth=8,
-    keep_alpha=False,
-):
-    """Build `alg.mapexport.save` JS without mapping the channel string."""
-    target = [int(uid), str(raw_channel)] if raw_channel else [int(uid)]
-    options = {
-        "padding": padding,
-        "dilation": int(dilation),
-        "bitDepth": int(bit_depth),
-        "keepAlpha": bool(keep_alpha),
-    }
-    if resolution is not None:
-        options["resolution"] = [int(resolution[0]), int(resolution[1])]
-
-    path_text = str(Path(out_path))
-    return (
-        f"alg.mapexport.save({json.dumps(target)}, "
-        f"{json.dumps(path_text)}, {json.dumps(options, sort_keys=True)})"
-    )
 
 
 def _evaluate_json(script):
