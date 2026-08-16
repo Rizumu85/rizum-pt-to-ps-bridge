@@ -10,10 +10,12 @@ from pathlib import Path
 
 from . import (
     bridge,
+    color_management,
     edge_smoothing,
     export_naming,
     geometry_mask,
     pixel_export,
+    png_color_metadata,
     stack_node_export,
 )
 from .blend_map import decide_node_blending
@@ -263,6 +265,11 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
     request["channel_identifier_candidates"] = _request_channel_identifier_candidates(
         request
     )
+    request["color_management"] = color_management.resolve_policy(
+        channel_role=request.get("channel_role"),
+        channel_format=request.get("channel_format"),
+        is_color=request.get("is_color"),
+    )
     request["export_settings"] = _export_settings(request, settings)
     if settings.get("export_uv_map"):
         request["uv_map_asset"] = {
@@ -465,6 +472,10 @@ def export_request_assets(
                 build_request["uv_map_diagnostics"] = geometry_baker.bake_uv_map(
                     uv_map_asset,
                     uv_map_asset["path"],
+                )
+                build_request["uv_map_color_metadata"] = png_color_metadata.normalize_png(
+                    uv_map_asset["path"],
+                    "raw",
                 )
             except geometry_mask.GeometryMaskExportError as exc:
                 error_path = (
@@ -1385,6 +1396,11 @@ def _smooth_exported_assets(
     changed_pixels = 0
     layer_count = 0
     mask_count = 0
+    metadata_rewrites = 0
+    color_asset_count = 0
+    raw_asset_count = 0
+    color_policy = build_request["color_management"]
+    color_management.validate_policy(color_policy)
     progress_total = int(progress_total or (progress_offset + len(assets)))
     for index, asset in enumerate(assets, start=1):
         label = (
@@ -1401,6 +1417,13 @@ def _smooth_exported_assets(
             text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
         )
         result = edge_smoothing.smooth_png(asset["path"])
+        encoding = color_policy["encoding"] if asset["kind"] == "layer" else "raw"
+        metadata = png_color_metadata.normalize_png(asset["path"], encoding)
+        metadata_rewrites += int(metadata["changed"])
+        if encoding == "srgb":
+            color_asset_count += 1
+        else:
+            raw_asset_count += 1
         changed_pixels += result["changed_pixels"]
         if asset["kind"] == "layer":
             layer_count += 1
@@ -1418,6 +1441,9 @@ def _smooth_exported_assets(
         "algorithm": edge_smoothing.ALGORITHM_ID,
         "layer_assets": layer_count,
         "mask_assets": mask_count,
+        "color_assets": color_asset_count,
+        "raw_assets": raw_asset_count,
+        "color_metadata_rewrites": metadata_rewrites,
         "changed_pixels": changed_pixels,
     }
 
