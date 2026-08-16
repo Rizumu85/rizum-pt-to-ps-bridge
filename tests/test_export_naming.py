@@ -86,6 +86,22 @@ class ExportNamingTests(unittest.TestCase):
 
         self.assertEqual(stem, "Hero_M_body_BaseColor")
 
+    def test_painter_optional_udim_group_is_removed_without_a_tile(self):
+        stem = export_naming.render_output_pattern(
+            "Tex_$project_$textureSet(_$udim)",
+            _request(is_udim=False),
+        )
+
+        self.assertEqual(stem, "Tex_Hero_M_body")
+
+    def test_painter_optional_udim_group_is_unwrapped_with_a_tile(self):
+        stem = export_naming.render_output_pattern(
+            "Tex_$project_$textureSet(_$udim)",
+            _request(is_udim=True, udim=1002),
+        )
+
+        self.assertEqual(stem, "Tex_Hero_M_body_1002")
+
     def test_udim_is_appended_when_project_pattern_omits_it(self):
         stem = export_naming.render_output_pattern(
             "T_$textureSet_BaseColor",

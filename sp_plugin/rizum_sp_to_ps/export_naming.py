@@ -9,6 +9,10 @@ from . import bridge
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _SEPARATOR_RUN = re.compile(r"([._-])\1+")
+_UDIM_OPTIONAL_GROUP = re.compile(
+    r"\(([^()]*(?:\$udim|\$uvTileName)[^()]*)\)",
+    flags=re.IGNORECASE,
+)
 
 
 def load_project_preset(painter_export):
@@ -119,6 +123,7 @@ def render_output_pattern(pattern, request, mesh_path=None):
     text = str(pattern or "")
     uses_udim = bool(request.get("uv_tile", {}).get("is_udim"))
     udim = str(request.get("udim") or request.get("uv_tile", {}).get("udim") or "")
+    text = _resolve_udim_optional_groups(text, uses_udim)
 
     if not uses_udim:
         # Non-UDIM projects should never inherit a synthetic 1001 suffix from
@@ -158,6 +163,15 @@ def render_output_pattern(pattern, request, mesh_path=None):
         # append the tile while preserving the user's naming pattern.
         text = f"{text}.{udim}"
     return text or default_output_stem(request)
+
+
+def _resolve_udim_optional_groups(pattern, uses_udim):
+    # Painter uses parentheses as conditional syntax around UV-tile tokens;
+    # treating them as filename characters creates the literal "(_)" suffix.
+    return _UDIM_OPTIONAL_GROUP.sub(
+        lambda match: match.group(1) if uses_udim else "",
+        str(pattern),
+    )
 
 
 def default_output_stem(request):
