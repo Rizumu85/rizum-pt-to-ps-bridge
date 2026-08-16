@@ -114,14 +114,18 @@
             total: countImportUnits(request.layers || []) + 2 + (hasUvMap ? 1 : 0)
         };
         progress.configureRequest(request, progressState.total);
+        var psdBitDepth = resolvePsdBitDepth(request);
         var document = app.documents.add(
             UnitValue(Number(resolution.width), "px"),
             UnitValue(Number(resolution.height), "px"),
             72,
             documentName,
             NewDocumentMode.RGB,
-            DocumentFill.TRANSPARENT
+            DocumentFill.TRANSPARENT,
+            1.0,
+            photoshopBitDepth(psdBitDepth)
         );
+        verifyDocumentBitDepth(document, psdBitDepth);
         configureDocumentColorManagement(document, request.color_management);
         advanceImportProgress(progress, progressState, "Created " + documentName);
         var buildState = {
@@ -664,6 +668,30 @@
         document.saveAs(File(path), options, false, Extension.LOWERCASE);
     }
 
+    function resolvePsdBitDepth(request) {
+        var value = Number(
+            request && request.export_settings && request.export_settings.bit_depth
+        );
+        if (value !== 8 && value !== 16) {
+            throw new Error("PSD bit depth must be 8 or 16, got: " + value);
+        }
+        return value;
+    }
+
+    function photoshopBitDepth(bitDepth) {
+        return bitDepth === 16
+            ? BitsPerChannelType.SIXTEEN
+            : BitsPerChannelType.EIGHT;
+    }
+
+    function verifyDocumentBitDepth(document, bitDepth) {
+        // Set depth while the document is empty so imported 16-bit PNGs are
+        // never quantized by an intermediate 8-bit Photoshop document.
+        if (document.bitsPerChannel !== photoshopBitDepth(bitDepth)) {
+            throw new Error("Photoshop created the PSD at the wrong bit depth");
+        }
+    }
+
     function validateRequest(request) {
         if (!request || request.request_type !== "build") {
             throw new Error("Expected a Painter build request");
@@ -674,6 +702,7 @@
         if (!request.uv_tile || !request.uv_tile.resolution) {
             throw new Error("Build request has no UV tile resolution");
         }
+        resolvePsdBitDepth(request);
         validateColorManagement(request.color_management);
     }
 

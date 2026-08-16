@@ -54,6 +54,19 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertIn("document.colorProfileType = ColorProfileType.NONE", self.source)
         self.assertIn("document.colorProfileName = expectedProfile", self.source)
 
+    def test_document_is_created_at_the_requested_psd_bit_depth(self):
+        builder = self.source[
+            self.source.index("function buildRequest") :
+            self.source.index("function placeNodes")
+        ]
+        self.assertIn("photoshopBitDepth(psdBitDepth)", builder)
+        self.assertIn("verifyDocumentBitDepth(document, psdBitDepth)", builder)
+        self.assertLess(
+            builder.index("verifyDocumentBitDepth"),
+            builder.index("placeNodes("),
+        )
+        self.assertIn("value !== 8 && value !== 16", self.source)
+
     def test_psd_profile_embedding_follows_the_channel_policy(self):
         save_helper = self.source[
             self.source.index("function savePsd") :
