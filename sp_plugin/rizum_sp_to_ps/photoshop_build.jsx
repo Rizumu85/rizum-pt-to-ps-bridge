@@ -637,11 +637,11 @@
             if (currentProfile.toLowerCase() !== expectedProfile.toLowerCase()) {
                 // Assigning on the empty document fixes interpretation before
                 // Place Embedded can consult the user's working RGB settings.
-                document.colorProfileType = ColorProfileType.CUSTOM;
+                document.colorProfile = ColorProfile.CUSTOM;
                 document.colorProfileName = expectedProfile;
             }
             if (
-                document.colorProfileType === ColorProfileType.NONE ||
+                document.colorProfile === ColorProfile.NONE ||
                 String(document.colorProfileName || "").toLowerCase() !==
                     expectedProfile.toLowerCase()
             ) {
@@ -655,8 +655,8 @@
 
         // Data PSDs remain untagged so normal, scalar, opacity, and mask bytes
         // cannot be gamma-converted by a user's Photoshop color policy.
-        document.colorProfileType = ColorProfileType.NONE;
-        if (document.colorProfileType !== ColorProfileType.NONE) {
+        document.colorProfile = ColorProfile.NONE;
+        if (document.colorProfile !== ColorProfile.NONE) {
             throw new Error("Photoshop could not disable color management for a data PSD");
         }
     }

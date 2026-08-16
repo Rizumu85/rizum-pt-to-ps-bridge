@@ -51,8 +51,11 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
             builder.index("placeNodes("),
         )
         self.assertNotIn("convertProfile", self.source)
-        self.assertIn("document.colorProfileType = ColorProfileType.NONE", self.source)
+        self.assertIn("document.colorProfile = ColorProfile.NONE", self.source)
         self.assertIn("document.colorProfileName = expectedProfile", self.source)
+        # The automated builder runs in ExtendScript, whose color profile API
+        # differs from the similarly named UXP DOM used by the panel builder.
+        self.assertNotIn("ColorProfileType", self.source)
 
     def test_document_is_created_at_the_requested_psd_bit_depth(self):
         builder = self.source[
