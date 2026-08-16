@@ -323,9 +323,9 @@ class GeometryMaskBaker:
 
         painter = QtGui.QPainter(image)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        # A transparent white wireframe remains independent of the exported
-        # channel and gives the user one removable utility layer in Photoshop.
-        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 255))
+        # Keep the guide transparent but use black lines so it remains useful
+        # as the familiar UV reference layer once it reaches Photoshop.
+        pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 255))
         pen.setWidthF(max(1.0, min(width, height) / 2048.0))
         painter.strokePath(coverage_path, pen)
         painter.end()

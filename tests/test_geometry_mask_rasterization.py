@@ -225,6 +225,9 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         self.assertEqual((image.width(), image.height()), (64, 64))
         self.assertEqual(image.dotsPerMeterX(), 2835)
         self.assertGreater(QtGui.qAlpha(image.pixel(32, 51)), 0)
+        self.assertEqual(QtGui.qRed(image.pixel(32, 51)), 0)
+        self.assertEqual(QtGui.qGreen(image.pixel(32, 51)), 0)
+        self.assertEqual(QtGui.qBlue(image.pixel(32, 51)), 0)
         self.assertEqual(QtGui.qAlpha(image.pixel(32, 32)), 0)
         self.assertEqual(QtGui.qAlpha(image.pixel(13, 13)), 0)
 
