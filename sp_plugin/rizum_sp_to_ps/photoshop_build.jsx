@@ -56,7 +56,11 @@
             progress.beginSave(saveIndex, pending.request);
             try {
                 app.activeDocument = pending.document;
-                savePsd(pending.document, pending.request.psd_file);
+                savePsd(
+                    pending.document,
+                    pending.request.psd_file,
+                    pending.request.color_management
+                );
                 result.built.push(pending.request.psd_file);
                 progress.finishSave(
                     saveIndex,
@@ -118,6 +122,7 @@
             NewDocumentMode.RGB,
             DocumentFill.TRANSPARENT
         );
+        configureDocumentColorManagement(document, request.color_management);
         advanceImportProgress(progress, progressState, "Created " + documentName);
         var buildState = {
             placeholderName: "__rizum_placeholder_" + new Date().getTime() + "__",
@@ -620,10 +625,42 @@
         state.placeholderRemoved = true;
     }
 
-    function savePsd(document, path) {
+    function configureDocumentColorManagement(document, policy) {
+        app.activeDocument = document;
+        if (policy.encoding === "srgb") {
+            var expectedProfile = String(policy.photoshop_profile);
+            var currentProfile = String(document.colorProfileName || "");
+            if (currentProfile.toLowerCase() !== expectedProfile.toLowerCase()) {
+                // Assigning on the empty document fixes interpretation before
+                // Place Embedded can consult the user's working RGB settings.
+                document.colorProfileType = ColorProfileType.CUSTOM;
+                document.colorProfileName = expectedProfile;
+            }
+            if (
+                document.colorProfileType === ColorProfileType.NONE ||
+                String(document.colorProfileName || "").toLowerCase() !==
+                    expectedProfile.toLowerCase()
+            ) {
+                throw new Error(
+                    "Photoshop could not assign the requested sRGB profile: " +
+                    expectedProfile
+                );
+            }
+            return;
+        }
+
+        // Data PSDs remain untagged so normal, scalar, opacity, and mask bytes
+        // cannot be gamma-converted by a user's Photoshop color policy.
+        document.colorProfileType = ColorProfileType.NONE;
+        if (document.colorProfileType !== ColorProfileType.NONE) {
+            throw new Error("Photoshop could not disable color management for a data PSD");
+        }
+    }
+
+    function savePsd(document, path, policy) {
         var options = new PhotoshopSaveOptions();
         options.layers = true;
-        options.embedColorProfile = true;
+        options.embedColorProfile = policy.embed_profile === true;
         document.saveAs(File(path), options, false, Extension.LOWERCASE);
     }
 
@@ -637,6 +674,32 @@
         if (!request.uv_tile || !request.uv_tile.resolution) {
             throw new Error("Build request has no UV tile resolution");
         }
+        validateColorManagement(request.color_management);
+    }
+
+    function validateColorManagement(policy) {
+        if (!policy || policy.schema_version !== 1) {
+            throw new Error("Build request has no supported color_management policy");
+        }
+        if (policy.preserve_rgb_numbers !== true) {
+            throw new Error("Color management policy must preserve RGB numbers");
+        }
+        if (policy.encoding === "srgb") {
+            if (
+                policy.photoshop_profile !== "sRGB IEC61966-2.1" ||
+                policy.embed_profile !== true
+            ) {
+                throw new Error("Invalid sRGB color_management policy");
+            }
+            return;
+        }
+        if (policy.encoding === "raw") {
+            if (policy.photoshop_profile !== null || policy.embed_profile !== false) {
+                throw new Error("Invalid raw color_management policy");
+            }
+            return;
+        }
+        throw new Error("Unsupported color_management encoding: " + policy.encoding);
     }
 
     function buildRequestPaths(exportList) {

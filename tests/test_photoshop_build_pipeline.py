@@ -41,6 +41,35 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         save_loop = self.source.index("for (var saveIndex")
         self.assertLess(import_complete, save_loop)
 
+    def test_document_color_policy_is_applied_before_any_png_is_placed(self):
+        builder = self.source[
+            self.source.index("function buildRequest") :
+            self.source.index("function placeNodes")
+        ]
+        self.assertLess(
+            builder.index("configureDocumentColorManagement"),
+            builder.index("placeNodes("),
+        )
+        self.assertNotIn("convertProfile", self.source)
+        self.assertIn("document.colorProfileType = ColorProfileType.NONE", self.source)
+        self.assertIn("document.colorProfileName = expectedProfile", self.source)
+
+    def test_psd_profile_embedding_follows_the_channel_policy(self):
+        save_helper = self.source[
+            self.source.index("function savePsd") :
+            self.source.index("function validateRequest")
+        ]
+        self.assertIn("policy.embed_profile === true", save_helper)
+        self.assertNotIn("options.embedColorProfile = true", save_helper)
+
+    def test_build_request_requires_an_explicit_value_preserving_policy(self):
+        validator = self.source[
+            self.source.index("function validateRequest") :
+            self.source.index("function buildRequestPaths")
+        ]
+        self.assertIn("validateColorManagement(request.color_management)", validator)
+        self.assertIn("policy.preserve_rgb_numbers !== true", validator)
+
     def test_result_records_import_and_save_timings(self):
         writer = self.source[self.source.index("function writeResult") :]
         self.assertIn('"\\\"import_ms\\\":"', writer)

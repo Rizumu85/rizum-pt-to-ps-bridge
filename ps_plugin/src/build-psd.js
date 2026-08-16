@@ -227,6 +227,29 @@ function validateBuildRequest(request) {
   if (!Array.isArray(request.layers)) {
     throw new Error("build_request.json field layers must be an array");
   }
+  validateColorManagement(request.color_management);
+}
+
+function validateColorManagement(policy) {
+  if (!policy || policy.schema_version !== 1) {
+    throw new Error("build_request.json has no supported color_management policy");
+  }
+  if (policy.preserve_rgb_numbers !== true) {
+    throw new Error("Color management policy must preserve RGB numbers");
+  }
+  if (policy.encoding === "srgb") {
+    if (policy.photoshop_profile !== "sRGB IEC61966-2.1" || policy.embed_profile !== true) {
+      throw new Error("Invalid sRGB color_management policy");
+    }
+    return;
+  }
+  if (policy.encoding === "raw") {
+    if (policy.photoshop_profile !== null || policy.embed_profile !== false) {
+      throw new Error("Invalid raw color_management policy");
+    }
+    return;
+  }
+  throw new Error(`Unsupported color_management encoding: ${policy.encoding}`);
 }
 
 function validateExportList(list) {
@@ -313,9 +336,10 @@ function collectAssets(nodes) {
 }
 
 async function createPsdSkeletonFromRequest(request, options = {}) {
-  const { app, core } = require("photoshop");
+  const { app, core, constants } = require("photoshop");
   const size = getRequestResolution(request);
   const documentName = makeDocumentName(request);
+  const colorPolicy = request.color_management;
   const buildItems = topLevelBuildItems(request);
   const unplacedNodes = collectUnplacedNodes(request, buildItems);
   const build = {
@@ -339,6 +363,7 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     sidecarPath: sidecarPathForPsd(request.psd_file),
     sidecarWritten: false,
     sidecarError: null,
+    colorManagement: colorPolicy,
     placementErrors: [],
     appliedMaskCount: 0,
     appliedMasks: [],
@@ -355,14 +380,22 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
   };
 
   await core.executeAsModal(async () => {
-    const document = await app.createDocument({
+    const documentOptions = {
       name: documentName,
       width: size.width,
       height: size.height,
       resolution: build.resolution,
       mode: "RGBColorMode",
       fill: "transparent"
-    });
+    };
+    if (colorPolicy.encoding === "srgb") {
+      documentOptions.profile = colorPolicy.photoshop_profile;
+    }
+    const document = await app.createDocument(documentOptions);
+    if (colorPolicy.encoding === "raw") {
+      document.colorProfileType = constants.ColorProfileType.NONE;
+    }
+    verifyDocumentColorManagement(document, colorPolicy, constants);
 
     build.documentId = document.id || null;
 
@@ -375,7 +408,9 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
     if (options.attemptSave !== false && request.psd_file) {
       try {
         const fileEntry = await getFileEntryForPath(request.psd_file);
-        await document.saveAs.psd(fileEntry);
+        await document.saveAs.psd(fileEntry, {
+          embedColorProfile: colorPolicy.embed_profile === true
+        });
         build.saved = true;
       } catch (error) {
         build.saveError = error && error.message ? error.message : String(error);
@@ -401,6 +436,21 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
   }
 
   return build;
+}
+
+function verifyDocumentColorManagement(document, policy, constants) {
+  if (policy.encoding === "raw") {
+    if (document.colorProfileType !== constants.ColorProfileType.NONE) {
+      throw new Error("Photoshop could not disable color management for a data PSD");
+    }
+    return;
+  }
+
+  const actual = String(document.colorProfileName || "").toLowerCase();
+  const expected = String(policy.photoshop_profile || "").toLowerCase();
+  if (document.colorProfileType === constants.ColorProfileType.NONE || actual !== expected) {
+    throw new Error(`Photoshop could not assign the requested sRGB profile: ${policy.photoshop_profile}`);
+  }
 }
 
 async function placeUvMapLayer(app, targetDocument, request, build) {
