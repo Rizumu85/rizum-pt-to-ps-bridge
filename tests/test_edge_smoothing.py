@@ -37,7 +37,7 @@ class EdgeSmoothingTests(unittest.TestCase):
         self.assertEqual(output.pixelColor(1, 2), black)
         self.assertEqual(output.pixelColor(3, 2), white)
 
-    def test_staircase_corners_gain_intermediate_coverage(self):
+    def test_staircase_corners_gain_intermediate_color(self):
         black = QtGui.QColor(0, 0, 0, 255)
         white = QtGui.QColor(255, 255, 255, 255)
         rows = [
@@ -59,7 +59,7 @@ class EdgeSmoothingTests(unittest.TestCase):
         self.assertGreater(result["changed_pixels"], 0)
         self.assertTrue(any(0 < value < 255 for value in values))
 
-    def test_transparent_rgb_does_not_bleed_into_antialiased_pixels(self):
+    def test_transparent_edges_keep_painter_alpha_coverage(self):
         clear_magenta = QtGui.QColor(255, 0, 255, 0)
         opaque_white = QtGui.QColor(255, 255, 255, 255)
         rows = [
@@ -70,17 +70,18 @@ class EdgeSmoothingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "alpha.png"
             self._write_image(path, rows)
+            expected_alpha = [
+                [color.alpha() for color in row]
+                for row in rows
+            ]
             edge_smoothing.smooth_png(path)
             output = QtGui.QImage(str(path))
-            intermediate = [
-                output.pixelColor(x, y)
+            actual_alpha = [
+                [output.pixelColor(x, y).alpha() for x in range(output.width())]
                 for y in range(output.height())
-                for x in range(output.width())
-                if 0 < output.pixelColor(x, y).alpha() < 255
             ]
 
-        self.assertTrue(intermediate)
-        self.assertTrue(all(color.green() == 255 for color in intermediate))
+        self.assertEqual(actual_alpha, expected_alpha)
 
     def test_16_bit_payload_remains_16_bit(self):
         image_format = QtGui.QImage.Format.Format_RGBA64

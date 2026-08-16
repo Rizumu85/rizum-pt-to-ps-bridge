@@ -66,13 +66,13 @@ fn similar<T: Sample>(left: [T; 4], right: [T; 4]) -> bool {
         <= T::COLOR_THRESHOLD
 }
 
-fn average_premultiplied<T: Sample>(samples: [[T; 4]; 4]) -> [T; 4] {
+fn average_premultiplied<T: Sample>(samples: [[T; 4]; 4], center: [T; 4]) -> [T; 4] {
     let alpha_sum = samples
         .iter()
         .map(|sample| sample[3].to_u32() as u64)
         .sum::<u64>();
     if alpha_sum == 0 {
-        return [T::from_u32(0); 4];
+        return center;
     }
 
     let mut output = [T::from_u32(0); 4];
@@ -83,7 +83,9 @@ fn average_premultiplied<T: Sample>(samples: [[T; 4]; 4]) -> [T; 4] {
             .sum::<u64>();
         output[channel] = T::from_u32(((premultiplied_sum + alpha_sum / 2) / alpha_sum) as u32);
     }
-    output[3] = T::from_u32(((alpha_sum + 2) / 4) as u32);
+    // Painter's alpha already defines the finite-padding footprint. Preserving
+    // it prevents this color cleanup from creating a visible halo outside it.
+    output[3] = center[3];
     output
 }
 
@@ -134,7 +136,7 @@ unsafe fn smooth<T: Sample>(
                 if similar(west, south) { west } else { center },
                 if similar(south, east) { east } else { center },
             ];
-            let filtered = average_premultiplied(quadrants);
+            let filtered = average_premultiplied(quadrants, center);
             if filtered != center {
                 changed += 1;
                 let offset = x * 4;
