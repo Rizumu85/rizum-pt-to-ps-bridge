@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $nativeDir = Join-Path $repoRoot "sp_plugin\rizum_sp_to_ps\native"
 $source = Join-Path $nativeDir "edge_smoothing.rs"
-$output = Join-Path $nativeDir "rizum_edge_smoothing_v2.dll"
+$output = Join-Path $nativeDir "rizum_edge_smoothing_v3.dll"
 $lld = Join-Path $env:USERPROFILE ".rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe"
 
 if (-not (Test-Path -LiteralPath $lld)) {

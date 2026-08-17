@@ -5,11 +5,21 @@ from unittest import mock
 
 from PySide6 import QtGui
 
-from sp_plugin.rizum_sp_to_ps import edge_smoothing
+from sp_plugin.rizum_sp_to_ps import edge_smoothing, png_color_metadata
 from sp_plugin.rizum_sp_to_ps.exporter import _smooth_exported_assets
 
 
 class EdgeSmoothingTests(unittest.TestCase):
+    @staticmethod
+    def _raw_color_policy():
+        return {
+            "schema_version": 1,
+            "encoding": "raw",
+            "photoshop_profile": None,
+            "embed_profile": False,
+            "preserve_rgb_numbers": True,
+        }
+
     def _write_image(self, path, rows, image_format=QtGui.QImage.Format.Format_RGBA8888):
         height = len(rows)
         width = len(rows[0])
@@ -59,7 +69,7 @@ class EdgeSmoothingTests(unittest.TestCase):
         self.assertGreater(result["changed_pixels"], 0)
         self.assertTrue(any(0 < value < 255 for value in values))
 
-    def test_transparent_edges_keep_painter_alpha_coverage(self):
+    def test_transparent_staircase_edges_gain_inward_coverage_without_expanding(self):
         clear_magenta = QtGui.QColor(255, 0, 255, 0)
         opaque_white = QtGui.QColor(255, 255, 255, 255)
         rows = [
@@ -70,18 +80,26 @@ class EdgeSmoothingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "alpha.png"
             self._write_image(path, rows)
-            expected_alpha = [
-                [color.alpha() for color in row]
-                for row in rows
-            ]
-            edge_smoothing.smooth_png(path)
+            result = edge_smoothing.smooth_png(path)
             output = QtGui.QImage(str(path))
-            actual_alpha = [
-                [output.pixelColor(x, y).alpha() for x in range(output.width())]
+            originally_clear = [
+                (x, y)
                 for y in range(output.height())
+                for x in range(output.width())
+                if rows[y][x].alpha() == 0
+            ]
+            originally_opaque_alpha = [
+                output.pixelColor(x, y).alpha()
+                for y in range(output.height())
+                for x in range(output.width())
+                if rows[y][x].alpha() == 255
             ]
 
-        self.assertEqual(actual_alpha, expected_alpha)
+        self.assertGreater(result["changed_pixels"], 0)
+        self.assertTrue(
+            all(output.pixelColor(x, y).alpha() == 0 for x, y in originally_clear)
+        )
+        self.assertTrue(any(0 < alpha < 255 for alpha in originally_opaque_alpha))
 
     def test_16_bit_payload_remains_16_bit(self):
         image_format = QtGui.QImage.Format.Format_RGBA64
@@ -104,6 +122,7 @@ class EdgeSmoothingTests(unittest.TestCase):
     def test_request_processing_smooths_layers_and_final_masks_but_not_uv_map(self):
         request = {
             "channel_identifier": "BaseColor",
+            "color_management": self._raw_color_policy(),
             "layers": [
                 {
                     "asset": {"path": "layer.png", "channel": "BaseColor"},
@@ -118,6 +137,10 @@ class EdgeSmoothingTests(unittest.TestCase):
             edge_smoothing,
             "smooth_png",
             side_effect=lambda path: calls.append(path) or {"changed_pixels": 3},
+        ), mock.patch.object(
+            png_color_metadata,
+            "normalize_png",
+            return_value={"changed": False},
         ):
             result = _smooth_exported_assets(request)
 
@@ -129,6 +152,7 @@ class EdgeSmoothingTests(unittest.TestCase):
     def test_smoothing_continues_the_existing_export_progress_range(self):
         request = {
             "channel_identifier": "BaseColor",
+            "color_management": self._raw_color_policy(),
             "layers": [{"asset": {"path": "layer.png", "channel": "BaseColor"}}],
         }
         events = []
@@ -137,6 +161,10 @@ class EdgeSmoothingTests(unittest.TestCase):
             edge_smoothing,
             "smooth_png",
             return_value={"changed_pixels": 0},
+        ), mock.patch.object(
+            png_color_metadata,
+            "normalize_png",
+            return_value={"changed": False},
         ):
             _smooth_exported_assets(
                 request,

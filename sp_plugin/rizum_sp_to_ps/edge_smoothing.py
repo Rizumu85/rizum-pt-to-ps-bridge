@@ -7,13 +7,13 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-ALGORITHM_ID = "directional-corner-rgb-aa-v2"
+ALGORITHM_ID = "directional-corner-coverage-aa-v3"
 _NATIVE_ERROR = (1 << 64) - 1
 
 
 @lru_cache(maxsize=1)
 def _native_library():
-    path = Path(__file__).with_name("native") / "rizum_edge_smoothing_v2.dll"
+    path = Path(__file__).with_name("native") / "rizum_edge_smoothing_v3.dll"
     if not path.is_file():
         # Mixing filtered and unfiltered layers would make one PSD internally
         # inconsistent, so a damaged installation must stop the whole export.
@@ -36,7 +36,7 @@ def _native_library():
 
 
 def smooth_png(path):
-    """Smooth directional color corners without changing alpha coverage."""
+    """Smooth directional color and coverage corners without growing bounds."""
     try:
         from PySide6 import QtGui
     except ImportError as exc:
