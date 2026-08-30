@@ -2,7 +2,7 @@
 
 const { entrypoints } = require("uxp");
 
-const PLUGIN_VERSION = "0.1.64";
+const PLUGIN_VERSION = "0.1.65";
 
 console.log(`[Rizum] main.js loaded ${PLUGIN_VERSION}`);
 scheduleStartupRender();
@@ -509,6 +509,7 @@ function formatExportSelectedSummary(result) {
     `Folder: ${result.folder}`,
     `Selected layers: ${result.selectedCount}`,
     `Files exported: ${result.exported.length}`,
+    `Desktop manifest: ${result.manifestPath || "not written"}`,
   ];
 
   if (result.exported.length > 0) {

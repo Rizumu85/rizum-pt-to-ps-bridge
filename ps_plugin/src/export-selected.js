@@ -26,11 +26,14 @@ async function exportSelectedLayers(options = {}) {
     cancelled: false,
     mode,
     folder: folder.nativePath || "(selected folder)",
+    documentId: document.id,
     documentName: document.name || "(active document)",
+    documentPath: safeDocumentPath(document),
     selectedCount: selectedLayers.length,
     exported: [],
     layers: [],
-    errors: []
+    errors: [],
+    manifestPath: null
   };
 
   await core.executeAsModal(
@@ -50,6 +53,17 @@ async function exportSelectedLayers(options = {}) {
     { commandName: "Rizum export selected layers" }
   );
 
+  try {
+    // The manifest is written after Photoshop leaves modal scope so transport
+    // failure cannot strand the host in a command that owns document state.
+    result.manifestPath = await writeSelectionManifest(folder, result);
+  } catch (error) {
+    result.errors.push({
+      layer: "Selection manifest",
+      error: error && error.message ? error.message : String(error)
+    });
+  }
+
   return result;
 }
 
@@ -60,7 +74,18 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
 
   const baseName = uniqueBaseName(layer.name || `Layer ${index + 1}`, index);
   const layerResult = {
+    source_id: `ps:${document.id}:${layer.id}`,
+    ps_layer_id: layer.id,
     name: layer.name || `Layer ${index + 1}`,
+    display_name: layer.name || `Layer ${index + 1}`,
+    ps_kind: enumText(layer.kind) || "layer",
+    group: layerGroupName(layer, document),
+    path: layerPath(layer, document),
+    blend_mode: enumText(layer.blendMode) || "normal",
+    opacity: numericValue(layer.opacity, 100),
+    visible: layer.visible !== false,
+    png: null,
+    mask_png: null,
     files: [],
     maskDetected: false,
     maskExported: false
@@ -76,6 +101,7 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
         disableMask: Boolean(mask)
       });
       layerResult.files.push(layerFilename);
+      layerResult.png = layerFilename;
       result.exported.push(layerFilename);
 
       if (mask) {
@@ -83,6 +109,7 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
         await exportMaskPixels(app, imaging, document, folder, maskFilename, mask);
         mask = null;
         layerResult.files.push(maskFilename);
+        layerResult.mask_png = maskFilename;
         layerResult.maskExported = true;
         result.exported.push(maskFilename);
       }
@@ -102,7 +129,89 @@ async function exportOneLayer(app, imaging, document, layer, folder, mode, index
     disableMask: false
   });
   layerResult.files.push(filename);
+  layerResult.png = filename;
   result.exported.push(filename);
+}
+
+async function writeSelectionManifest(folder, result) {
+  const filename = "photoshop_selection.json";
+  const fileEntry = await folder.createFile(filename, { overwrite: true });
+  const payload = {
+    schema_version: 1,
+    request_type: "photoshop_selection",
+    rizum_version: "0.1.65",
+    created_at: new Date().toISOString(),
+    mode: result.mode,
+    document: {
+      id: result.documentId,
+      name: result.documentName,
+      path: result.documentPath
+    },
+    painter_snapshot: sidecarPathForPsd(result.documentPath),
+    layers: result.layers
+      .filter((layer) => Boolean(layer.png))
+      .map((layer) => ({
+        source_id: layer.source_id,
+        ps_layer_id: layer.ps_layer_id,
+        display_name: layer.display_name,
+        ps_kind: layer.ps_kind,
+        group: layer.group,
+        path: layer.path,
+        blend_mode: layer.blend_mode,
+        opacity: layer.opacity,
+        visible: layer.visible,
+        png: layer.png,
+        mask_png: layer.mask_png
+      })),
+    errors: result.errors.map((entry) => ({
+      layer: entry.layer,
+      error: entry.error
+    }))
+  };
+  await fileEntry.write(JSON.stringify(payload, null, 2));
+  return fileEntry.nativePath || `${result.folder}/${filename}`;
+}
+
+function safeDocumentPath(document) {
+  try {
+    return document && document.path ? String(document.path) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function sidecarPathForPsd(documentPath) {
+  const value = documentPath ? String(documentPath) : "";
+  return value ? value.replace(/\.[^.\\/]*$/, "") + ".rizum.json" : null;
+}
+
+function layerGroupName(layer, document) {
+  const parent = layer && layer.parent;
+  return parent && parent !== document && parent.name ? String(parent.name) : null;
+}
+
+function layerPath(layer, document) {
+  const parts = [];
+  let current = layer;
+  let remaining = 64;
+  while (current && current !== document && remaining > 0) {
+    if (current.name) parts.unshift(String(current.name));
+    current = current.parent;
+    remaining -= 1;
+  }
+  return parts.join("/") || String(layer.name || "Layer");
+}
+
+function enumText(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (value.name !== undefined) return String(value.name);
+  return String(value);
+}
+
+function numericValue(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 async function exportLayerPixels(app, imaging, document, layer, folder, filename, options = {}) {

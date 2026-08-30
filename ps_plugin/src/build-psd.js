@@ -1032,7 +1032,7 @@ function loadPixelHashModule() {
 
 function buildSidecarPayload(request, build) {
   return {
-    rizum_version: "0.1.64",
+    rizum_version: "0.1.65",
     schema_version: 1,
     created_at: new Date().toISOString(),
     build_request_file: request.build_request_file || null,
