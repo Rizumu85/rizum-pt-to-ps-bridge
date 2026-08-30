@@ -9,13 +9,19 @@ import iconX from "../../icons/x.svg" with { type: "text" }
 
 import {
   cloneState,
-  initialBridgeState,
   removeFromPhotoshop,
   transferToPainter,
   type BridgeState,
   type LayerNode,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
+import {
+  failedBridgeSession,
+  loadBridgeSession,
+  parseSessionOptions,
+  writeTransferManifest,
+  type BridgeSession,
+} from "./transport"
 
 const icons = {
   check: iconCheck,
@@ -417,13 +423,19 @@ function HostPanel({
   )
 }
 
-export function BridgeApp() {
-  const [bridge, setBridge] = useState<BridgeState>(() => cloneState(initialBridgeState))
+export function BridgeApp({
+  session,
+  onApply,
+}: {
+  session: BridgeSession
+  onApply: (state: BridgeState) => Promise<string>
+}) {
+  const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
   const [history, setHistory] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(() => new Set(["ps-group", "sp-working"]))
-  const [status, setStatus] = useState("Drag Photoshop layers into the Painter stack")
+  const [expanded, setExpanded] = useState(() => collectGroupIds(session.state))
+  const [status, setStatus] = useState(session.status)
 
   const hasChanges = history.length > 0
   const photoshopCount = useMemo(() => bridge.photoshop.length, [bridge.photoshop])
@@ -457,11 +469,23 @@ export function BridgeApp() {
   }
 
   const cancel = () => {
-    setBridge(cloneState(initialBridgeState))
+    setBridge(cloneState(session.state))
     setHistory([])
     setDraggingId(null)
     setDropTargetId(null)
     setStatus("Mapping reset")
+  }
+
+  const apply = async () => {
+    setStatus("Writing transfer manifest...")
+    try {
+      const output = await onApply(bridge)
+      setHistory([])
+      const filename = output.split(/[\\/]/).pop() || output
+      setStatus(`Transfer manifest written · ${filename}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    }
   }
 
   const toggle = (id: string) => {
@@ -505,6 +529,9 @@ export function BridgeApp() {
             fontFamily: typography.family,
             fontSize: typography.secondarySize,
             fontWeight: typography.secondaryWeight,
+            maxWidth: 390,
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
           }}
         >
           {`${photoshopCount} source rows · ${status}`}
@@ -516,11 +543,8 @@ export function BridgeApp() {
           icon="check"
           label="Apply"
           primary
-          disabled={!hasChanges}
-          onClick={() => {
-            setHistory([])
-            setStatus("Mapping applied")
-          }}
+          disabled={!hasChanges || bridge.mappings.length === 0}
+          onClick={apply}
         />
       </div>
       <div
@@ -539,7 +563,7 @@ export function BridgeApp() {
       >
         <HostPanel
           title="Photoshop"
-          subtitle="basecolor.psd"
+          subtitle={session.photoshopSubtitle}
           badge="P"
           nodes={bridge.photoshop}
           source
@@ -555,7 +579,7 @@ export function BridgeApp() {
         />
         <HostPanel
           title="Substance Painter"
-          subtitle="M_body · basecolor"
+          subtitle={session.painterSubtitle}
           badge="SP"
           nodes={bridge.painter}
           source={false}
@@ -574,10 +598,31 @@ export function BridgeApp() {
   )
 }
 
+function collectGroupIds(state: BridgeState): Set<string> {
+  const ids = new Set<string>()
+  const visit = (nodes: LayerNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === "group") ids.add(node.id)
+      if (node.children) visit(node.children)
+    }
+  }
+  visit(state.photoshop)
+  visit(state.painter)
+  return ids
+}
+
 const isEntryPoint = Bun.isStandaloneExecutable || Bun.main === import.meta.path
 
 if (isEntryPoint) {
-  render(<BridgeApp />, {
+  let session: BridgeSession
+  try {
+    const options = parseSessionOptions(Bun.argv.slice(2))
+    session = await loadBridgeSession(options)
+  } catch (error) {
+    session = failedBridgeSession(error)
+  }
+
+  render(<BridgeApp session={session} onApply={(state) => writeTransferManifest(session, state)} />, {
     title: "PT Bridge",
     width: metrics.windowWidth,
     height: metrics.windowHeight,

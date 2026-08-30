@@ -1,4 +1,15 @@
 export type LayerKind = "group" | "layer"
+export type HostId = "photoshop" | "substance_painter"
+export type Placement = "inside" | "after"
+
+export type HostLayerRef = {
+  host: HostId
+  externalId: string
+  kind: string
+  path: string
+  assetPath?: string | null
+  maskPath?: string | null
+}
 
 export type LayerNode = {
   id: string
@@ -6,68 +17,41 @@ export type LayerNode = {
   name: string
   detail: string
   masked?: boolean
+  ref: HostLayerRef
   children?: LayerNode[]
+}
+
+export type TransferMapping = {
+  sourceId: string
+  targetId: string
+  placement: Placement
+  source: HostLayerRef
+  target: HostLayerRef
 }
 
 export type BridgeState = {
   photoshop: LayerNode[]
   painter: LayerNode[]
+  mappings: TransferMapping[]
 }
 
-export const initialBridgeState: BridgeState = {
-  photoshop: [
-    {
-      id: "ps-group",
-      kind: "group",
-      name: "Group",
-      detail: "2 Layers",
-      masked: true,
-      children: [
-        { id: "ps-paint", kind: "layer", name: "Paint edit", detail: "Normal · 100%" },
-        {
-          id: "ps-color",
-          kind: "layer",
-          name: "Color pass",
-          detail: "Overlay · 65%",
-          masked: true,
-        },
-      ],
-    },
-    { id: "ps-detail", kind: "layer", name: "Loose detail", detail: "Soft Light · 40%" },
-    {
-      id: "ps-cleanup",
-      kind: "layer",
-      name: "Mask cleanup",
-      detail: "Normal · 100%",
-      masked: true,
-    },
-  ],
-  painter: [
-    { id: "sp-locator", kind: "layer", name: "Locator", detail: "Normal · 100%", masked: true },
-    { id: "sp-maskout", kind: "layer", name: "MaskOut", detail: "Multiply · 100%" },
-    {
-      id: "sp-working",
-      kind: "group",
-      name: "Working",
-      detail: "6 Layers",
-      children: [
-        { id: "sp-lighten", kind: "layer", name: "Lighten", detail: "Overlay · 55%", masked: true },
-        { id: "sp-recolor", kind: "layer", name: "Recolor", detail: "Color · 100%" },
-        {
-          id: "sp-strokes",
-          kind: "layer",
-          name: "Paint strokes",
-          detail: "Normal · 100%",
-          masked: true,
-        },
-      ],
-    },
-    { id: "sp-base", kind: "layer", name: "LC_BaseTextures", detail: "Normal · 100%" },
-  ],
+export const emptyBridgeState: BridgeState = {
+  photoshop: [],
+  painter: [],
+  mappings: [],
 }
 
 export function cloneState(state: BridgeState): BridgeState {
   return structuredClone(state)
+}
+
+export function findNode(nodes: LayerNode[], id: string): LayerNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    const child = node.children ? findNode(node.children, id) : null
+    if (child) return child
+  }
+  return null
 }
 
 export function removeNode(nodes: LayerNode[], id: string): [LayerNode[], LayerNode | null] {
@@ -127,12 +111,25 @@ export function transferToPainter(
   sourceId: string,
   targetId: string,
 ): BridgeState {
+  const target = findNode(state.painter, targetId)
+  if (!target) return state
+
   const [photoshop, source] = removeNode(state.photoshop, sourceId)
   if (!source) return state
 
   return {
     photoshop,
     painter: insertAtTarget(state.painter, targetId, source),
+    mappings: [
+      ...state.mappings,
+      {
+        sourceId,
+        targetId,
+        placement: target.kind === "group" ? "inside" : "after",
+        source: source.ref,
+        target: target.ref,
+      },
+    ],
   }
 }
 

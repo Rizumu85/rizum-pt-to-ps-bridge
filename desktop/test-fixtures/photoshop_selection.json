@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "request_type": "photoshop_selection",
+  "created_at": "2026-08-29T00:00:00.000Z",
+  "mode": "separate",
+  "document": {
+    "id": 42,
+    "name": "basecolor.psd",
+    "path": "C:/fixtures/basecolor.psd"
+  },
+  "layers": [
+    {
+      "source_id": "ps:42:100",
+      "ps_layer_id": 100,
+      "display_name": "Paint edit",
+      "ps_kind": "pixel",
+      "path": "Group/Paint edit",
+      "blend_mode": "normal",
+      "opacity": 100,
+      "png": "png/paint_edit_layer.png"
+    },
+    {
+      "source_id": "ps:42:101",
+      "ps_layer_id": 101,
+      "display_name": "Color pass",
+      "ps_kind": "pixel",
+      "path": "Group/Color pass",
+      "blend_mode": "overlay",
+      "opacity": 65,
+      "png": "png/color_pass_layer.png",
+      "mask_png": "png/color_pass_mask.png"
+    },
+    {
+      "source_id": "ps:42:102",
+      "ps_layer_id": 102,
+      "display_name": "Mask cleanup",
+      "ps_kind": "pixel",
+      "path": "Mask cleanup",
+      "blend_mode": "normal",
+      "opacity": 100,
+      "png": "png/mask_cleanup.png"
+    }
+  ]
+}
+

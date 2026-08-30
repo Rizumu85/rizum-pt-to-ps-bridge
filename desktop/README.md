@@ -14,16 +14,22 @@ This directory is the native desktop runtime for PT Bridge.
   adapter when the desktop app needs them. Transfer state and file transport
   must remain independent from renderer availability.
 
-The current milestone is an interactive native shell with expandable groups,
-hover states, drag-to-map behavior, and working Cancel, Undo, and Apply actions.
-Painter/Photoshop file transport is intentionally not connected yet.
+The native shell loads a Photoshop selection manifest plus a Painter snapshot,
+then writes one explicit desktop transfer manifest after the user maps layers
+and presses Apply. It does not poll folders or mutate Painter in the background.
 
 ## Run
 
 ```powershell
 bun install
-bun run dev
+bun run dev -- --session "C:\path\to\photoshop_selection.json"
 ```
+
+The selection manifest's Photoshop document path resolves its adjacent
+`.rizum.json` Painter snapshot. Pass `--painter <path>` to choose a different
+snapshot and `--output <path>` to choose the transfer-manifest destination.
+The equivalent environment variables are `PT_BRIDGE_PHOTOSHOP_MANIFEST`,
+`PT_BRIDGE_PAINTER_SNAPSHOT`, and `PT_BRIDGE_TRANSFER_OUTPUT`.
 
 Use `bun run typecheck` for the TypeScript boundary and `bun run test` for the
 renderer-independent transfer model. `bun run screenshot` performs a native
