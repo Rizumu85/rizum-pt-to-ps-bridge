@@ -21,6 +21,7 @@ class GeometryMaskBaker:
     def __init__(self, checkpoint=None):
         self._temporary_dir = None
         self._faces = None
+        self._uv_faces = None
         self._available_names = set()
         self._available_materials = set()
         self._cache = {}
@@ -181,6 +182,7 @@ class GeometryMaskBaker:
             )
         (
             self._faces,
+            self._uv_faces,
             self._available_names,
             self._available_materials,
         ) = _parse_obj(mesh_path, checkpoint=self._checkpoint)
@@ -300,23 +302,18 @@ class GeometryMaskBaker:
         image.setDotsPerMeterX(2835)
         image.setDotsPerMeterY(2835)
 
-        winding_fill = getattr(QtCore.Qt, "WindingFill", None)
-        if winding_fill is None:
-            winding_fill = QtCore.Qt.FillRule.WindingFill
         tile_u = int(tile["u"])
         tile_v = int(tile["v"])
-        self._ensure_face_index()
-        coverage_path = self._coverage_path(
+        wireframe_path = self._uv_wireframe_path(
             QtCore,
             QtGui,
-            winding_fill,
             matching_materials,
             tile_u,
             tile_v,
             width,
             height,
         )
-        if coverage_path is None or coverage_path.isEmpty():
+        if wireframe_path.isEmpty():
             raise GeometryMaskExportError(
                 "No UV faces were found for this texture set and UV tile."
             )
@@ -327,7 +324,7 @@ class GeometryMaskBaker:
         # as the familiar UV reference layer once it reaches Photoshop.
         pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 255))
         pen.setWidthF(max(1.0, min(width, height) / 2048.0))
-        painter.strokePath(coverage_path, pen)
+        painter.strokePath(wireframe_path, pen)
         painter.end()
 
         buffer = QtCore.QBuffer()
@@ -335,6 +332,27 @@ class GeometryMaskBaker:
         if not image.save(buffer, "PNG"):
             raise GeometryMaskExportError("Could not encode the UV Map PNG.")
         return bytes(buffer.data())
+
+    def _uv_wireframe_path(
+        self,
+        QtCore,
+        QtGui,
+        matching_materials,
+        tile_u,
+        tile_v,
+        width,
+        height,
+    ):
+        path = QtGui.QPainterPath()
+        for index, (_names, material_name, uvs) in enumerate(self._uv_faces or ()):
+            if index % 2048 == 0:
+                self._checkpoint()
+            if material_name not in matching_materials:
+                continue
+            if not _face_intersects_tile(uvs, tile_u, tile_v):
+                continue
+            _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height)
+        return path
 
     def _ensure_face_index(self):
         if self._faces is self._indexed_faces:
@@ -503,6 +521,7 @@ def _add_face_to_path(QtCore, QtGui, path, uvs, tile_u, tile_v, width, height):
 def _parse_obj(path, checkpoint=None):
     texture_coordinates = [None]
     faces = []
+    uv_faces = []
     available_names = set()
     available_materials = set()
     shared_name_sets = {}
@@ -559,16 +578,25 @@ def _parse_obj(path, checkpoint=None):
                     )
                 )
                 names = shared_name_sets.setdefault(name_key, frozenset(name_key))
+                polygon_uvs = tuple(uvs)
+                uv_faces.append((names, material_name, polygon_uvs))
+                # Geometry Masks need triangles for predictable fill behavior,
+                # while UV guides must retain source polygon boundaries so the
+                # exporter does not invent diagonals that were never modeled.
                 for index in range(1, len(uvs) - 1):
                     faces.append(
                         (
                             names,
                             material_name,
-                            (uvs[0], uvs[index], uvs[index + 1]),
+                            (
+                                polygon_uvs[0],
+                                polygon_uvs[index],
+                                polygon_uvs[index + 1],
+                            ),
                         )
                     )
 
-    return faces, available_names, available_materials
+    return faces, uv_faces, available_names, available_materials
 
 
 def _name_aliases(name):

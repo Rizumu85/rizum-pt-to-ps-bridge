@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6 import QtGui
 
 from sp_plugin.rizum_sp_to_ps.exporter import _annotate_node_assets
-from sp_plugin.rizum_sp_to_ps.geometry_mask import GeometryMaskBaker
+from sp_plugin.rizum_sp_to_ps.geometry_mask import GeometryMaskBaker, _parse_obj
 
 
 class GeometryMaskRasterizationTests(unittest.TestCase):
@@ -205,10 +205,11 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
     def test_uv_map_is_a_transparent_wireframe_for_the_requested_material(self):
         baker = GeometryMaskBaker()
         names = frozenset({"mesh"})
-        baker._faces = [
+        baker._uv_faces = [
             (names, "selected", ((0.2, 0.2), (0.8, 0.2), (0.5, 0.8))),
             (names, "excluded", ((0.1, 0.8), (0.4, 0.8), (0.2, 0.95))),
         ]
+        baker._faces = list(baker._uv_faces)
         baker._available_materials = {"selected", "excluded"}
         asset = {
             "texture_set": "selected",
@@ -230,6 +231,55 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         self.assertEqual(QtGui.qBlue(image.pixel(32, 51)), 0)
         self.assertEqual(QtGui.qAlpha(image.pixel(32, 32)), 0)
         self.assertEqual(QtGui.qAlpha(image.pixel(13, 13)), 0)
+
+    def test_uv_map_preserves_quad_boundary_without_an_internal_diagonal(self):
+        baker = GeometryMaskBaker()
+        names = frozenset({"mesh"})
+        quad = ((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.2, 0.8))
+        baker._uv_faces = [(names, "material", quad)]
+        baker._faces = [
+            (names, "material", (quad[0], quad[1], quad[2])),
+            (names, "material", (quad[0], quad[2], quad[3])),
+        ]
+        baker._available_materials = {"material"}
+        asset = {
+            "texture_set": "material",
+            "texture_set_original": "material",
+            "uv_tile": {"u": 0, "v": 0},
+            "resolution": [64, 64],
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "quad_uv_map.png"
+            baker.bake_uv_map(asset, output)
+            image = QtGui.QImage(str(output))
+
+        self.assertGreater(QtGui.qAlpha(image.pixel(32, 51)), 0)
+        self.assertEqual(QtGui.qAlpha(image.pixel(32, 32)), 0)
+
+    def test_obj_parser_keeps_source_polygons_for_uv_guides(self):
+        obj = "\n".join(
+            (
+                "o mesh",
+                "usemtl material",
+                "vt 0.2 0.2",
+                "vt 0.8 0.2",
+                "vt 0.8 0.8",
+                "vt 0.2 0.8",
+                "f 1/1 2/2 3/3 4/4",
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "quad.obj"
+            path.write_text(obj, encoding="utf-8")
+            triangles, polygons, names, materials = _parse_obj(path)
+
+        self.assertEqual(len(triangles), 2)
+        self.assertEqual(len(polygons), 1)
+        self.assertEqual(len(polygons[0][2]), 4)
+        self.assertEqual(names, {"mesh"})
+        self.assertEqual(materials, {"material"})
 
 
 if __name__ == "__main__":
