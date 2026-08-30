@@ -23,6 +23,7 @@ from .udim import uv_to_udim
 
 SCHEMA_VERSION = 1
 BUILD_REQUEST_FILENAME = "build_request.json"
+PAINTER_SNAPSHOT_FILENAME = "painter_snapshot.json"
 EFFECT_NODE_KINDS = {
     "AnchorPointEffect",
     "ColorSelectionEffect",
@@ -54,68 +55,68 @@ def list_export_targets(settings=None):
     """List available texture set / stack / channel targets for the UI."""
     settings = settings or {}
     modules = _load_painter_modules()
-    textureset = modules["textureset"]
-    layerstack = modules["layerstack"]
     targets = []
 
-    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
-        texture_set_name = _call_or_attr(texture_set, "name")
-        if not _matches_filter(texture_set_name, settings.get("texture_sets")):
+    for stack_record in _iter_stack_records(modules, settings):
+        channels = [
+            _enum_name(channel_type)
+            for channel_type, channel in stack_record["channels"].items()
+            if _channel_should_export(
+                _enum_name(channel_type),
+                channel,
+                stack_record["used_identifiers"],
+                stack_record["layer_records"],
+            )
+            and _matches_filter(_enum_name(channel_type), settings.get("channels"))
+        ]
+        if not channels:
             continue
-
-        for stack in _call_or_attr(texture_set, "all_stacks", []):
-            stack_name = _call_or_attr(stack, "name") or ""
-            if not _matches_filter(stack_name, settings.get("stacks")):
-                continue
-
-            stack_channels = _call_or_attr(stack, "all_channels", {})
-            used_identifiers = _used_channel_identifier_set(
-                texture_set_name,
-                stack_name,
+        channel_labels = {
+            _enum_name(channel_type): _channel_label(
+                _enum_name(channel_type),
+                channel,
             )
-            root_layers = layerstack.get_root_layer_nodes(stack)
-            layer_records = [
-                _node_record(node, stack_channels.keys(), settings)
-                for node in root_layers
-            ]
-            channels = [
-                _enum_name(channel_type)
-                for channel_type, channel in stack_channels.items()
-                if _channel_should_export(
-                    _enum_name(channel_type),
-                    channel,
-                    used_identifiers,
-                    layer_records,
-                )
-                and _matches_filter(_enum_name(channel_type), settings.get("channels"))
-            ]
-            if not channels:
-                continue
-            channel_labels = {
-                _enum_name(channel_type): _channel_label(
-                    _enum_name(channel_type),
-                    channel,
-                )
-                for channel_type, channel in stack_channels.items()
-                if _channel_should_export(
-                    _enum_name(channel_type),
-                    channel,
-                    used_identifiers,
-                    layer_records,
-                )
-                and _matches_filter(_enum_name(channel_type), settings.get("channels"))
+            for channel_type, channel in stack_record["channels"].items()
+            if _channel_should_export(
+                _enum_name(channel_type),
+                channel,
+                stack_record["used_identifiers"],
+                stack_record["layer_records"],
+            )
+            and _matches_filter(_enum_name(channel_type), settings.get("channels"))
+        }
+        targets.append(
+            {
+                "texture_set": stack_record["texture_set_name"],
+                "stack": stack_record["stack_name"],
+                "channels": channels,
+                "channel_labels": channel_labels,
+                "uv_tile_count": len(stack_record["uv_tiles"]),
             }
-            targets.append(
-                {
-                    "texture_set": texture_set_name,
-                    "stack": stack_name,
-                    "channels": channels,
-                    "channel_labels": channel_labels,
-                    "uv_tile_count": len(_uv_tiles(texture_set)),
-                }
-            )
+        )
 
     return targets
+
+
+def build_painter_snapshot(settings=None):
+    """Capture every addressable Painter stack/channel context for PT Bridge."""
+    settings = settings or {}
+    modules = _load_painter_modules()
+    return _build_painter_snapshot(modules, settings)
+
+
+def write_painter_snapshot(output_path, settings=None):
+    """Atomically write a multi-context Painter snapshot and return its path."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    snapshot = build_painter_snapshot(settings)
+    temporary_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+    return path
 
 
 def default_output_dir(settings=None):
@@ -570,9 +571,97 @@ def _load_painter_modules():
     }
 
 
-def _build_export_requests(modules, settings):
+def _iter_stack_records(modules, settings):
     textureset = modules["textureset"]
     layerstack = modules["layerstack"]
+
+    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
+        texture_set_name = _call_or_attr(texture_set, "name")
+        if not _matches_filter(texture_set_name, settings.get("texture_sets")):
+            continue
+
+        for stack in _call_or_attr(texture_set, "all_stacks", []):
+            stack_name = _call_or_attr(stack, "name") or ""
+            if not _matches_filter(stack_name, settings.get("stacks")):
+                continue
+
+            channels = _call_or_attr(stack, "all_channels", {})
+            used_identifiers = _used_channel_identifier_set(
+                texture_set_name,
+                stack_name,
+            )
+            root_layers = layerstack.get_root_layer_nodes(stack)
+            yield {
+                "texture_set": texture_set,
+                "texture_set_name": texture_set_name,
+                "texture_set_original": _call_or_attr(
+                    texture_set,
+                    "original_name",
+                ),
+                "stack": stack,
+                "stack_name": stack_name,
+                "channels": channels,
+                "used_identifiers": used_identifiers,
+                "uv_tiles": _uv_tiles(texture_set),
+                "layer_records": [
+                    _node_record(node, channels.keys(), settings)
+                    for node in root_layers
+                ],
+            }
+
+
+def _build_painter_snapshot(modules, settings):
+    contexts = []
+
+    for stack_record in _iter_stack_records(modules, settings):
+        for channel_type, channel in stack_record["channels"].items():
+            channel_name = _enum_name(channel_type)
+            if not _channel_should_export(
+                channel_name,
+                channel,
+                stack_record["used_identifiers"],
+                stack_record["layer_records"],
+            ):
+                continue
+            if not _matches_filter(channel_name, settings.get("channels")):
+                continue
+
+            layers = deepcopy(stack_record["layer_records"])
+            _project_nodes_for_channel(layers, channel_name)
+            is_color = _call_or_attr(channel, "is_color", False)
+            contexts.append(
+                {
+                    "texture_set": stack_record["texture_set_name"],
+                    "texture_set_original": stack_record["texture_set_original"],
+                    "stack": stack_record["stack_name"],
+                    "channel": channel_name,
+                    "channel_label": _channel_label(channel_name, channel),
+                    "channel_identifier": _resolved_channel_identifier(
+                        channel_name,
+                        channel,
+                        stack_record["used_identifiers"],
+                    ),
+                    "channel_role": _channel_role(channel_name, is_color),
+                    "channel_format": _enum_name(_call_or_attr(channel, "format")),
+                    "bit_depth": _call_or_attr(channel, "bit_depth"),
+                    "is_color": is_color,
+                    "uv_tiles": deepcopy(stack_record["uv_tiles"]),
+                    # Mapping addresses one layer stack, so UDIM tiles are metadata
+                    # instead of duplicate contexts with divergent target trees.
+                    "layers": layers,
+                }
+            )
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "request_type": "painter_snapshot",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "project": _project_info(modules["project"]),
+        "contexts": contexts,
+    }
+
+
+def _build_export_requests(modules, settings):
     project = modules["project"]
 
     project_info = _project_info(project)
@@ -582,87 +671,67 @@ def _build_export_requests(modules, settings):
     generated_at = datetime.now(timezone.utc).isoformat()
     requests = []
 
-    for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
-        texture_set_name = _call_or_attr(texture_set, "name")
-        if not _matches_filter(texture_set_name, settings.get("texture_sets")):
-            continue
+    for stack_record in _iter_stack_records(modules, settings):
+        output_maps = export_naming.list_output_maps(
+            project_preset,
+            stack_record["stack"],
+        )
 
-        uv_tiles = _uv_tiles(texture_set)
-
-        for stack in _call_or_attr(texture_set, "all_stacks", []):
-            stack_name = _call_or_attr(stack, "name") or ""
-            if not _matches_filter(stack_name, settings.get("stacks")):
+        for channel_type, channel in stack_record["channels"].items():
+            channel_name = _enum_name(channel_type)
+            if not _channel_should_export(
+                channel_name,
+                channel,
+                stack_record["used_identifiers"],
+                stack_record["layer_records"],
+            ):
+                continue
+            if not _matches_filter(channel_name, settings.get("channels")):
                 continue
 
-            channels = _call_or_attr(stack, "all_channels", {})
-            output_maps = export_naming.list_output_maps(project_preset, stack)
-            used_identifiers = _used_channel_identifier_set(
-                texture_set_name,
-                stack_name,
-            )
-            root_layers = layerstack.get_root_layer_nodes(stack)
-            layer_records = [
-                _node_record(node, channels.keys(), settings) for node in root_layers
-            ]
-
-            for channel_type, channel in channels.items():
-                channel_name = _enum_name(channel_type)
-                if not _channel_should_export(
-                    channel_name,
-                    channel,
-                    used_identifiers,
-                    layer_records,
-                ):
-                    continue
-                if not _matches_filter(channel_name, settings.get("channels")):
-                    continue
-
-                is_color = _call_or_attr(channel, "is_color", False)
-                for uv_tile in uv_tiles:
-                    request = {
-                            "schema_version": SCHEMA_VERSION,
-                            "request_type": "preview",
-                            "generated_at": generated_at,
-                            "project": project_info,
-                            "texture_set": texture_set_name,
-                            "texture_set_original": _call_or_attr(
-                                texture_set,
-                                "original_name",
-                            ),
-                            "stack": stack_name,
-                            "channel": channel_name,
-                            "channel_label": _channel_label(channel_name, channel),
-                            "channel_identifier": _resolved_channel_identifier(
-                                channel_name,
-                                channel,
-                                used_identifiers,
-                            ),
-                            "channel_identifier_candidates": _channel_export_candidates(
-                                channel_name,
-                                channel,
-                                used_identifiers,
-                            ),
-                            "channel_role": _channel_role(channel_name, is_color),
-                            "channel_format": _enum_name(_call_or_attr(channel, "format")),
-                            "bit_depth": _call_or_attr(channel, "bit_depth"),
-                            "is_color": is_color,
-                            "udim": uv_tile["udim"],
-                            "uv_tile": uv_tile,
-                            "normal_map_format": settings.get("normal_map_format"),
-                            "baseline_cache_key": None,
-                            "layers": _layers_for_uv_tile(
-                                layer_records,
-                                uv_tile,
-                                channel_name,
-                            ),
-                        }
-                    request["output_naming"] = export_naming.resolve_output_naming(
-                        request,
-                        preset_name,
-                        output_maps,
-                        mesh_path=project_info.get("mesh_path"),
-                    )
-                    requests.append(request)
+            is_color = _call_or_attr(channel, "is_color", False)
+            for uv_tile in stack_record["uv_tiles"]:
+                request = {
+                    "schema_version": SCHEMA_VERSION,
+                    "request_type": "preview",
+                    "generated_at": generated_at,
+                    "project": project_info,
+                    "texture_set": stack_record["texture_set_name"],
+                    "texture_set_original": stack_record["texture_set_original"],
+                    "stack": stack_record["stack_name"],
+                    "channel": channel_name,
+                    "channel_label": _channel_label(channel_name, channel),
+                    "channel_identifier": _resolved_channel_identifier(
+                        channel_name,
+                        channel,
+                        stack_record["used_identifiers"],
+                    ),
+                    "channel_identifier_candidates": _channel_export_candidates(
+                        channel_name,
+                        channel,
+                        stack_record["used_identifiers"],
+                    ),
+                    "channel_role": _channel_role(channel_name, is_color),
+                    "channel_format": _enum_name(_call_or_attr(channel, "format")),
+                    "bit_depth": _call_or_attr(channel, "bit_depth"),
+                    "is_color": is_color,
+                    "udim": uv_tile["udim"],
+                    "uv_tile": uv_tile,
+                    "normal_map_format": settings.get("normal_map_format"),
+                    "baseline_cache_key": None,
+                    "layers": _layers_for_uv_tile(
+                        stack_record["layer_records"],
+                        uv_tile,
+                        channel_name,
+                    ),
+                }
+                request["output_naming"] = export_naming.resolve_output_naming(
+                    request,
+                    preset_name,
+                    output_maps,
+                    mesh_path=project_info.get("mesh_path"),
+                )
+                requests.append(request)
 
     return requests
 
