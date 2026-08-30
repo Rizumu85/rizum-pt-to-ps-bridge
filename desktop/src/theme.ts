@@ -1,36 +1,37 @@
 export const colors = {
-  canvas: "#141416",
-  panel: "#202022",
-  panelRaised: "#27272A",
-  hover: "#2F2F32",
-  active: "#38383C",
-  border: "#333336",
-  borderStrong: "#46464B",
-  text: "#F3F3F3",
-  secondary: "#A1A1A7",
-  tertiary: "#717178",
-  accent: "#C24E68",
-  accentHover: "#D15B75",
-  drop: "#E7E7EA",
-  mask: "#D7D7DA",
+  canvas: "#1B1B1B",
+  panel: "#222222",
+  control: "#2B2B2B",
+  controlHover: "#363636",
+  controlActive: "#404040",
+  groupHover: "#2A2A2A",
+  mapped: "#303030",
+  line: "#353535",
+  text: "#E0E0E0",
+  secondary: "#9E9E9E",
+  tertiary: "#666666",
+  danger: "#FF453A",
+  drop: "#E0E0E0",
+  mask: "#E0E0E0",
 }
 
-// The desktop shell follows PT Bridge's approved mockup. Rizum Glass informs
-// the GPUiX delivery method, but importing its palette would change the product.
+// The upstream GPUI preview remains the visual contract; keeping its tokens
+// explicit here lets the real bridge evolve without importing preview runtime code.
 export const typography = {
-  family: "MiSans VF",
+  family: "MiSans",
   primarySize: 13,
-  primaryWeight: 600,
+  primaryWeight: 400,
   secondarySize: 11,
   secondaryWeight: 400,
 }
 
 export const metrics = {
-  windowWidth: 840,
-  windowHeight: 650,
+  windowWidth: 580,
+  windowHeight: 430,
   cardRadius: 8,
   rowRadius: 6,
-  toolbarHeight: 56,
-  photoshopWidth: 330,
+  toolbarHeight: 43,
+  rowHeight: 34,
+  panelGap: 16,
+  contentPadding: 16,
 }
-

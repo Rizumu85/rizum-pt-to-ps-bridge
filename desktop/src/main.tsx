@@ -1,9 +1,20 @@
 import { useMemo, useState } from "react"
-import { motion, render } from "@gpuix/react"
+import {
+  motion,
+  render,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  type MotionEase,
+} from "@gpuix/react"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
+import iconFolder from "../../icons/folder-filled.svg" with { type: "text" }
+import iconLayers from "../../icons/layers.svg" with { type: "text" }
+import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
 import iconX from "../../icons/x.svg" with { type: "text" }
 
@@ -27,14 +38,25 @@ const icons = {
   check: iconCheck,
   chevronDown: iconChevronDown,
   chevronRight: iconChevronRight,
+  folder: iconFolder,
+  layers: iconLayers,
+  reset: iconReset,
   undo: iconUndo,
   x: iconX,
 } as const
 
+const panelRootIds = {
+  photoshop: "panel-root:photoshop",
+  painter: "panel-root:painter",
+} as const
+
+const motionEase: MotionEase = [0.23, 1, 0.32, 1]
+
 type IconName = keyof typeof icons
 
-function Icon({ name, size = 14, color }: { name: IconName; size?: number; color: string }) {
-  return <svg source={icons[name]} style={{ width: size, height: size, flexShrink: 0, color }} />
+function Icon({ name, size = 14, color = colors.secondary }: { name: IconName; size?: number; color?: string }) {
+  const source = icons[name].replace(/#[0-9a-f]{6}/gi, color)
+  return <svg source={source} style={{ width: size, height: size, flexShrink: 0, color }} />
 }
 
 function PrimaryText({ children }: { children: React.ReactNode }) {
@@ -45,6 +67,8 @@ function PrimaryText({ children }: { children: React.ReactNode }) {
         fontFamily: typography.family,
         fontSize: typography.primarySize,
         fontWeight: typography.primaryWeight,
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
       }}
     >
       {children}
@@ -56,10 +80,12 @@ function SecondaryText({ children }: { children: React.ReactNode }) {
   return (
     <text
       style={{
-        color: colors.secondary,
+        color: colors.tertiary,
         fontFamily: typography.family,
         fontSize: typography.secondarySize,
         fontWeight: typography.secondaryWeight,
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
       }}
     >
       {children}
@@ -67,101 +93,128 @@ function SecondaryText({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ActionButton({
+function InsetSeparator() {
+  return (
+    <div style={{ height: 1, flexShrink: 0, paddingLeft: 12, paddingRight: 12 }}>
+      <div style={{ width: "100%", height: 1, backgroundColor: colors.line }} />
+    </div>
+  )
+}
+
+function ContextReadout({ label, value, width }: { label: string; value: string; width: number }) {
+  return (
+    <div
+      style={{
+        width,
+        height: 26,
+        paddingLeft: 9,
+        paddingRight: 9,
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        borderRadius: metrics.rowRadius,
+        backgroundColor: colors.control,
+      }}
+    >
+      <SecondaryText>{label}</SecondaryText>
+      <div style={{ minWidth: 0, flexGrow: 1 }}>
+        <PrimaryText>{value}</PrimaryText>
+      </div>
+    </div>
+  )
+}
+
+function IconAction({
   icon,
   label,
-  primary = false,
   disabled = false,
   onClick,
 }: {
   icon: IconName
   label: string
-  primary?: boolean
   disabled?: boolean
   onClick: () => void
 }) {
-  const base = primary ? colors.accent : colors.panelRaised
-  const hover = primary ? colors.accentHover : colors.hover
-
   return (
-    <div
-      onClick={disabled ? undefined : onClick}
-      style={{
-        minWidth: 86,
-        height: 34,
-        paddingLeft: 14,
-        paddingRight: 14,
-        borderRadius: metrics.rowRadius,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 7,
-        backgroundColor: base,
-        opacity: disabled ? 0.38 : 1,
-        cursor: disabled ? "default" : "pointer",
-        hover: disabled ? undefined : { backgroundColor: hover },
-        active: disabled ? undefined : { opacity: 0.82 },
-      }}
-    >
-      <Icon name={icon} size={13} color={colors.text} />
-      <PrimaryText>{label}</PrimaryText>
-    </div>
-  )
-}
-
-function HostBadge({ label }: { label: string }) {
-  return (
-    <div
-      style={{
-        width: 32,
-        height: 32,
-        flexShrink: 0,
-        borderRadius: 6,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors.panelRaised,
-      }}
-    >
-      <text
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          onClick={disabled ? undefined : onClick}
+          style={{
+            width: 28,
+            height: 28,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: metrics.rowRadius,
+            opacity: disabled ? 0.36 : 1,
+            cursor: disabled ? "default" : "pointer",
+            hover: disabled ? undefined : { backgroundColor: colors.controlHover },
+            active: disabled ? undefined : { backgroundColor: colors.controlActive, opacity: 0.7 },
+          }}
+        >
+          <Icon name={icon} size={15} />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        sideOffset={6}
         style={{
-          color: colors.text,
-          fontFamily: typography.family,
-          fontSize: 12,
-          fontWeight: 600,
+          paddingTop: 5,
+          paddingRight: 8,
+          paddingBottom: 5,
+          paddingLeft: 8,
+          borderRadius: 5,
+          borderWidth: 1,
+          borderColor: colors.line,
+          backgroundColor: colors.control,
+          boxShadow: {
+            offsetX: 0,
+            offsetY: 4,
+            blurRadius: 12,
+            spreadRadius: 0,
+            color: "#00000066",
+          },
         }}
       >
-        {label}
-      </text>
-    </div>
+        <SecondaryText>{label}</SecondaryText>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
-function Thumbnail({ masked = false }: { masked?: boolean }) {
+function LayerThumbnail({ kind, masked = false }: { kind: LayerNode["kind"]; masked?: boolean }) {
   return (
-    <div style={{ width: 38, height: 38, flexShrink: 0, position: "relative" }}>
+    <div style={{ width: 25, height: 22, flexShrink: 0, position: "relative" }}>
       <div
         style={{
-          width: 34,
-          height: 34,
-          borderRadius: 4,
+          width: 20,
+          height: 20,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 3,
           borderWidth: 1,
-          borderColor: colors.mask,
-          backgroundColor: "#66666A",
+          borderColor: colors.secondary,
+          backgroundColor: colors.control,
         }}
-      />
+      >
+        <Icon name={kind === "group" ? "folder" : "layers"} size={13} />
+      </div>
       {masked ? (
         <div
           style={{
             position: "absolute",
             right: 0,
             bottom: 0,
-            width: 17,
-            height: 17,
-            borderRadius: 3,
+            width: 10,
+            height: 10,
+            borderRadius: 2,
             borderWidth: 1,
-            borderColor: colors.borderStrong,
+            borderColor: colors.panel,
             backgroundColor: colors.mask,
           }}
         />
@@ -172,8 +225,8 @@ function Thumbnail({ masked = false }: { masked?: boolean }) {
 
 type LayerRowProps = {
   node: LayerNode
-  depth: number
   source: boolean
+  mappedIds: Set<string>
   draggingId: string | null
   dropTargetId: string | null
   expanded: Set<string>
@@ -187,8 +240,8 @@ type LayerRowProps = {
 
 function LayerRow({
   node,
-  depth,
   source,
+  mappedIds,
   draggingId,
   dropTargetId,
   expanded,
@@ -202,6 +255,8 @@ function LayerRow({
   const [hovered, setHovered] = useState(false)
   const open = node.kind === "group" && expanded.has(node.id)
   const activeDrop = !source && draggingId !== null && dropTargetId === node.id
+  const mapped = mappedIds.has(node.id)
+  const children = node.children ?? []
 
   return (
     <div
@@ -218,21 +273,28 @@ function LayerRow({
         onDragEnd()
       }}
       style={{
+        position: "relative",
         display: "flex",
         flexDirection: "column",
-        marginLeft: depth === 0 ? 0 : 26,
-        borderRadius: metrics.rowRadius,
-        borderWidth: node.kind === "group" && hovered ? 1 : 0,
-        borderColor: node.kind === "group" && hovered ? colors.borderStrong : undefined,
-        backgroundColor: node.kind === "group" && hovered ? colors.panelRaised : undefined,
+        marginLeft: 24,
+        padding: node.kind === "group" ? 4 : 0,
+        borderRadius: 8,
+        backgroundColor: node.kind === "group" && hovered ? colors.groupHover : undefined,
       }}
     >
       {activeDrop ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
-          style={{ height: 2, backgroundColor: colors.drop }}
+          transition={{ duration: 0.12, ease: motionEase }}
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 5,
+            left: 5,
+            height: 2,
+            backgroundColor: colors.drop,
+          }}
         />
       ) : null}
       <div
@@ -240,18 +302,21 @@ function LayerRow({
           if (source) onDragStart(node.id)
         }}
         style={{
-          minHeight: 54,
+          height: metrics.rowHeight,
           paddingLeft: 8,
           paddingRight: 8,
           display: "flex",
           flexDirection: "row",
           alignItems: "center",
           gap: 9,
+          borderLeftWidth: 2,
+          borderColor: mapped ? colors.text : "transparent",
           borderRadius: metrics.rowRadius,
+          backgroundColor: mapped ? colors.mapped : undefined,
           opacity: draggingId === node.id ? 0.48 : 1,
-          cursor: source ? "pointer" : "default",
-          hover: { backgroundColor: colors.hover },
-          active: source ? { backgroundColor: colors.active } : undefined,
+          cursor: source ? "move" : "default",
+          hover: node.kind === "group" ? undefined : { backgroundColor: colors.controlHover },
+          active: source ? { backgroundColor: colors.controlActive } : undefined,
         }}
       >
         <div
@@ -261,49 +326,53 @@ function LayerRow({
           style={{
             width: 14,
             height: 28,
+            flexShrink: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            cursor: node.kind === "group" ? "pointer" : "default",
           }}
         >
           {node.kind === "group" ? (
-            <Icon
-              name={open ? "chevronDown" : "chevronRight"}
-              size={11}
-              color={colors.secondary}
-            />
+            <Icon name={open ? "chevronDown" : "chevronRight"} size={11} />
           ) : null}
         </div>
-        <Thumbnail masked={node.masked} />
-        <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+        <LayerThumbnail kind={node.kind} masked={node.masked} />
+        <div style={{ minWidth: 0, flexGrow: 1 }}>
           <PrimaryText>{node.name}</PrimaryText>
-          <SecondaryText>{node.detail}</SecondaryText>
         </div>
         {source && hovered ? (
           <div
             onClick={() => onRemove(node.id)}
             style={{
-              width: 26,
-              height: 26,
+              width: 22,
+              height: 22,
+              flexShrink: 0,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               borderRadius: 5,
               cursor: "pointer",
-              hover: { backgroundColor: colors.active },
+              hover: { backgroundColor: "#FF453A29" },
             }}
           >
-            <Icon name="x" size={12} color={colors.secondary} />
+            <Icon name="x" size={12} color={colors.danger} />
           </div>
         ) : null}
       </div>
-      {open
-        ? node.children?.map((child) => (
+      {node.kind === "group" && open ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.14, ease: motionEase }}
+          style={{ display: "flex", flexDirection: "column" }}
+        >
+          {children.map((child) => (
             <LayerRow
               key={child.id}
               node={child}
-              depth={depth + 1}
               source={source}
+              mappedIds={mappedIds}
               draggingId={draggingId}
               dropTargetId={dropTargetId}
               expanded={expanded}
@@ -314,18 +383,20 @@ function LayerRow({
               onDrop={onDrop}
               onRemove={onRemove}
             />
-          ))
-        : null}
+          ))}
+        </motion.div>
+      ) : null}
     </div>
   )
 }
 
-function HostPanel({
-  title,
-  subtitle,
-  badge,
+function PanelTree({
+  panelId,
+  label,
   nodes,
   source,
+  footerHint,
+  mappedIds,
   draggingId,
   dropTargetId,
   expanded,
@@ -336,11 +407,141 @@ function HostPanel({
   onDrop,
   onRemove,
 }: {
-  title: string
-  subtitle: string
-  badge: string
+  panelId: keyof typeof panelRootIds
+  label: string
   nodes: LayerNode[]
   source: boolean
+  footerHint?: string
+  mappedIds: Set<string>
+  draggingId: string | null
+  dropTargetId: string | null
+  expanded: Set<string>
+  onToggle: (id: string) => void
+  onDragStart: (id: string) => void
+  onDragEnd: () => void
+  onDropTarget: (id: string | null) => void
+  onDrop: (id: string) => void
+  onRemove: (id: string) => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  const rootId = panelRootIds[panelId]
+  const open = expanded.has(rootId)
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        padding: 4,
+        borderRadius: 8,
+        backgroundColor: hovered ? colors.groupHover : undefined,
+      }}
+    >
+      <div
+        testId={`panel-tree-toggle:${panelId}`}
+        onClick={() => onToggle(rootId)}
+        style={{
+          height: metrics.rowHeight,
+          paddingLeft: 8,
+          paddingRight: 8,
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 9,
+          borderRadius: metrics.rowRadius,
+          cursor: "pointer",
+        }}
+      >
+        <div
+          style={{
+            width: 14,
+            height: 28,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name={open ? "chevronDown" : "chevronRight"} size={11} />
+        </div>
+        <Icon name="folder" size={14} />
+        <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+          <PrimaryText>{label}</PrimaryText>
+          <SecondaryText>{`${countNodes(nodes)} Layers`}</SecondaryText>
+        </div>
+      </div>
+      {open ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.14, ease: motionEase }}
+          style={{ display: "flex", flexDirection: "column" }}
+        >
+          {nodes.map((node) => (
+            <LayerRow
+              key={node.id}
+              node={node}
+              source={source}
+              mappedIds={mappedIds}
+              draggingId={draggingId}
+              dropTargetId={dropTargetId}
+              expanded={expanded}
+              onToggle={onToggle}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDropTarget={onDropTarget}
+              onDrop={onDrop}
+              onRemove={onRemove}
+            />
+          ))}
+          {footerHint ? (
+            <div
+              style={{
+                height: 24,
+                marginLeft: 38,
+                display: "flex",
+                alignItems: "center",
+                minWidth: 0,
+              }}
+            >
+              <SecondaryText>{footerHint}</SecondaryText>
+            </div>
+          ) : null}
+        </motion.div>
+      ) : null}
+    </div>
+  )
+}
+
+function HostPanel({
+  panelId,
+  title,
+  subtitle,
+  treeLabel,
+  nodes,
+  source,
+  footerHint,
+  mappedIds,
+  draggingId,
+  dropTargetId,
+  expanded,
+  onToggle,
+  onDragStart,
+  onDragEnd,
+  onDropTarget,
+  onDrop,
+  onRemove,
+}: {
+  panelId: keyof typeof panelRootIds
+  title: string
+  subtitle: string
+  treeLabel: string
+  nodes: LayerNode[]
+  source: boolean
+  footerHint?: string
+  mappedIds: Set<string>
   draggingId: string | null
   dropTargetId: string | null
   expanded: Set<string>
@@ -352,74 +553,80 @@ function HostPanel({
   onRemove: (id: string) => void
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+    <div
       style={{
-        width: source ? metrics.photoshopWidth : undefined,
-        flexGrow: source ? 0 : 1,
+        flexGrow: 1,
+        flexBasis: 0,
         minWidth: 0,
         height: "100%",
         display: "flex",
         flexDirection: "column",
         borderRadius: metrics.cardRadius,
-        borderWidth: 1,
-        borderColor: colors.border,
         backgroundColor: colors.panel,
+        boxShadow: {
+          offsetX: 0,
+          offsetY: 7,
+          blurRadius: 18,
+          spreadRadius: 0,
+          color: "#00000045",
+        },
         overflow: "hidden",
       }}
     >
       <div
         style={{
-          height: 66,
           flexShrink: 0,
           display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 11,
-          paddingLeft: 16,
+          flexDirection: "column",
+          gap: 2,
+          paddingTop: 12,
           paddingRight: 16,
-          borderBottomWidth: 1,
-          borderColor: colors.border,
+          paddingBottom: 10,
+          paddingLeft: 16,
         }}
       >
-        <HostBadge label={badge} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <PrimaryText>{title}</PrimaryText>
-          <SecondaryText>{subtitle}</SecondaryText>
-        </div>
+        <text
+          style={{
+            color: colors.text,
+            fontFamily: typography.family,
+            fontSize: 12,
+            fontWeight: typography.primaryWeight,
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </text>
+        <SecondaryText>{subtitle}</SecondaryText>
       </div>
+      <InsetSeparator />
       <div
         style={{
           flexGrow: 1,
           minHeight: 0,
           overflow: "scroll",
-          paddingTop: 10,
-          paddingBottom: 10,
-          paddingLeft: 10,
-          paddingRight: 10,
+          padding: 8,
         }}
       >
-        {nodes.map((node) => (
-          <LayerRow
-            key={node.id}
-            node={node}
-            depth={0}
-            source={source}
-            draggingId={draggingId}
-            dropTargetId={dropTargetId}
-            expanded={expanded}
-            onToggle={onToggle}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDropTarget={onDropTarget}
-            onDrop={onDrop}
-            onRemove={onRemove}
-          />
-        ))}
+        <PanelTree
+          panelId={panelId}
+          label={treeLabel}
+          nodes={nodes}
+          source={source}
+          footerHint={footerHint}
+          mappedIds={mappedIds}
+          draggingId={draggingId}
+          dropTargetId={dropTargetId}
+          expanded={expanded}
+          onToggle={onToggle}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onDropTarget={onDropTarget}
+          onDrop={onDrop}
+          onRemove={onRemove}
+        />
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -434,11 +641,18 @@ export function BridgeApp({
   const [history, setHistory] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(() => collectGroupIds(session.state))
+  const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
 
   const hasChanges = history.length > 0
-  const photoshopCount = useMemo(() => bridge.photoshop.length, [bridge.photoshop])
+  const mappedIds = useMemo(
+    () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
+    [bridge.mappings],
+  )
+  const painterContext = useMemo(
+    () => splitPainterContext(session.painterSubtitle),
+    [session.painterSubtitle],
+  )
 
   const mutate = (next: BridgeState, message: string) => {
     if (next === bridge) return
@@ -468,7 +682,7 @@ export function BridgeApp({
     setStatus("Last mapping undone")
   }
 
-  const cancel = () => {
+  const reset = () => {
     setBridge(cloneState(session.state))
     setHistory([])
     setDraggingId(null)
@@ -498,108 +712,115 @@ export function BridgeApp({
   }
 
   return (
-    <div
-      testId="bridge-root"
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        backgroundColor: colors.canvas,
-      }}
-    >
+    <TooltipProvider delayDuration={320} skipDelayDuration={250} disableHoverableContent>
       <div
-        style={{
-          height: metrics.toolbarHeight,
-          flexShrink: 0,
-          paddingLeft: 18,
-          paddingRight: 18,
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 9,
-          borderBottomWidth: 1,
-          borderColor: colors.border,
-        }}
+        testId="bridge-root"
+        style={{ width: "100%", height: "100%", backgroundColor: colors.canvas }}
       >
-        <PrimaryText>PT Bridge</PrimaryText>
-        <text
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: motionEase }}
           style={{
-            color: colors.tertiary,
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: colors.canvas,
+            color: colors.text,
             fontFamily: typography.family,
-            fontSize: typography.secondarySize,
-            fontWeight: typography.secondaryWeight,
-            maxWidth: 390,
-            whiteSpace: "nowrap",
-            textOverflow: "ellipsis",
+            fontSize: typography.primarySize,
+            fontWeight: typography.primaryWeight,
+            userSelect: "none",
           }}
         >
-          {`${photoshopCount} source rows · ${status}`}
-        </text>
-        <div style={{ flexGrow: 1 }} />
-        <ActionButton icon="x" label="Cancel" disabled={!hasChanges} onClick={cancel} />
-        <ActionButton icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
-        <ActionButton
-          icon="check"
-          label="Apply"
-          primary
-          disabled={!hasChanges || bridge.mappings.length === 0}
-          onClick={apply}
-        />
+        <div
+          style={{
+            height: metrics.toolbarHeight,
+            flexShrink: 0,
+            paddingLeft: 16,
+            paddingRight: 16,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <ContextReadout label="Texture Set:" value={painterContext.textureSet} width={146} />
+          <ContextReadout label="Channel:" value={painterContext.channel} width={140} />
+          <div style={{ flexGrow: 1 }} />
+          <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <IconAction icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <IconAction
+            icon="check"
+            label="Apply mapping"
+            disabled={!hasChanges || bridge.mappings.length === 0}
+            onClick={apply}
+          />
+        </div>
+        <InsetSeparator />
+        <div
+          onMouseUp={() => {
+            setDraggingId(null)
+            setDropTargetId(null)
+          }}
+          style={{
+            flexGrow: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "row",
+            gap: metrics.panelGap,
+            padding: metrics.contentPadding,
+          }}
+        >
+          <HostPanel
+            panelId="photoshop"
+            title="SOURCE: PHOTOSHOP"
+            subtitle={session.photoshopSubtitle}
+            treeLabel="Selected Layers"
+            nodes={bridge.photoshop}
+            source
+            mappedIds={mappedIds}
+            draggingId={draggingId}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={toggle}
+            onDragStart={setDraggingId}
+            onDragEnd={() => setDraggingId(null)}
+            onDropTarget={setDropTargetId}
+            onDrop={drop}
+            onRemove={removeSource}
+          />
+          <HostPanel
+            panelId="painter"
+            title="TARGET: PAINTER"
+            subtitle={session.painterSubtitle}
+            treeLabel="Painter Stack"
+            nodes={bridge.painter}
+            source={false}
+            footerHint={compactStatus(status)}
+            mappedIds={mappedIds}
+            draggingId={draggingId}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={toggle}
+            onDragStart={setDraggingId}
+            onDragEnd={() => setDraggingId(null)}
+            onDropTarget={setDropTargetId}
+            onDrop={drop}
+            onRemove={removeSource}
+          />
+        </div>
+        </motion.div>
       </div>
-      <div
-        onMouseUp={() => {
-          setDraggingId(null)
-          setDropTargetId(null)
-        }}
-        style={{
-          flexGrow: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "row",
-          gap: 16,
-          padding: 18,
-        }}
-      >
-        <HostPanel
-          title="Photoshop"
-          subtitle={session.photoshopSubtitle}
-          badge="P"
-          nodes={bridge.photoshop}
-          source
-          draggingId={draggingId}
-          dropTargetId={dropTargetId}
-          expanded={expanded}
-          onToggle={toggle}
-          onDragStart={setDraggingId}
-          onDragEnd={() => setDraggingId(null)}
-          onDropTarget={setDropTargetId}
-          onDrop={drop}
-          onRemove={removeSource}
-        />
-        <HostPanel
-          title="Substance Painter"
-          subtitle={session.painterSubtitle}
-          badge="SP"
-          nodes={bridge.painter}
-          source={false}
-          draggingId={draggingId}
-          dropTargetId={dropTargetId}
-          expanded={expanded}
-          onToggle={toggle}
-          onDragStart={setDraggingId}
-          onDragEnd={() => setDraggingId(null)}
-          onDropTarget={setDropTargetId}
-          onDrop={drop}
-          onRemove={removeSource}
-        />
-      </div>
-    </div>
+    </TooltipProvider>
   )
 }
 
-function collectGroupIds(state: BridgeState): Set<string> {
-  const ids = new Set<string>()
+function collectExpandedIds(state: BridgeState): Set<string> {
+  const ids = new Set<string>(Object.values(panelRootIds))
   const visit = (nodes: LayerNode[]) => {
     for (const node of nodes) {
       if (node.kind === "group") ids.add(node.id)
@@ -609,6 +830,25 @@ function collectGroupIds(state: BridgeState): Set<string> {
   visit(state.photoshop)
   visit(state.painter)
   return ids
+}
+
+function countNodes(nodes: LayerNode[]): number {
+  return nodes.reduce((count, node) => count + 1 + countNodes(node.children ?? []), 0)
+}
+
+function splitPainterContext(value: string): { textureSet: string; channel: string } {
+  const [textureSet, channel] = value.split(" · ", 2)
+  return {
+    textureSet: textureSet || "No stack",
+    channel: channel || "No channel",
+  }
+}
+
+function compactStatus(value: string): string {
+  if (value === "Drag exported Photoshop layers into the Painter stack") {
+    return "Drop Photoshop layers here to map"
+  }
+  return value
 }
 
 const isEntryPoint = Bun.isStandaloneExecutable || Bun.main === import.meta.path
