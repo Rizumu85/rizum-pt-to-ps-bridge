@@ -48,7 +48,8 @@ def build_export_requests(settings=None):
     """
     settings = settings or {}
     modules = _load_painter_modules()
-    return _build_export_requests(modules, settings)
+    stack_records = list(_iter_stack_records(modules, settings))
+    return _build_export_requests(modules, settings, stack_records)
 
 
 def list_export_targets(settings=None):
@@ -102,21 +103,27 @@ def build_painter_snapshot(settings=None):
     """Capture every addressable Painter stack/channel context for PT Bridge."""
     settings = settings or {}
     modules = _load_painter_modules()
-    return _build_painter_snapshot(modules, settings)
+    stack_records = list(_iter_stack_records(modules, settings))
+    return _build_painter_snapshot(modules, settings, stack_records)
 
 
 def write_painter_snapshot(output_path, settings=None):
     """Atomically write a multi-context Painter snapshot and return its path."""
     path = Path(output_path)
+    snapshot = build_painter_snapshot(settings)
+    _write_json_atomic(path, snapshot)
+    return path
+
+
+def _write_json_atomic(path, payload):
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f"{path.name}.tmp")
-    snapshot = build_painter_snapshot(settings)
     temporary_path.write_text(
-        json.dumps(snapshot, indent=2, sort_keys=True),
+        json.dumps(payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
     temporary_path.replace(path)
-    return path
 
 
 def default_output_dir(settings=None):
@@ -175,9 +182,14 @@ def write_build_bundles(
         total=0,
         text="Preparing export requests...",
     )
-    requests = build_export_requests(settings)
+    modules = _load_painter_modules()
+    stack_records = list(_iter_stack_records(modules, settings))
+    requests = _build_export_requests(modules, settings, stack_records)
+    snapshot = _build_painter_snapshot(modules, settings, stack_records)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    snapshot_path = output_path / PAINTER_SNAPSHOT_FILENAME
+    _write_json_atomic(snapshot_path, snapshot)
     total = len(requests)
     _notify_progress(
         progress_callback,
@@ -200,6 +212,7 @@ def write_build_bundles(
     node_exporter = stack_node_export.StackNodeExporter()
     try:
         for index, request in enumerate(requests, start=1):
+            request["painter_snapshot_file"] = str(snapshot_path)
             _notify_progress(
                 progress_callback,
                 stage="bundles",
@@ -610,10 +623,13 @@ def _iter_stack_records(modules, settings):
             }
 
 
-def _build_painter_snapshot(modules, settings):
+def _build_painter_snapshot(modules, settings, stack_records=None):
     contexts = []
+    records = stack_records
+    if records is None:
+        records = _iter_stack_records(modules, settings)
 
-    for stack_record in _iter_stack_records(modules, settings):
+    for stack_record in records:
         for channel_type, channel in stack_record["channels"].items():
             channel_name = _enum_name(channel_type)
             if not _channel_should_export(
@@ -661,7 +677,7 @@ def _build_painter_snapshot(modules, settings):
     }
 
 
-def _build_export_requests(modules, settings):
+def _build_export_requests(modules, settings, stack_records=None):
     project = modules["project"]
 
     project_info = _project_info(project)
@@ -670,8 +686,11 @@ def _build_export_requests(modules, settings):
     )
     generated_at = datetime.now(timezone.utc).isoformat()
     requests = []
+    records = stack_records
+    if records is None:
+        records = _iter_stack_records(modules, settings)
 
-    for stack_record in _iter_stack_records(modules, settings):
+    for stack_record in records:
         output_maps = export_naming.list_output_maps(
             project_preset,
             stack_record["stack"],

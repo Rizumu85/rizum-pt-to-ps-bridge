@@ -1036,6 +1036,7 @@ function buildSidecarPayload(request, build) {
     schema_version: 1,
     created_at: new Date().toISOString(),
     build_request_file: request.build_request_file || null,
+    painter_snapshot_file: request.painter_snapshot_file || null,
     psd_file: request.psd_file || null,
     texture_set: request.texture_set || "",
     stack: request.stack || "",
