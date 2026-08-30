@@ -2161,3 +2161,17 @@ may also use `alg.mapexport.channelIdentifiers` to hide unused stack channels.
 `BaseColor`) and also stores `channel_identifier` (for example `basecolor`) for
 the legacy JS `alg.mapexport.save` call. The JS docs define export channels as
 channel identifiers, not Python enum names.
+
+## 10. Desktop runtime direction
+
+The desktop bridge is now a GPUiX application using Bun, strict TypeScript,
+React 19, and an exact-pinned `@gpuix/react`. GPUiX supplies the GPUI native
+renderer; direct GPUI, Electron, Tauri, WinUI, and webview implementations are
+not parallel fallbacks.
+
+`mockups/pt-bridge-ui-v4.html`, the vendored `rizum_ui` design decisions, and
+the shared icon snapshot remain the product's visual authority. The Rizum Glass
+repository is used only for its GPUiX migration discipline: freeze the approved
+reference, record visible states and motion in a reference contract, keep all
+text colors explicit, and isolate frame-bound renderer queries from domain
+state and transport work.
