@@ -1,7 +1,11 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   motion,
   render,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -12,6 +16,7 @@ import {
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
+import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
 import iconFolder from "../../icons/folder-filled.svg" with { type: "text" }
 import iconLayers from "../../icons/layers.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
@@ -39,6 +44,7 @@ const icons = {
   check: iconCheck,
   chevronDown: iconChevronDown,
   chevronRight: iconChevronRight,
+  chevronUp: iconChevronUp,
   folder: iconFolder,
   layers: iconLayers,
   redo: iconRedo,
@@ -141,28 +147,134 @@ function InsetSeparator() {
   )
 }
 
-function ContextReadout({ label, value, width }: { label: string; value: string; width: number }) {
+function ContextSelect({ label, value, width }: { label: string; value: string; width: number }) {
+  const [present, setPresent] = useState(false)
+  const [visuallyOpen, setVisuallyOpen] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+
+  const setOpen = (nextOpen: boolean) => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    if (nextOpen) {
+      setPresent(true)
+      setVisuallyOpen(true)
+      return
+    }
+
+    setVisuallyOpen(false)
+    closeTimer.current = setTimeout(() => {
+      setPresent(false)
+      closeTimer.current = null
+    }, 180)
+  }
+
   return (
-    <div
-      style={{
-        width,
-        height: 26,
-        paddingLeft: 9,
-        paddingRight: 9,
-        flexShrink: 0,
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 4,
-        borderRadius: metrics.rowRadius,
-        backgroundColor: colors.control,
-      }}
-    >
-      <SecondaryText>{label}</SecondaryText>
-      <div style={{ minWidth: 0, flexGrow: 1 }}>
-        <PrimaryText>{value}</PrimaryText>
-      </div>
-    </div>
+    <Select value={value} open={present} onOpenChange={setOpen} style={{ flexShrink: 0 }}>
+      <SelectTrigger
+        testId={`context-select:${label}`}
+        style={{
+          width,
+          height: 26,
+          paddingLeft: 9,
+          paddingRight: 9,
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          borderRadius: metrics.rowRadius,
+          backgroundColor: visuallyOpen ? colors.controlHover : colors.control,
+          cursor: "pointer",
+          hover: { backgroundColor: colors.controlHover },
+        }}
+      >
+        <SecondaryText>{label}</SecondaryText>
+        <div style={{ minWidth: 0, flexGrow: 1 }}>
+          <PrimaryText>{value}</PrimaryText>
+        </div>
+        <div style={{ width: 12, height: 12, flexShrink: 0, position: "relative" }}>
+          {(["chevronDown", "chevronUp"] as const).map((name) => {
+            const visible = name === (visuallyOpen ? "chevronUp" : "chevronDown")
+            return (
+              <motion.div
+                key={name}
+                initial={false}
+                animate={{ opacity: visible ? 1 : 0 }}
+                transition={{ duration: 0.18, ease: motionEase }}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: 12,
+                  height: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Icon name={name} size={12} />
+              </motion.div>
+            )
+          })}
+        </div>
+      </SelectTrigger>
+      <SelectContent
+        side="bottom"
+        sideOffset={4}
+        align="start"
+        collisionPadding={8}
+        style={{ width, backgroundColor: "transparent", pointerEvents: visuallyOpen ? "auto" : "none" }}
+      >
+        <motion.div
+          initial={{ opacity: 0, top: -6 }}
+          animate={{ opacity: visuallyOpen ? 1 : 0, top: visuallyOpen ? 0 : -6 }}
+          transition={{ duration: visuallyOpen ? 0.18 : 0.14, ease: motionEase }}
+          style={{
+            width: "100%",
+            position: "relative",
+            paddingTop: 4,
+            paddingBottom: 4,
+            borderRadius: metrics.rowRadius,
+            borderWidth: 1,
+            borderColor: colors.line,
+            backgroundColor: colors.control,
+            boxShadow: {
+              offsetX: 0,
+              offsetY: 4,
+              blurRadius: 12,
+              spreadRadius: 0,
+              color: "#00000066",
+            },
+          }}
+        >
+          <SelectItem
+            value={value}
+            style={({ selected, highlighted, disabled }) => ({
+              height: 26,
+              paddingLeft: 9,
+              paddingRight: 9,
+              display: "flex",
+              alignItems: "center",
+              color: selected ? colors.text : colors.secondary,
+              opacity: disabled ? 0.48 : 1,
+              backgroundColor: highlighted ? colors.controlHover : "transparent",
+              cursor: disabled ? "default" : "pointer",
+              hover: disabled ? undefined : { backgroundColor: colors.controlHover },
+            })}
+          >
+            <PrimaryText>{value}</PrimaryText>
+          </SelectItem>
+        </motion.div>
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -244,6 +356,7 @@ function IconAction({
 }
 
 function LayerThumbnail({ kind, masked = false }: { kind: LayerNode["kind"]; masked?: boolean }) {
+  // The corner tile is semantic mask state and only appears for nodes backed by a real mask.
   return (
     <div style={{ width: 25, height: 22, flexShrink: 0, position: "relative" }}>
       <div
@@ -366,9 +479,8 @@ function LayerRow({
           flexDirection: "row",
           alignItems: "center",
           gap: 9,
-          borderLeftWidth: 2,
-          borderColor: mapped ? colors.text : "transparent",
           borderRadius: metrics.rowRadius,
+          // Mapping uses a quiet row wash; the former white leading stripe read as stray decoration.
           backgroundColor: mapped ? colors.mapped : undefined,
           opacity: draggingId === node.id ? 0.48 : 1,
           cursor: source ? "move" : "default",
@@ -624,6 +736,7 @@ function HostPanel({
   onDrop: (id: string) => void
   onRemove: (id: string) => void
 }) {
+  // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
     <div
       style={{
@@ -834,8 +947,8 @@ export function BridgeApp({
             gap: 8,
           }}
         >
-          <ContextReadout label="Texture Set:" value={painterContext.textureSet} width={146} />
-          <ContextReadout label="Channel:" value={painterContext.channel} width={140} />
+          <ContextSelect label="Texture Set:" value={painterContext.textureSet} width={160} />
+          <ContextSelect label="Channel:" value={painterContext.channel} width={152} />
           <div style={{ flexGrow: 1 }} />
           <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
