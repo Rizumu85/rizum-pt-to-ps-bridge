@@ -14,6 +14,7 @@ import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconFolder from "../../icons/folder-filled.svg" with { type: "text" }
 import iconLayers from "../../icons/layers.svg" with { type: "text" }
+import iconRedo from "../../icons/redo.svg" with { type: "text" }
 import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
 import iconX from "../../icons/x.svg" with { type: "text" }
@@ -40,6 +41,7 @@ const icons = {
   chevronRight: iconChevronRight,
   folder: iconFolder,
   layers: iconLayers,
+  redo: iconRedo,
   reset: iconReset,
   undo: iconUndo,
   x: iconX,
@@ -639,12 +641,15 @@ export function BridgeApp({
 }) {
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
   const [history, setHistory] = useState<BridgeState[]>([])
+  // Preview parity only earns toolbar space for commands backed by real state changes.
+  const [redoStack, setRedoStack] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
 
   const hasChanges = history.length > 0
+  const canRedo = redoStack.length > 0
   const mappedIds = useMemo(
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
@@ -657,6 +662,7 @@ export function BridgeApp({
   const mutate = (next: BridgeState, message: string) => {
     if (next === bridge) return
     setHistory((current) => [...current, cloneState(bridge)])
+    setRedoStack([])
     setBridge(next)
     setStatus(message)
   }
@@ -677,14 +683,25 @@ export function BridgeApp({
   const undo = () => {
     const previous = history.at(-1)
     if (!previous) return
+    setRedoStack((current) => [...current, cloneState(bridge)])
     setBridge(previous)
     setHistory((current) => current.slice(0, -1))
     setStatus("Last mapping undone")
   }
 
+  const redo = () => {
+    const next = redoStack.at(-1)
+    if (!next) return
+    setHistory((current) => [...current, cloneState(bridge)])
+    setBridge(next)
+    setRedoStack((current) => current.slice(0, -1))
+    setStatus("Last mapping restored")
+  }
+
   const reset = () => {
     setBridge(cloneState(session.state))
     setHistory([])
+    setRedoStack([])
     setDraggingId(null)
     setDropTargetId(null)
     setStatus("Mapping reset")
@@ -695,6 +712,7 @@ export function BridgeApp({
     try {
       const output = await onApply(bridge)
       setHistory([])
+      setRedoStack([])
       const filename = output.split(/[\\/]/).pop() || output
       setStatus(`Transfer manifest written · ${filename}`)
     } catch (error) {
@@ -752,6 +770,7 @@ export function BridgeApp({
           <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
+          <IconAction icon="redo" label="Redo" disabled={!canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction
             icon="check"
