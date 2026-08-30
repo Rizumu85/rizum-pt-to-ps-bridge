@@ -1,0 +1,28 @@
+{
+  "name": "PT Bridge desktop",
+  "visualAuthority": "../mockups/pt-bridge-ui-v4.html",
+  "runtime": {
+    "framework": "@gpuix/react",
+    "nativeRenderer": "GPUI",
+    "browserOrWebview": false
+  },
+  "window": {
+    "width": 840,
+    "height": 650,
+    "chrome": "native"
+  },
+  "states": [
+    "group-hover",
+    "layer-hover",
+    "drag-source",
+    "drop-target",
+    "mapping-dirty",
+    "mapping-applied"
+  ],
+  "motion": {
+    "entryMs": 200,
+    "dropIndicatorMs": 120,
+    "easing": "easeOut"
+  }
+}
+
