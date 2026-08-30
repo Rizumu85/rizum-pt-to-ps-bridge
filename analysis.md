@@ -2175,3 +2175,16 @@ repository is used only for its GPUiX migration discipline: freeze the approved
 reference, record visible states and motion in a reference contract, keep all
 text colors explicit, and isolate frame-bound renderer queries from domain
 state and transport work.
+
+### 10.1 Explicit desktop transfer contracts
+
+Photoshop selected-layer export now writes `photoshop_selection.json` beside
+its PNG files. The manifest records the source document, stable Photoshop layer
+IDs, blend metadata, and relative layer/mask PNG paths. The desktop app reads
+that manifest together with either the PSD's persistent `.rizum.json` sidecar
+or an explicit Painter `build_request.json` snapshot.
+
+Apply writes `desktop_transfer.json` atomically. Each transfer contains the
+source asset reference, destination Painter UID/path, and an explicit `inside`
+or `after` insertion relation. This is a user-confirmed file contract, not a
+revival of the deprecated `_pt_sync_inbox`, daemon, or background polling path.
