@@ -56,9 +56,47 @@ const motionEase: MotionEase = [0.23, 1, 0.32, 1]
 
 type IconName = keyof typeof icons
 
-function Icon({ name, size = 14, color = colors.secondary }: { name: IconName; size?: number; color?: string }) {
+function Icon({
+  name,
+  size = 14,
+  color = colors.secondary,
+}: {
+  name: IconName
+  size?: number | string
+  color?: string
+}) {
   const source = icons[name].replace(/#[0-9a-f]{6}/gi, color)
   return <svg source={source} style={{ width: size, height: size, flexShrink: 0, color }} />
+}
+
+function DisclosureIcon({ open }: { open: boolean }) {
+  return (
+    <div style={{ width: 12, height: 12, position: "relative" }}>
+      {(["chevronRight", "chevronDown"] as const).map((name) => {
+        const visible = name === (open ? "chevronDown" : "chevronRight")
+        return (
+          <motion.div
+            key={name}
+            initial={false}
+            animate={{ opacity: visible ? 1 : 0 }}
+            transition={{ duration: 0.12, ease: motionEase }}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: 12,
+              height: 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name={name} size={11} />
+          </motion.div>
+        )
+      })}
+    </div>
+  )
 }
 
 function PrimaryText({ children }: { children: React.ReactNode }) {
@@ -139,11 +177,16 @@ function IconAction({
   disabled?: boolean
   onClick: () => void
 }) {
+  const [pressed, setPressed] = useState(false)
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div
           onClick={disabled ? undefined : onClick}
+          onMouseDown={disabled ? undefined : () => setPressed(true)}
+          onMouseUp={disabled ? undefined : () => setPressed(false)}
+          onMouseLeave={() => setPressed(false)}
           style={{
             width: 28,
             height: 28,
@@ -152,13 +195,25 @@ function IconAction({
             alignItems: "center",
             justifyContent: "center",
             borderRadius: metrics.rowRadius,
-            opacity: disabled ? 0.36 : 1,
+            opacity: disabled ? 0.48 : 1,
             cursor: disabled ? "default" : "pointer",
             hover: disabled ? undefined : { backgroundColor: colors.controlHover },
-            active: disabled ? undefined : { backgroundColor: colors.controlActive, opacity: 0.7 },
+            active: disabled ? undefined : { backgroundColor: colors.controlActive },
           }}
         >
-          <Icon name={icon} size={15} />
+          {/* GPUiX 0.6 has no transform tween, so scale only this fixed-size icon box. */}
+          <motion.div
+            initial={false}
+            animate={{
+              width: pressed ? 12.75 : 15,
+              height: pressed ? 12.75 : 15,
+              opacity: pressed ? 0.7 : 1,
+            }}
+            transition={{ duration: pressed ? 0.08 : 0.18, ease: motionEase }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <Icon name={icon} size="100%" />
+          </motion.div>
         </div>
       </TooltipTrigger>
       <TooltipContent
@@ -336,7 +391,7 @@ function LayerRow({
           }}
         >
           {node.kind === "group" ? (
-            <Icon name={open ? "chevronDown" : "chevronRight"} size={11} />
+            <DisclosureIcon open={open} />
           ) : null}
         </div>
         <LayerThumbnail kind={node.kind} masked={node.masked} />
@@ -362,12 +417,21 @@ function LayerRow({
           </div>
         ) : null}
       </div>
-      {node.kind === "group" && open ? (
+      {/* Mounted descendants let interrupted toggles retarget the same accordion transition. */}
+      {node.kind === "group" ? (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.14, ease: motionEase }}
-          style={{ display: "flex", flexDirection: "column" }}
+          initial={false}
+          animate={{
+            height: open ? visibleNodesHeight(children, expanded) : 0,
+            opacity: open ? 1 : 0,
+          }}
+          transition={{ duration: 0.3, ease: motionEase }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            pointerEvents: open ? "auto" : "none",
+          }}
         >
           {children.map((child) => (
             <LayerRow
@@ -466,7 +530,7 @@ function PanelTree({
             justifyContent: "center",
           }}
         >
-          <Icon name={open ? "chevronDown" : "chevronRight"} size={11} />
+          <DisclosureIcon open={open} />
         </div>
         <Icon name="folder" size={14} />
         <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -474,45 +538,51 @@ function PanelTree({
           <SecondaryText>{`${countNodes(nodes)} Layers`}</SecondaryText>
         </div>
       </div>
-      {open ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.14, ease: motionEase }}
-          style={{ display: "flex", flexDirection: "column" }}
-        >
-          {nodes.map((node) => (
-            <LayerRow
-              key={node.id}
-              node={node}
-              source={source}
-              mappedIds={mappedIds}
-              draggingId={draggingId}
-              dropTargetId={dropTargetId}
-              expanded={expanded}
-              onToggle={onToggle}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDropTarget={onDropTarget}
-              onDrop={onDrop}
-              onRemove={onRemove}
-            />
-          ))}
-          {footerHint ? (
-            <div
-              style={{
-                height: 24,
-                marginLeft: 38,
-                display: "flex",
-                alignItems: "center",
-                minWidth: 0,
-              }}
-            >
-              <SecondaryText>{footerHint}</SecondaryText>
-            </div>
-          ) : null}
-        </motion.div>
-      ) : null}
+      <motion.div
+        initial={false}
+        animate={{
+          height: open ? visibleNodesHeight(nodes, expanded) + (footerHint ? 24 : 0) : 0,
+          opacity: open ? 1 : 0,
+        }}
+        transition={{ duration: 0.3, ease: motionEase }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          pointerEvents: open ? "auto" : "none",
+        }}
+      >
+        {nodes.map((node) => (
+          <LayerRow
+            key={node.id}
+            node={node}
+            source={source}
+            mappedIds={mappedIds}
+            draggingId={draggingId}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={onToggle}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDropTarget={onDropTarget}
+            onDrop={onDrop}
+            onRemove={onRemove}
+          />
+        ))}
+        {footerHint ? (
+          <div
+            style={{
+              height: 24,
+              marginLeft: 38,
+              display: "flex",
+              alignItems: "center",
+              minWidth: 0,
+            }}
+          >
+            <SecondaryText>{footerHint}</SecondaryText>
+          </div>
+        ) : null}
+      </motion.div>
     </div>
   )
 }
@@ -853,6 +923,17 @@ function collectExpandedIds(state: BridgeState): Set<string> {
 
 function countNodes(nodes: LayerNode[]): number {
   return nodes.reduce((count, node) => count + 1 + countNodes(node.children ?? []), 0)
+}
+
+function visibleNodesHeight(nodes: LayerNode[], expanded: Set<string>): number {
+  return nodes.reduce((height, node) => {
+    const ownHeight = metrics.rowHeight + (node.kind === "group" ? 8 : 0)
+    const childHeight =
+      node.kind === "group" && expanded.has(node.id)
+        ? visibleNodesHeight(node.children ?? [], expanded)
+        : 0
+    return height + ownHeight + childHeight
+  }, 0)
 }
 
 function splitPainterContext(value: string): { textureSet: string; channel: string } {
