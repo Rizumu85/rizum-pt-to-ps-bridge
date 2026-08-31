@@ -9,6 +9,9 @@ export type HostLayerRef = {
   path: string
   assetPath?: string | null
   maskPath?: string | null
+  blendMode?: string | null
+  opacity?: number | null
+  visible?: boolean | null
 }
 
 export type LayerNode = {

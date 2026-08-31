@@ -1020,9 +1020,11 @@ function HostPanel({
 export function BridgeApp({
   session,
   onApply,
+  onApplied,
 }: {
   session: BridgeSession
   onApply: (state: BridgeState, painterContextId: string) => Promise<string>
+  onApplied?: (output: string) => void
 }) {
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
   const [activePainterContextId, setActivePainterContextId] = useState(
@@ -1142,6 +1144,7 @@ export function BridgeApp({
       setRedoStack([])
       const filename = output.split(/[\\/]/).pop() || output
       setStatus(`Transfer manifest written · ${filename}`)
+      onApplied?.(output)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     }
@@ -1359,6 +1362,11 @@ if (isEntryPoint) {
     <BridgeApp
       session={session}
       onApply={(state, contextId) => writeTransferManifest(session, state, contextId)}
+      onApplied={() => {
+        // Painter owns the destination mutation, so a successful atomic write
+        // is the desktop process's terminal state and its unambiguous handoff.
+        setTimeout(() => process.exit(0), 80)
+      }}
     />,
     {
       title: "PT Bridge",

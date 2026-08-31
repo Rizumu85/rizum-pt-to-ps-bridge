@@ -53,6 +53,11 @@ describe("desktop file transport", () => {
     expect(manifest.request_type).toBe("desktop_transfer")
     expect(manifest.transfers[0].insertion).toBe("inside")
     expect(manifest.transfers[0].source.mask_png).toMatch(/color_pass_mask\.png$/)
+    expect(manifest.transfers[0].source).toMatchObject({
+      blend_mode: "overlay",
+      opacity: 65,
+      visible: true,
+    })
     expect(manifest.transfers[0].target.id).toBe("sp-working")
     expect(manifest.target.context).toMatchObject({
       texture_set: "M_body",

@@ -195,6 +195,9 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
       path: textValue(layer.path) || (group ? `${group}/${name}` : name),
       assetPath: resolvedAsset,
       maskPath: relativeMask ? resolveAsset(manifestDir, relativeMask) : null,
+      blendMode: textValue(layer.blend_mode) || "normal",
+      opacity: numberValue(layer.opacity, 100),
+      visible: layer.visible !== false,
     }
     return {
       id: `photoshop:${externalId}`,
@@ -319,6 +322,9 @@ function manifestRef(ref: HostLayerRef) {
     path: ref.path,
     png: ref.assetPath ?? null,
     mask_png: ref.maskPath ?? null,
+    blend_mode: ref.blendMode ?? null,
+    opacity: ref.opacity ?? null,
+    visible: ref.visible ?? null,
   }
 }
 
