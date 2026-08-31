@@ -28,6 +28,417 @@ PAINTER_DIALOG_STYLE = MappingProxyType(
 )
 
 
+class SettingsToggle(QtWidgets.QAbstractButton):
+    """Painter-style settings switch with runtime compact scaling."""
+
+    BASE_WIDTH = 36
+    BASE_HEIGHT = 20
+    MIN_HEIGHT = 15
+    ANIMATION_DURATION = 160
+
+    def __init__(
+        self,
+        checked: bool = False,
+        visual_style: Mapping[str, str] | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("RizumSettingsToggle")
+        self.setCheckable(True)
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.setAttribute(
+            QtCore.Qt.WidgetAttribute.WA_TranslucentBackground,
+            True,
+        )
+        self.setAutoFillBackground(False)
+        self.setStyleSheet("background: transparent; border: 0;")
+        self._visual_style = dict(PAINTER_DIALOG_STYLE)
+        if visual_style:
+            self._visual_style.update(visual_style)
+        self._compact_height = self.BASE_HEIGHT
+        self._knob_margin = 3.0
+        self._knob_size = 14.0
+        self._offset = 0.0
+        self._animation = QtCore.QPropertyAnimation(self, b"offset", self)
+        self._animation.setDuration(self.ANIMATION_DURATION)
+        self._animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self.toggled.connect(self._animate_to_state)
+        self.blockSignals(True)
+        self.setChecked(bool(checked))
+        self.blockSignals(False)
+        self.setCompactHeight(self.BASE_HEIGHT)
+
+    def setVisualStyle(self, visual_style: Mapping[str, str]) -> None:
+        self._visual_style = dict(PAINTER_DIALOG_STYLE)
+        self._visual_style.update(visual_style)
+        self.update()
+
+    def compactHeight(self) -> int:
+        return self._compact_height
+
+    def setCompactHeight(self, height: int) -> None:
+        self._animation.stop()
+        self._compact_height = max(self.MIN_HEIGHT, int(round(height)))
+        scale = self._compact_height / float(self.BASE_HEIGHT)
+        self._knob_margin = 3.0 * scale
+        self._knob_size = 14.0 * scale
+        self.setFixedSize(
+            max(27, int(round(self.BASE_WIDTH * scale))),
+            self._compact_height,
+        )
+        self._offset = self._knob_travel() if self.isChecked() else 0.0
+        self.updateGeometry()
+        self.update()
+
+    def _knob_travel(self) -> float:
+        return max(
+            0.0,
+            float(self.width()) - self._knob_size - 2 * self._knob_margin,
+        )
+
+    def getOffset(self) -> float:
+        return self._offset
+
+    def setOffset(self, value: float) -> None:
+        self._offset = float(value)
+        self.update()
+
+    offset = QtCore.Property(float, getOffset, setOffset)
+
+    def _animate_to_state(self, checked: bool) -> None:
+        self._animation.stop()
+        self._animation.setStartValue(self._offset)
+        self._animation.setEndValue(
+            self._knob_travel() if checked else 0.0
+        )
+        self._animation.start()
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        super().mousePressEvent(event)
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        del event
+        style = self._visual_style
+        if self.isDown():
+            track_key = "accent_pressed" if self.isChecked() else "control_pressed"
+        elif self.underMouse():
+            track_key = "accent_hover" if self.isChecked() else "control_hover"
+        else:
+            track_key = "accent" if self.isChecked() else "control"
+
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        track = QtCore.QRectF(
+            0.5,
+            0.5,
+            self.width() - 1.0,
+            self.height() - 1.0,
+        )
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor(style[track_key]))
+        painter.drawRoundedRect(
+            track,
+            track.height() / 2.0,
+            track.height() / 2.0,
+        )
+        painter.setBrush(QtGui.QColor(style["muted"]))
+        painter.drawEllipse(
+            QtCore.QRectF(
+                self._knob_margin + self._offset,
+                self._knob_margin,
+                self._knob_size,
+                self._knob_size,
+            )
+        )
+        painter.end()
+
+
+class StatusBanner(QtWidgets.QFrame):
+    """Compact dock status surface with an optional in-place action."""
+
+    actionTriggered = QtCore.Signal()
+
+    BASE_HEIGHT = 54
+    MIN_HEIGHT = 41  # round(54 x 0.75)
+    STATUS_TRANSITION_DURATION = 140
+    _TONES = {
+        "neutral": "#666666",
+        "accent": "#f2f2f2",
+        "info": "#6aa8ff",
+        "good": default_theme.success,
+        "warn": default_theme.warning,
+        "bad": default_theme.danger,
+    }
+
+    def __init__(
+        self,
+        title: str = "",
+        subtitle: str = "",
+        tone: str = "neutral",
+        action_text: str = "",
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("RizumStatusBanner")
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            """
+QFrame#RizumStatusBanner {
+    background: transparent;
+    border: 0;
+}
+QFrame#RizumStatusBanner QLabel#RizumStatusBannerTitle {
+    color: #f2f2f2;
+    background: transparent;
+    border: 0;
+}
+QFrame#RizumStatusBanner QLabel#RizumStatusBannerSubtitle {
+    color: #9a9a9a;
+    background: transparent;
+    border: 0;
+}
+"""
+        )
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
+        self._compact_height = self.BASE_HEIGHT
+        self._tone = "neutral"
+        self._tone_color = QtGui.QColor(self._TONES["neutral"])
+        self._tone_start_color = QtGui.QColor(self._tone_color)
+        self._tone_target_color = QtGui.QColor(self._tone_color)
+        self._tone_progress = 1.0
+        self._accent_width = 3
+        self._radius = float(default_theme.radius_small)
+        self._status_animation = None
+
+        self._layout = QtWidgets.QHBoxLayout(self)
+        self._layout.setContentsMargins(12, 7, 10, 7)
+        self._layout.setSpacing(8)
+
+        text_host = QtWidgets.QWidget(self)
+        text_host.setObjectName("RizumTransparent")
+        self._text_host = text_host
+        self._text_opacity = QtWidgets.QGraphicsOpacityEffect(text_host)
+        self._text_opacity.setOpacity(1.0)
+        text_host.setGraphicsEffect(self._text_opacity)
+        self._text_layout = QtWidgets.QVBoxLayout(text_host)
+        self._text_layout.setContentsMargins(0, 0, 0, 0)
+        self._text_layout.setSpacing(1)
+        self._title = QtWidgets.QLabel(title, text_host)
+        self._title.setObjectName("RizumStatusBannerTitle")
+        self._subtitle = QtWidgets.QLabel(subtitle, text_host)
+        self._subtitle.setObjectName("RizumStatusBannerSubtitle")
+        for label in (self._title, self._subtitle):
+            label.setAttribute(
+                QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents,
+                True,
+            )
+            label.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Ignored,
+                QtWidgets.QSizePolicy.Policy.Preferred,
+            )
+        self._text_layout.addWidget(self._title)
+        self._text_layout.addWidget(self._subtitle)
+        self._layout.addWidget(text_host, 1)
+
+        self._action = TextActionButton(action_text, parent=self)
+        self._action_opacity = QtWidgets.QGraphicsOpacityEffect(self._action)
+        self._action_opacity.setOpacity(1.0)
+        self._action.setGraphicsEffect(self._action_opacity)
+        self._action.clicked.connect(self.actionTriggered)
+        self._layout.addWidget(self._action)
+        self.setStatus(title, subtitle, tone, action_text)
+        self.setCompactHeight(self.BASE_HEIGHT)
+
+    def title(self) -> str:
+        return self._title.text()
+
+    def subtitle(self) -> str:
+        return self._subtitle.text()
+
+    def tone(self) -> str:
+        return self._tone
+
+    def actionText(self) -> str:
+        return self._action.text()
+
+    def setStatus(
+        self,
+        title: str,
+        subtitle: str = "",
+        tone: str = "neutral",
+        action_text: str = "",
+        *,
+        animate: bool = False,
+    ) -> None:
+        title = str(title)
+        subtitle = str(subtitle)
+        action_text = str(action_text)
+        next_tone = tone if tone in self._TONES else "neutral"
+        changed = (
+            title != self._title.text()
+            or subtitle != self._subtitle.text()
+            or action_text != self._action.text()
+            or next_tone != self._tone
+        )
+
+        self._title.setText(title)
+        self._subtitle.setText(subtitle)
+        self._subtitle.setVisible(bool(subtitle))
+        self._tone = next_tone
+        self._action.setText(action_text)
+        self._action.setVisible(bool(action_text))
+        self._action.setCompactHeight(
+            max(
+                TextActionButton.MIN_HEIGHT,
+                int(round(26 * self._compact_height / self.BASE_HEIGHT)),
+            )
+        )
+        self._transition_status(
+            QtGui.QColor(self._TONES[self._tone]),
+            animate=animate and changed,
+        )
+        self.updateGeometry()
+        self.update()
+
+    def _stop_status_animation(self) -> None:
+        if self._status_animation is None:
+            return
+        self._status_animation.stop()
+        self._status_animation.deleteLater()
+        self._status_animation = None
+
+    def toneProgress(self) -> float:
+        return self._tone_progress
+
+    def setToneProgress(self, value: float) -> None:
+        self._tone_progress = max(0.0, min(1.0, float(value)))
+        progress = self._tone_progress
+        start = self._tone_start_color
+        target = self._tone_target_color
+        self._tone_color = QtGui.QColor(
+            round(start.red() + (target.red() - start.red()) * progress),
+            round(start.green() + (target.green() - start.green()) * progress),
+            round(start.blue() + (target.blue() - start.blue()) * progress),
+            round(start.alpha() + (target.alpha() - start.alpha()) * progress),
+        )
+        self.update()
+
+    animatedToneProgress = QtCore.Property(
+        float,
+        toneProgress,
+        setToneProgress,
+    )
+
+    def _transition_status(self, target_color: QtGui.QColor, *, animate: bool) -> None:
+        self._stop_status_animation()
+        self._tone_start_color = QtGui.QColor(self._tone_color)
+        self._tone_target_color = QtGui.QColor(target_color)
+        self.setToneProgress(0.0)
+        if not animate:
+            self._text_opacity.setOpacity(1.0)
+            self._action_opacity.setOpacity(1.0)
+            self.setToneProgress(1.0)
+            return
+
+        app = QtWidgets.QApplication.instance()
+        reduced_motion = bool(app and app.property("rizumReduceMotion"))
+        duration = 80 if reduced_motion else self.STATUS_TRANSITION_DURATION
+        group = QtCore.QParallelAnimationGroup(self)
+        for effect in (self._text_opacity, self._action_opacity):
+            effect.setOpacity(0.35)
+            fade = QtCore.QPropertyAnimation(effect, b"opacity", group)
+            fade.setDuration(duration)
+            fade.setStartValue(0.35)
+            fade.setEndValue(1.0)
+            fade.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+            group.addAnimation(fade)
+        tone_animation = QtCore.QPropertyAnimation(
+            self,
+            b"animatedToneProgress",
+            group,
+        )
+        tone_animation.setDuration(duration)
+        tone_animation.setStartValue(0.0)
+        tone_animation.setEndValue(1.0)
+        tone_animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        group.addAnimation(tone_animation)
+        self._status_animation = group
+
+        def finish() -> None:
+            if self._status_animation is group:
+                self._status_animation = None
+            group.deleteLater()
+
+        group.finished.connect(finish)
+        group.start()
+
+    def setCompactHeight(self, height: int) -> None:
+        self._compact_height = max(self.MIN_HEIGHT, int(round(height)))
+        scale = self._compact_height / float(self.BASE_HEIGHT)
+        self.setFixedHeight(self._compact_height)
+        self._accent_width = max(2, int(round(3 * scale)))
+        self._radius = max(4.5, default_theme.radius_small * scale)
+        self._layout.setContentsMargins(
+            max(9, int(round(12 * scale))),
+            max(5, int(round(7 * scale))),
+            max(8, int(round(10 * scale))),
+            max(5, int(round(7 * scale))),
+        )
+        self._layout.setSpacing(max(6, int(round(8 * scale))))
+        self._text_layout.setSpacing(max(1, int(round(scale))))
+
+        title_font = QtGui.QFont(self.font())
+        title_font.setPixelSize(max(9, int(round(12 * scale))))
+        title_font.setWeight(QtGui.QFont.Weight.Medium)
+        subtitle_font = QtGui.QFont(self.font())
+        subtitle_font.setPixelSize(max(8, int(round(10 * scale))))
+        subtitle_font.setWeight(QtGui.QFont.Weight.Normal)
+        self._title.setFont(title_font)
+        self._subtitle.setFont(subtitle_font)
+        self._action.setCompactHeight(max(21, int(round(26 * scale))))
+        self.updateGeometry()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor("#252525"))
+        frame = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.drawRoundedRect(frame, self._radius, self._radius)
+        painter.setBrush(self._tone_color)
+        accent = QtCore.QRectF(
+            frame.left(),
+            frame.top() + self._radius,
+            self._accent_width,
+            max(1.0, frame.height() - self._radius * 2),
+        )
+        painter.drawRoundedRect(
+            accent,
+            self._accent_width / 2.0,
+            self._accent_width / 2.0,
+        )
+        painter.end()
+
+
 class TextActionButton(QtWidgets.QAbstractButton):
     """Text-only secondary action with quiet hover and press feedback."""
 
@@ -178,6 +589,7 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
     BASE_HEIGHT = 28
     MIN_HEIGHT = 21
     HOVER_DURATION = 100
+    TEXT_TRANSITION_DURATION = 120
 
     def __init__(
         self,
@@ -207,6 +619,8 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         self._compact_height = self.BASE_HEIGHT
         self._hover_progress = 0.0
         self._hover_animation = None
+        self._content_opacity = 1.0
+        self._text_animation = None
         self.setCompactHeight(self.BASE_HEIGHT)
 
     @staticmethod
@@ -257,6 +671,56 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         hoverProgress,
         setHoverProgress,
     )
+
+    def contentOpacity(self) -> float:
+        return self._content_opacity
+
+    def setContentOpacity(self, value: float) -> None:
+        self._content_opacity = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    animatedContentOpacity = QtCore.Property(
+        float,
+        contentOpacity,
+        setContentOpacity,
+    )
+
+    def setAnimatedText(self, text: str, *, animate: bool = True) -> None:
+        text = str(text)
+        if text == self.text():
+            return
+        if self._text_animation is not None:
+            self._text_animation.stop()
+            self._text_animation.deleteLater()
+            self._text_animation = None
+        self.setText(text)
+        self.updateGeometry()
+        if not animate:
+            self.setContentOpacity(1.0)
+            return
+
+        app = QtWidgets.QApplication.instance()
+        reduced_motion = bool(app and app.property("rizumReduceMotion"))
+        duration = 80 if reduced_motion else self.TEXT_TRANSITION_DURATION
+        self.setContentOpacity(0.35)
+        animation = QtCore.QPropertyAnimation(
+            self,
+            b"animatedContentOpacity",
+            self,
+        )
+        animation.setDuration(duration)
+        animation.setStartValue(0.35)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._text_animation = animation
+
+        def finish() -> None:
+            if self._text_animation is animation:
+                self._text_animation = None
+            animation.deleteLater()
+
+        animation.finished.connect(finish)
+        animation.start()
 
     def _animate_hover(self, target: float) -> None:
         if self._hover_animation is not None:
@@ -324,6 +788,7 @@ class SecondaryActionButton(QtWidgets.QAbstractButton):
         )
         painter.setFont(self._font())
         painter.setPen(self._text_color)
+        painter.setOpacity(self._content_opacity)
         painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, self.text())
         painter.end()
 
@@ -415,6 +880,7 @@ class IconActionButton(SecondaryActionButton):
         )
         font = self._font()
         painter.setFont(font)
+        painter.setOpacity(self._content_opacity)
         icon_size = self._icon_size
         icon_gap = self._icon_gap()
         text_width = QtGui.QFontMetrics(font).horizontalAdvance(self.text())
@@ -608,7 +1074,13 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
             setattr(self, attribute, None)
         animation.deleteLater()
 
-    def setDirty(self, dirty: bool, animate: bool = True) -> None:
+    def setDirty(
+        self,
+        dirty: bool,
+        animate: bool = True,
+        *,
+        pulse: bool = True,
+    ) -> None:
         dirty = bool(dirty)
         if self._feedback_active and not dirty:
             self._dirty = False
@@ -646,7 +1118,7 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         activation.setEndValue(target)
         activation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         group.addAnimation(activation)
-        if dirty:
+        if dirty and pulse:
             pulse = QtCore.QPropertyAnimation(self, b"animatedPulseProgress", group)
             pulse.setDuration(190)
             pulse.setStartValue(0.0)
@@ -1243,6 +1715,8 @@ __all__ = [
     "AnimatedSaveButton",
     "ModeParameterSlot",
     "PAINTER_DIALOG_STYLE",
+    "SettingsToggle",
+    "StatusBanner",
     "SecondaryActionButton",
     "ShortcutCaptureField",
     "TextActionButton",

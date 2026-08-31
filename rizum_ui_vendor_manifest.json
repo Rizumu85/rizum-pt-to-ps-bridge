@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-08-07T05:16:01.099381+00:00",
+  "generated_at": "2026-08-31T19:59:34.840298+00:00",
   "source_root": "E:\\Documents\\Adobe\\Adobe Substance 3D Painter\\python\\plugins\\rizum-pt-ui-prettier",
-  "source_git_head": "4fa8462",
+  "source_git_head": "c0bca2d",
   "source_git_status": "",
   "managed_roots": [
     "rizum_ui",
@@ -28,14 +28,17 @@
     "icons/chevrons-up.svg",
     "icons/circle-dot.svg",
     "icons/circle-slash.svg",
+    "icons/ellipsis.svg",
     "icons/folder-filled.svg",
     "icons/folder.svg",
     "icons/layers.svg",
+    "icons/plus.svg",
     "icons/redo.svg",
     "icons/refresh.svg",
     "icons/reset.svg",
     "icons/settings.svg",
     "icons/undo.svg",
+    "icons/wrench.svg",
     "icons/x.svg"
   ]
 }

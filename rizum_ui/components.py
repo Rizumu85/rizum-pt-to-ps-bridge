@@ -1508,7 +1508,13 @@ def make_inline_checkbox_row(label_text, checkbox, parent=None, minimum=88, maxi
     return widget
 
 
-def update_inline_checkbox_row(widget, label_text=None, minimum=None, maximum=None):
+def update_inline_checkbox_row(
+    widget,
+    label_text=None,
+    minimum=None,
+    maximum=None,
+    scale=None,
+):
     """Refresh an inline checkbox row after translation or font-scale changes."""
     from PySide6 import QtWidgets
 
@@ -1523,17 +1529,36 @@ def update_inline_checkbox_row(widget, label_text=None, minimum=None, maximum=No
     if label is None or checkbox is None:
         return
 
+    layout_scale = 1.0 if scale is None else max(0.75, float(scale))
+    if scale is not None:
+        layout = widget.layout()
+        if layout is not None:
+            layout.setContentsMargins(
+                int(round(8 * layout_scale)),
+                int(round(4 * layout_scale)),
+                int(round(8 * layout_scale)),
+                int(round(4 * layout_scale)),
+            )
+            layout.setSpacing(int(round(10 * layout_scale)))
+
     if label_text is not None:
         label.setText(label_text)
+    label_allowance = int(round(32 * layout_scale))
+    row_allowance = int(round(36 * layout_scale))
     text_width = compact_text_width(
         label.text(),
         widget=label,
         minimum=0,
-        maximum=max(0, maximum - 32),
+        maximum=max(0, maximum - label_allowance),
     )
     label.setMinimumWidth(text_width)
-    row_width = min(maximum, max(minimum, text_width + checkbox.width() + 36))
+    row_width = min(
+        maximum,
+        max(minimum, text_width + checkbox.width() + row_allowance),
+    )
     widget.setMinimumWidth(row_width)
+    widget._rizum_minimum = minimum
+    widget._rizum_maximum = maximum
     try:
         widget.updateGeometry()
     except Exception:

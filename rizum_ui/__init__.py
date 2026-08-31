@@ -22,7 +22,9 @@ from .settings_controls import (
     ModeParameterSlot,
     PAINTER_DIALOG_STYLE,
     SecondaryActionButton,
+    SettingsToggle,
     ShortcutCaptureField,
+    StatusBanner,
     TextActionButton,
 )
 from .components import (
@@ -119,8 +121,10 @@ __all__ = [
     "ModeParameterSlot",
     "PAINTER_DIALOG_STYLE",
     "SecondaryActionButton",
+    "SettingsToggle",
     "SectionHeader",
     "StatusPill",
+    "StatusBanner",
     "ShortcutCaptureField",
     "TextActionButton",
     "Theme",
