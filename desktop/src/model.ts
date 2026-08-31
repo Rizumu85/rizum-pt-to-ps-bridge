@@ -17,6 +17,7 @@ export type LayerNode = {
   name: string
   detail: string
   masked?: boolean
+  thumbnailPath?: string | null
   ref: HostLayerRef
   children?: LayerNode[]
 }

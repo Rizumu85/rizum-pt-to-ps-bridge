@@ -12,7 +12,10 @@ export const colors = {
   tertiary: "#666666",
   danger: "#FF453A",
   drop: "#E0E0E0",
-  mask: "#E0E0E0",
+  thumbnail: "#505050",
+  thumbnailBorder: "#737373",
+  maskDark: "#202020",
+  maskLight: "#9B9B9B",
 }
 
 // The upstream GPUI preview remains the visual contract; keeping its tokens

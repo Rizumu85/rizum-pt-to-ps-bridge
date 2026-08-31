@@ -17,8 +17,7 @@ import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
-import iconFolder from "../../icons/folder-filled.svg" with { type: "text" }
-import iconLayers from "../../icons/layers.svg" with { type: "text" }
+import iconFolder from "../../icons/folder.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
 import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
@@ -47,7 +46,6 @@ const icons = {
   chevronRight: iconChevronRight,
   chevronUp: iconChevronUp,
   folder: iconFolder,
-  layers: iconLayers,
   redo: iconRedo,
   reset: iconReset,
   undo: iconUndo,
@@ -60,6 +58,7 @@ const panelRootIds = {
 } as const
 
 const motionEase: MotionEase = [0.23, 1, 0.32, 1]
+const maskThumbnailSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${colors.maskDark}"/><path d="M0 8 8 0v8Z" fill="${colors.maskLight}"/></svg>`
 
 type IconName = keyof typeof icons
 type ContextOption = { value: string; label: string }
@@ -383,26 +382,46 @@ function IconAction({
   )
 }
 
-function LayerThumbnail({ kind, masked = false }: { kind: LayerNode["kind"]; masked?: boolean }) {
+function LayerThumbnail({ node }: { node: LayerNode }) {
+  const isGroup = node.kind === "group"
   // The corner tile is semantic mask state and only appears for nodes backed by a real mask.
   return (
     <div style={{ width: 25, height: 22, flexShrink: 0, position: "relative" }}>
-      <div
-        style={{
-          width: 20,
-          height: 20,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: 3,
-          borderWidth: 1,
-          borderColor: colors.secondary,
-          backgroundColor: colors.control,
-        }}
-      >
-        <Icon name={kind === "group" ? "folder" : "layers"} size={13} />
-      </div>
-      {masked ? (
+      {isGroup ? (
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name="folder" size={16} />
+        </div>
+      ) : (
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            overflow: "hidden",
+            borderRadius: 3,
+            borderWidth: 1,
+            borderColor: colors.thumbnailBorder,
+            backgroundColor: colors.thumbnail,
+          }}
+        >
+          {node.thumbnailPath ? (
+            <img
+              src={node.thumbnailPath}
+              alt=""
+              objectFit="cover"
+              style={{ width: 18, height: 18 }}
+            />
+          ) : null}
+        </div>
+      )}
+      {node.masked ? (
         <div
           style={{
             position: "absolute",
@@ -410,12 +429,15 @@ function LayerThumbnail({ kind, masked = false }: { kind: LayerNode["kind"]; mas
             bottom: 0,
             width: 10,
             height: 10,
+            overflow: "hidden",
             borderRadius: 2,
             borderWidth: 1,
-            borderColor: colors.panel,
-            backgroundColor: colors.mask,
+            borderColor: colors.thumbnailBorder,
+            backgroundColor: colors.maskDark,
           }}
-        />
+        >
+          <svg source={maskThumbnailSource} style={{ width: 8, height: 8 }} />
+        </div>
       ) : null}
     </div>
   )
@@ -534,7 +556,7 @@ function LayerRow({
             <DisclosureIcon open={open} />
           ) : null}
         </div>
-        <LayerThumbnail kind={node.kind} masked={node.masked} />
+        <LayerThumbnail node={node} />
         <div style={{ minWidth: 0, flexGrow: 1 }}>
           <PrimaryText>{node.name}</PrimaryText>
         </div>

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
@@ -186,12 +187,13 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
     const group = textValue(layer.group)
     const relativeAsset = textValue(layer.png)
     const relativeMask = textValue(layer.mask_png)
+    const resolvedAsset = relativeAsset ? resolveAsset(manifestDir, relativeAsset) : null
     const ref: HostLayerRef = {
       host: "photoshop",
       externalId,
       kind: textValue(layer.ps_kind) || "layer",
       path: textValue(layer.path) || (group ? `${group}/${name}` : name),
-      assetPath: relativeAsset ? resolveAsset(manifestDir, relativeAsset) : null,
+      assetPath: resolvedAsset,
       maskPath: relativeMask ? resolveAsset(manifestDir, relativeMask) : null,
     }
     return {
@@ -200,6 +202,7 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
       name,
       detail: layerDetail(layer),
       masked: Boolean(relativeMask),
+      thumbnailPath: availableThumbnail(resolvedAsset),
       ref,
     }
   })
@@ -253,18 +256,20 @@ function requestNodes(values: unknown[], parentPath: string): LayerNode[] {
     const isGroup = /group/i.test(kindText) || childValues.length > 0
     const uid = textValue(node.uid_hex) || textValue(node.uid) || `${parentPath}:${index}`
     const nodePath = parentPath ? `${parentPath}/${name}` : name
+    const resolvedAsset = assetPath(node.asset)
     return {
       id: `substance_painter:${uid}`,
       kind: isGroup ? "group" : "layer",
       name,
       detail: isGroup ? `${childValues.length} Layers` : layerDetail(node),
       masked: Boolean(node.mask_asset) || node.has_mask === true,
+      thumbnailPath: availableThumbnail(resolvedAsset),
       ref: {
         host: "substance_painter",
         externalId: uid,
         kind: kindText,
         path: nodePath,
-        assetPath: assetPath(node.asset),
+        assetPath: resolvedAsset,
         maskPath: assetPath(node.mask_asset),
       },
       children: isGroup ? requestNodes(childValues, nodePath) : undefined,
@@ -319,6 +324,12 @@ function manifestRef(ref: HostLayerRef) {
 
 function assetPath(value: unknown): string | null {
   return nullableText(objectValue(value).path)
+}
+
+function availableThumbnail(value: string | null): string | null {
+  // Snapshot-only nodes often have no rendered asset; checking once at the
+  // transport boundary prevents the native image host from painting a broken-file glyph.
+  return value && existsSync(value) ? value : null
 }
 
 function resolveAsset(base: string, value: string): string {
