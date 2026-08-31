@@ -776,7 +776,7 @@ function PanelTree({
         testId={`panel-tree-toggle:${panelId}`}
         onClick={() => onToggle(rootId)}
         style={{
-          height: metrics.rowHeight,
+          height: 40,
           paddingLeft: 8,
           paddingRight: 8,
           display: "flex",
@@ -799,9 +799,21 @@ function PanelTree({
         >
           <DisclosureIcon open={open} />
         </div>
-        <Icon name="folder" size={14} />
+        <Icon name="folder" size={16} />
         <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-          <PrimaryText>{label}</PrimaryText>
+          {/* The tree root names the collection, so it must outrank the layer rows it contains. */}
+          <text
+            style={{
+              color: colors.text,
+              fontFamily: typography.family,
+              fontSize: typography.primarySize,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {label}
+          </text>
           <SecondaryText>{`${countNodes(nodes)} Layers`}</SecondaryText>
         </div>
       </div>
