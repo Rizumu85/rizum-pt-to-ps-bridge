@@ -17,7 +17,7 @@ import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
-import iconFolder from "../../icons/folder.svg" with { type: "text" }
+import iconFolder from "../../icons/folder-filled.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
 import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
@@ -799,7 +799,7 @@ function PanelTree({
         >
           <DisclosureIcon open={open} />
         </div>
-        <Icon name="folder" size={16} />
+        <Icon name="folder" size={18} />
         <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 }}>
           {/* The tree root names the collection, so it must outrank the layer rows it contains. */}
           <text
