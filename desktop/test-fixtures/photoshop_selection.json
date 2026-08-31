@@ -8,6 +8,7 @@
     "name": "basecolor.psd",
     "path": "C:/fixtures/basecolor.psd"
   },
+  "painter_snapshot": "painter_snapshot.json",
   "layers": [
     {
       "source_id": "ps:42:100",
@@ -42,4 +43,3 @@
     }
   ]
 }
-

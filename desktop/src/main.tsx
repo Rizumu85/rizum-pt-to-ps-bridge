@@ -38,6 +38,7 @@ import {
   parseSessionOptions,
   writeTransferManifest,
   type BridgeSession,
+  type PainterContext,
 } from "./transport"
 
 const icons = {
@@ -61,6 +62,7 @@ const panelRootIds = {
 const motionEase: MotionEase = [0.23, 1, 0.32, 1]
 
 type IconName = keyof typeof icons
+type ContextOption = { value: string; label: string }
 
 function Icon({
   name,
@@ -147,10 +149,24 @@ function InsetSeparator() {
   )
 }
 
-function ContextSelect({ label, value, width }: { label: string; value: string; width: number }) {
+function ContextSelect({
+  label,
+  value,
+  options,
+  width,
+  onValueChange,
+}: {
+  label: string
+  value: string
+  options: ContextOption[]
+  width: number
+  onValueChange: (value: string) => void
+}) {
   const [present, setPresent] = useState(false)
   const [visuallyOpen, setVisuallyOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const disabled = options.length < 2
+  const selectedLabel = options.find((option) => option.value === value)?.label || value
 
   useEffect(
     () => () => {
@@ -178,7 +194,14 @@ function ContextSelect({ label, value, width }: { label: string; value: string; 
   }
 
   return (
-    <Select value={value} open={present} onOpenChange={setOpen} style={{ flexShrink: 0 }}>
+    <Select
+      value={value}
+      open={present}
+      onOpenChange={setOpen}
+      onValueChange={onValueChange}
+      disabled={disabled}
+      style={{ flexShrink: 0 }}
+    >
       <SelectTrigger
         testId={`context-select:${label}`}
         style={{
@@ -192,13 +215,14 @@ function ContextSelect({ label, value, width }: { label: string; value: string; 
           gap: 4,
           borderRadius: metrics.rowRadius,
           backgroundColor: visuallyOpen ? colors.controlHover : colors.control,
-          cursor: "pointer",
-          hover: { backgroundColor: colors.controlHover },
+          opacity: disabled ? 0.72 : 1,
+          cursor: disabled ? "default" : "pointer",
+          hover: disabled ? undefined : { backgroundColor: colors.controlHover },
         }}
       >
         <SecondaryText>{label}</SecondaryText>
         <div style={{ minWidth: 0, flexGrow: 1 }}>
-          <PrimaryText>{value}</PrimaryText>
+          <PrimaryText>{selectedLabel}</PrimaryText>
         </div>
         <div style={{ width: 12, height: 12, flexShrink: 0, position: "relative" }}>
           {(["chevronDown", "chevronUp"] as const).map((name) => {
@@ -255,23 +279,27 @@ function ContextSelect({ label, value, width }: { label: string; value: string; 
             },
           }}
         >
-          <SelectItem
-            value={value}
-            style={({ selected, highlighted, disabled }) => ({
-              height: 26,
-              paddingLeft: 9,
-              paddingRight: 9,
-              display: "flex",
-              alignItems: "center",
-              color: selected ? colors.text : colors.secondary,
-              opacity: disabled ? 0.48 : 1,
-              backgroundColor: highlighted ? colors.controlHover : "transparent",
-              cursor: disabled ? "default" : "pointer",
-              hover: disabled ? undefined : { backgroundColor: colors.controlHover },
-            })}
-          >
-            <PrimaryText>{value}</PrimaryText>
-          </SelectItem>
+          {options.map((option, index) => (
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              testId={`context-option:${label}:${index}`}
+              style={({ selected, highlighted, disabled: itemDisabled }) => ({
+                height: 26,
+                paddingLeft: 9,
+                paddingRight: 9,
+                display: "flex",
+                alignItems: "center",
+                color: selected ? colors.text : colors.secondary,
+                opacity: itemDisabled ? 0.48 : 1,
+                backgroundColor: highlighted ? colors.controlHover : "transparent",
+                cursor: itemDisabled ? "default" : "pointer",
+                hover: itemDisabled ? undefined : { backgroundColor: colors.controlHover },
+              })}
+            >
+              <PrimaryText>{option.label}</PrimaryText>
+            </SelectItem>
+          ))}
         </motion.div>
       </SelectContent>
     </Select>
@@ -820,9 +848,12 @@ export function BridgeApp({
   onApply,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState) => Promise<string>
+  onApply: (state: BridgeState, painterContextId: string) => Promise<string>
 }) {
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
+  const [activePainterContextId, setActivePainterContextId] = useState(
+    session.initialPainterContextId,
+  )
   const [history, setHistory] = useState<BridgeState[]>([])
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
@@ -837,9 +868,21 @@ export function BridgeApp({
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
-  const painterContext = useMemo(
-    () => splitPainterContext(session.painterSubtitle),
-    [session.painterSubtitle],
+  const activePainterContext = useMemo(
+    () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
+    [activePainterContextId, session.painterContexts],
+  )
+  const painterStackOptions = useMemo(
+    () => uniqueStackOptions(session.painterContexts),
+    [session.painterContexts],
+  )
+  const activeStackId = activePainterContext ? painterStackId(activePainterContext) : ""
+  const channelOptions = useMemo(
+    () =>
+      session.painterContexts
+        .filter((context) => painterStackId(context) === activeStackId)
+        .map((context) => ({ value: context.id, label: context.channelLabel })),
+    [activeStackId, session.painterContexts],
   )
 
   const mutate = (next: BridgeState, message: string) => {
@@ -882,18 +925,45 @@ export function BridgeApp({
   }
 
   const reset = () => {
-    setBridge(cloneState(session.state))
+    const next = bridgeStateForContext(session, activePainterContext)
+    setBridge(next)
     setHistory([])
     setRedoStack([])
     setDraggingId(null)
     setDropTargetId(null)
+    setExpanded(collectExpandedIds(next))
     setStatus("Mapping reset")
+  }
+
+  const switchPainterContext = (context: PainterContext | undefined) => {
+    if (!context || context.id === activePainterContextId) return
+    const next = bridgeStateForContext(session, context)
+    // Target references belong to one Painter context; carrying mappings across
+    // a context switch would silently apply them to a different stack/channel.
+    setActivePainterContextId(context.id)
+    setBridge(next)
+    setHistory([])
+    setRedoStack([])
+    setDraggingId(null)
+    setDropTargetId(null)
+    setExpanded(collectExpandedIds(next))
+    setStatus(`Target changed · ${context.subtitle}`)
+  }
+
+  const changePainterStack = (stackId: string) => {
+    const contexts = session.painterContexts.filter(
+      (context) => painterStackId(context) === stackId,
+    )
+    const preferred = contexts.find(
+      (context) => context.channel === activePainterContext?.channel,
+    )
+    switchPainterContext(preferred ?? contexts[0])
   }
 
   const apply = async () => {
     setStatus("Writing transfer manifest...")
     try {
-      const output = await onApply(bridge)
+      const output = await onApply(bridge, activePainterContextId)
       setHistory([])
       setRedoStack([])
       const filename = output.split(/[\\/]/).pop() || output
@@ -947,8 +1017,24 @@ export function BridgeApp({
             gap: 8,
           }}
         >
-          <ContextSelect label="Texture Set:" value={painterContext.textureSet} width={160} />
-          <ContextSelect label="Channel:" value={painterContext.channel} width={152} />
+          <ContextSelect
+            label="Texture Set:"
+            value={activeStackId}
+            options={painterStackOptions}
+            width={176}
+            onValueChange={changePainterStack}
+          />
+          <ContextSelect
+            label="Channel:"
+            value={activePainterContextId}
+            options={channelOptions}
+            width={152}
+            onValueChange={(contextId) =>
+              switchPainterContext(
+                session.painterContexts.find((context) => context.id === contextId),
+              )
+            }
+          />
           <div style={{ flexGrow: 1 }} />
           <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
@@ -998,7 +1084,7 @@ export function BridgeApp({
           <HostPanel
             panelId="painter"
             title="TARGET: PAINTER"
-            subtitle={session.painterSubtitle}
+            subtitle={activePainterContext?.subtitle || "No snapshot loaded"}
             treeLabel="Painter Stack"
             nodes={bridge.painter}
             source={false}
@@ -1049,12 +1135,32 @@ function visibleNodesHeight(nodes: LayerNode[], expanded: Set<string>): number {
   }, 0)
 }
 
-function splitPainterContext(value: string): { textureSet: string; channel: string } {
-  const [textureSet, channel] = value.split(" · ", 2)
-  return {
-    textureSet: textureSet || "No stack",
-    channel: channel || "No channel",
+function bridgeStateForContext(
+  session: BridgeSession,
+  context: PainterContext | null,
+): BridgeState {
+  return cloneState({
+    photoshop: session.state.photoshop,
+    painter: context?.nodes ?? [],
+    mappings: [],
+  })
+}
+
+function painterStackId(context: PainterContext): string {
+  return context.stack ? `${context.textureSet} / ${context.stack}` : context.textureSet
+}
+
+function uniqueStackOptions(contexts: PainterContext[]): ContextOption[] {
+  const options = new Map<string, ContextOption>()
+  for (const context of contexts) {
+    const value = painterStackId(context)
+    if (options.has(value)) continue
+    options.set(value, {
+      value,
+      label: context.stack ? `${context.textureSet} / ${context.stack}` : context.textureSet,
+    })
   }
+  return [...options.values()]
 }
 
 function compactStatus(value: string): string {
@@ -1064,7 +1170,8 @@ function compactStatus(value: string): string {
   return value
 }
 
-const isEntryPoint = Bun.isStandaloneExecutable || Bun.main === import.meta.path
+const isEntryPoint =
+  typeof Bun !== "undefined" && (Bun.isStandaloneExecutable || Bun.main === import.meta.path)
 
 if (isEntryPoint) {
   let session: BridgeSession
@@ -1075,11 +1182,17 @@ if (isEntryPoint) {
     session = failedBridgeSession(error)
   }
 
-  render(<BridgeApp session={session} onApply={(state) => writeTransferManifest(session, state)} />, {
-    title: "PT Bridge",
-    width: metrics.windowWidth,
-    height: metrics.windowHeight,
-    windowBackground: "opaque",
-    focus: process.env.GPUIX_BACKGROUND !== "1",
-  })
+  render(
+    <BridgeApp
+      session={session}
+      onApply={(state, contextId) => writeTransferManifest(session, state, contextId)}
+    />,
+    {
+      title: "PT Bridge",
+      width: metrics.windowWidth,
+      height: metrics.windowHeight,
+      windowBackground: "opaque",
+      focus: process.env.GPUIX_BACKGROUND !== "1",
+    },
+  )
 }

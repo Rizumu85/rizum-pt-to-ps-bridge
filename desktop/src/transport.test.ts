@@ -10,14 +10,19 @@ import { loadBridgeSession, parseSessionOptions, writeTransferManifest } from ".
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("desktop file transport", () => {
-  it("loads Photoshop selection and Painter sidecar into the domain model", async () => {
+  it("loads every Painter snapshot context into the domain model", async () => {
     const session = await loadBridgeSession({
       photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
-      painterSnapshot: path.join(fixtureDir, "painter.rizum.json"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
 
     expect(session.photoshopSubtitle).toBe("basecolor.psd")
-    expect(session.painterSubtitle).toBe("M_body · basecolor")
+    expect(session.painterContexts.map((context) => context.subtitle)).toEqual([
+      "M_body · Base Color",
+      "M_body · Normal",
+      "M_clothes · Base Color",
+    ])
+    expect(session.initialPainterContextId).toBe(session.painterContexts[0].id)
     expect(session.state.photoshop.map((node) => node.name)).toEqual([
       "Paint edit",
       "Color pass",
@@ -33,7 +38,7 @@ describe("desktop file transport", () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
     const session = await loadBridgeSession({
       photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
-      painterSnapshot: path.join(fixtureDir, "painter.rizum.json"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
       output: path.join(outputDir, "desktop_transfer.json"),
     })
     const mapped = transferToPainter(
@@ -42,13 +47,18 @@ describe("desktop file transport", () => {
       "substance_painter:sp-working",
     )
 
-    const output = await writeTransferManifest(session, mapped)
+    const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
     const manifest = JSON.parse(await readFile(output, "utf8"))
 
     expect(manifest.request_type).toBe("desktop_transfer")
     expect(manifest.transfers[0].insertion).toBe("inside")
     expect(manifest.transfers[0].source.mask_png).toMatch(/color_pass_mask\.png$/)
     expect(manifest.transfers[0].target.id).toBe("sp-working")
+    expect(manifest.target.context).toMatchObject({
+      texture_set: "M_body",
+      stack: "",
+      channel: "BaseColor",
+    })
   })
 
   it("accepts environment paths without hidden discovery", () => {

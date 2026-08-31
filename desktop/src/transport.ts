@@ -16,13 +16,24 @@ export type SessionOptions = {
   output?: string
 }
 
+export type PainterContext = {
+  id: string
+  textureSet: string
+  stack: string
+  channel: string
+  channelLabel: string
+  subtitle: string
+  nodes: LayerNode[]
+}
+
 export type BridgeSession = {
   state: BridgeState
   sourceManifestPath: string
   targetSnapshotPath: string
   outputPath: string
   photoshopSubtitle: string
-  painterSubtitle: string
+  painterContexts: PainterContext[]
+  initialPainterContextId: string
   status: string
   sourceDocument: JsonObject
   targetDocument: JsonObject
@@ -75,23 +86,25 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
   )
   const target = await readJsonObject(targetSnapshotPath)
   const photoshop = photoshopNodes(source, sourceManifestPath)
-  const painter = painterNodes(target)
+  const contexts = painterContexts(target)
+  const initialContext = contexts[0]
   if (photoshop.length === 0) throw new Error("Photoshop selection manifest has no exported layers")
-  if (painter.length === 0) throw new Error("Painter snapshot has no addressable layers")
+  if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
   const sourceDocument = objectValue(source.document)
-  const targetDocument = objectValue(target.document)
+  const targetDocument = objectValue(target.project)
   const outputPath = path.resolve(
     options.output ?? path.join(path.dirname(sourceManifestPath), "desktop_transfer.json"),
   )
 
   return {
-    state: { photoshop, painter, mappings: [] },
+    state: { photoshop, painter: initialContext.nodes, mappings: [] },
     sourceManifestPath,
     targetSnapshotPath,
     outputPath,
     photoshopSubtitle: textValue(sourceDocument.name) || textValue(source.document_name) || "Selection",
-    painterSubtitle: painterSubtitle(target),
+    painterContexts: contexts,
+    initialPainterContextId: initialContext.id,
     status: "Drag exported Photoshop layers into the Painter stack",
     sourceDocument,
     targetDocument,
@@ -106,16 +119,23 @@ export function failedBridgeSession(error: unknown): BridgeSession {
     targetSnapshotPath: "",
     outputPath: "",
     photoshopSubtitle: "No selection loaded",
-    painterSubtitle: "No snapshot loaded",
+    painterContexts: [],
+    initialPainterContextId: "",
     status: message,
     sourceDocument: {},
     targetDocument: {},
   }
 }
 
-export async function writeTransferManifest(session: BridgeSession, state: BridgeState): Promise<string> {
+export async function writeTransferManifest(
+  session: BridgeSession,
+  state: BridgeState,
+  painterContextId: string,
+): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
   if (state.mappings.length === 0) throw new Error("Map at least one Photoshop layer before Apply")
+  const painterContext = session.painterContexts.find((context) => context.id === painterContextId)
+  if (!painterContext) throw new Error("The selected Painter context is no longer available")
 
   const payload = {
     schema_version: 1,
@@ -130,6 +150,13 @@ export async function writeTransferManifest(session: BridgeSession, state: Bridg
       host: "substance_painter",
       snapshot: session.targetSnapshotPath,
       document: session.targetDocument,
+      context: {
+        id: painterContext.id,
+        texture_set: painterContext.textureSet,
+        stack: painterContext.stack,
+        channel: painterContext.channel,
+        channel_label: painterContext.channelLabel,
+      },
     },
     transfers: state.mappings.map((mapping, order) => ({
       order,
@@ -178,14 +205,43 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
   })
 }
 
-function painterNodes(snapshot: JsonObject): LayerNode[] {
-  if (snapshot.request_type === "build") {
-    return requestNodes(arrayValue(snapshot.layers), "")
+function painterContexts(snapshot: JsonObject): PainterContext[] {
+  if (snapshot.schema_version !== 1 || snapshot.request_type !== "painter_snapshot") {
+    throw new Error("Painter snapshot must use the painter_snapshot schema_version 1 contract")
   }
-  if (snapshot.schema_version === 1 && Array.isArray(snapshot.layers)) {
-    return sidecarNodes(arrayValue(snapshot.layers))
+
+  const contexts = arrayValue(snapshot.contexts).map((value, index) => {
+    const record = objectValue(value)
+    const textureSet = textValue(record.texture_set)
+    const stack = textValue(record.stack)
+    const channel = textValue(record.channel)
+    const channelLabel = textValue(record.channel_label) || channel
+    if (!textureSet || !channel) {
+      throw new Error(`Painter snapshot context ${index + 1} is missing texture_set or channel`)
+    }
+
+    const nodes = requestNodes(arrayValue(record.layers), "")
+    if (nodes.length === 0) {
+      throw new Error(`Painter snapshot context ${textureSet} / ${channelLabel} has no layers`)
+    }
+    return {
+      id: painterContextId(textureSet, stack, channel),
+      textureSet,
+      stack,
+      channel,
+      channelLabel,
+      subtitle: painterContextSubtitle(textureSet, stack, channelLabel),
+      nodes,
+    } satisfies PainterContext
+  })
+
+  const uniqueContexts = new Set(
+    contexts.map((context) => painterContextKey(context.textureSet, context.stack, context.channel)),
+  )
+  if (uniqueContexts.size !== contexts.length) {
+    throw new Error("Painter snapshot contains duplicate texture set / stack / channel contexts")
   }
-  throw new Error("Painter snapshot must be a build_request.json or Photoshop .rizum.json sidecar")
+  return contexts
 }
 
 function requestNodes(values: unknown[], parentPath: string): LayerNode[] {
@@ -216,73 +272,23 @@ function requestNodes(values: unknown[], parentPath: string): LayerNode[] {
   })
 }
 
-function sidecarNodes(values: unknown[]): LayerNode[] {
-  const ordered = values
-    .map((value, index) => ({ record: objectValue(value), index }))
-    .sort((left, right) => numberValue(left.record.order, left.index) - numberValue(right.record.order, right.index))
-  const entries = ordered.map(({ record, index }) => ({ record, node: sidecarNode(record, index) }))
-  const groups = new Map<string, LayerNode>()
-
-  for (const { record, node } of entries) {
-    if (node.kind !== "group") continue
-    for (const key of [record.path, record.ps_name, record.display_name]) {
-      const text = textValue(key)
-      if (text) groups.set(text, node)
-    }
-  }
-
-  const roots: LayerNode[] = []
-  for (const { record, node } of entries) {
-    const parentName = textValue(record.group)
-    const parent = parentName ? groups.get(parentName) : undefined
-    if (parent && parent !== node) {
-      parent.children = [...(parent.children ?? []), node]
-    } else {
-      roots.push(node)
-    }
-  }
-  return roots
-}
-
-function sidecarNode(record: JsonObject, index: number): LayerNode {
-  const name = textValue(record.display_name) || textValue(record.ps_name) || `Layer ${index + 1}`
-  const kindText = textValue(record.sp_kind) || textValue(record.ps_kind) || "layer"
-  const isGroup = textValue(record.ps_kind) === "group"
-  const uid = textValue(record.sp_uid) || `${textValue(record.path) || name}:${index}`
-  return {
-    id: `substance_painter:${uid}`,
-    kind: isGroup ? "group" : "layer",
-    name,
-    detail: isGroup ? "Group" : layerDetail(record),
-    masked: Boolean(record.mask_path),
-    ref: {
-      host: "substance_painter",
-      externalId: uid,
-      kind: kindText,
-      path: textValue(record.path) || name,
-      assetPath: nullableText(record.asset_path),
-      maskPath: nullableText(record.mask_path),
-    },
-    children: isGroup ? [] : undefined,
-  }
-}
-
 function targetSnapshotFromSelection(selection: JsonObject, manifestPath: string): string {
   const explicit = textValue(selection.painter_snapshot)
   if (explicit) return resolveAsset(path.dirname(manifestPath), explicit)
-  const document = objectValue(selection.document)
-  const psd = textValue(document.path) || textValue(selection.source_psd)
-  if (!psd) {
-    throw new Error("Pass --painter <snapshot> because the Photoshop manifest has no document path")
-  }
-  return psd.replace(/\.[^.\\/]*$/, "") + ".rizum.json"
+  throw new Error("Pass --painter <snapshot> or include painter_snapshot in the Photoshop manifest")
 }
 
-function painterSubtitle(snapshot: JsonObject): string {
-  const textureSet = textValue(snapshot.texture_set)
-  const channel = textValue(snapshot.channel_label) || textValue(snapshot.channel)
-  if (textureSet && channel) return `${textureSet} · ${channel}`
-  return textureSet || channel || "Painter snapshot"
+function painterContextSubtitle(textureSet: string, stack: string, channel: string): string {
+  const stackLabel = stack && stack !== textureSet ? `${textureSet} / ${stack}` : textureSet
+  return `${stackLabel} · ${channel}`
+}
+
+function painterContextId(textureSet: string, stack: string, channel: string): string {
+  return `ctx-${Buffer.from(painterContextKey(textureSet, stack, channel), "utf8").toString("base64url")}`
+}
+
+function painterContextKey(textureSet: string, stack: string, channel: string): string {
+  return JSON.stringify([textureSet, stack, channel])
 }
 
 function layerDetail(record: JsonObject): string {
@@ -354,4 +360,3 @@ function nullableText(value: unknown): string | null {
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback
 }
-

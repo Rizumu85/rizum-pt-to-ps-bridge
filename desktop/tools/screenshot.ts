@@ -14,7 +14,7 @@ const app = await launch({
     "--photoshop",
     path.join(fixtureDir, "photoshop_selection.json"),
     "--painter",
-    path.join(fixtureDir, "painter.rizum.json"),
+    path.join(fixtureDir, "painter_snapshot.json"),
     "--output",
     path.resolve("screenshots/desktop_transfer.json"),
   ],

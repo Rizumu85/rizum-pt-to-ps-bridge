@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "request_type": "painter_snapshot",
+  "generated_at": "2026-08-30T00:00:00.000Z",
+  "project": {
+    "name": "Character",
+    "path": "C:/fixtures/character.spp",
+    "mesh_path": "C:/fixtures/character.fbx",
+    "uuid": "fixture-project"
+  },
+  "contexts": [
+    {
+      "texture_set": "M_body",
+      "texture_set_original": "M_body",
+      "stack": "",
+      "channel": "BaseColor",
+      "channel_label": "Base Color",
+      "channel_identifier": "basecolor",
+      "channel_role": "color",
+      "channel_format": "sRGB8",
+      "bit_depth": 8,
+      "is_color": true,
+      "uv_tiles": [
+        {
+          "u": 0,
+          "v": 0,
+          "name": "1001",
+          "udim": 1001,
+          "is_udim": false,
+          "resolution": { "width": 4096, "height": 4096 }
+        }
+      ],
+      "layers": [
+        {
+          "uid_hex": "sp-locator",
+          "name": "Locator",
+          "kind": "PaintLayer",
+          "ps_blend_mode": "NORMAL",
+          "opacity": 100,
+          "has_mask": true
+        },
+        {
+          "uid_hex": "sp-maskout",
+          "name": "MaskOut",
+          "kind": "PaintLayer",
+          "ps_blend_mode": "MULTIPLY",
+          "opacity": 100
+        },
+        {
+          "uid_hex": "sp-working",
+          "name": "Working",
+          "kind": "GroupLayer",
+          "children": [
+            {
+              "uid_hex": "sp-lighten",
+              "name": "Lighten",
+              "kind": "PaintLayer",
+              "ps_blend_mode": "OVERLAY",
+              "opacity": 55,
+              "has_mask": true
+            },
+            {
+              "uid_hex": "sp-recolor",
+              "name": "Recolor",
+              "kind": "PaintLayer",
+              "ps_blend_mode": "COLOR",
+              "opacity": 100
+            }
+          ]
+        },
+        {
+          "uid_hex": "sp-base",
+          "name": "LC_BaseTextures",
+          "kind": "FillLayer",
+          "ps_blend_mode": "NORMAL",
+          "opacity": 100
+        }
+      ]
+    },
+    {
+      "texture_set": "M_body",
+      "texture_set_original": "M_body",
+      "stack": "",
+      "channel": "Normal",
+      "channel_label": "Normal",
+      "channel_identifier": "normal",
+      "channel_role": "normal",
+      "channel_format": "RGB16",
+      "bit_depth": 16,
+      "is_color": false,
+      "uv_tiles": [
+        {
+          "u": 0,
+          "v": 0,
+          "name": "1001",
+          "udim": 1001,
+          "is_udim": false,
+          "resolution": { "width": 4096, "height": 4096 }
+        }
+      ],
+      "layers": [
+        {
+          "uid_hex": "sp-normal-detail",
+          "name": "Normal Detail",
+          "kind": "FillLayer",
+          "ps_blend_mode": "NORMAL",
+          "opacity": 100
+        },
+        {
+          "uid_hex": "sp-normal-working",
+          "name": "Working Normals",
+          "kind": "GroupLayer",
+          "children": [
+            {
+              "uid_hex": "sp-stitches",
+              "name": "Stitches",
+              "kind": "PaintLayer",
+              "ps_blend_mode": "NORMAL",
+              "opacity": 100,
+              "has_mask": true
+            },
+            {
+              "uid_hex": "sp-folds",
+              "name": "Folds",
+              "kind": "FillLayer",
+              "ps_blend_mode": "NORMAL",
+              "opacity": 72
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "texture_set": "M_clothes",
+      "texture_set_original": "M_clothes",
+      "stack": "",
+      "channel": "BaseColor",
+      "channel_label": "Base Color",
+      "channel_identifier": "basecolor",
+      "channel_role": "color",
+      "channel_format": "sRGB8",
+      "bit_depth": 8,
+      "is_color": true,
+      "uv_tiles": [
+        {
+          "u": 0,
+          "v": 0,
+          "name": "1001",
+          "udim": 1001,
+          "is_udim": false,
+          "resolution": { "width": 4096, "height": 4096 }
+        }
+      ],
+      "layers": [
+        {
+          "uid_hex": "sp-fabric",
+          "name": "Fabric",
+          "kind": "GroupLayer",
+          "children": [
+            {
+              "uid_hex": "sp-fabric-base",
+              "name": "Fabric Base",
+              "kind": "FillLayer",
+              "ps_blend_mode": "NORMAL",
+              "opacity": 100
+            },
+            {
+              "uid_hex": "sp-fabric-wear",
+              "name": "Edge Wear",
+              "kind": "FillLayer",
+              "ps_blend_mode": "OVERLAY",
+              "opacity": 65,
+              "has_mask": true
+            }
+          ]
+        },
+        {
+          "uid_hex": "sp-trim",
+          "name": "Trim Color",
+          "kind": "FillLayer",
+          "ps_blend_mode": "NORMAL",
+          "opacity": 100
+        }
+      ]
+    }
+  ]
+}
