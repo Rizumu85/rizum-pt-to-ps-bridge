@@ -14,7 +14,6 @@ import {
 } from "@gpuix/react"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
-import iconHelp from "../../icons/help.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
@@ -43,7 +42,6 @@ import {
 
 const icons = {
   check: iconCheck,
-  help: iconHelp,
   chevronDown: iconChevronDown,
   chevronRight: iconChevronRight,
   chevronUp: iconChevronUp,
@@ -425,7 +423,16 @@ function MappingHelpPopover() {
           active: { backgroundColor: colors.controlActive },
         }}
       >
-        <Icon name="help" size={11} />
+        <text
+          style={{
+            color: colors.secondary,
+            fontFamily: typography.family,
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          ?
+        </text>
       </div>
       {open ? (
         <anchored
