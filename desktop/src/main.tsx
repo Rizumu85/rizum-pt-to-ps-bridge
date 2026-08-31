@@ -408,12 +408,25 @@ function MappingHelpPopover() {
 
   return (
     <div style={{ position: "relative", display: "flex", flexShrink: 0 }}>
-      <IconAction
-        icon="help"
-        label="How mapping works"
+      <div
         testId="mapping-help-trigger"
+        aria-label="How mapping works"
         onClick={() => setOpen((current) => !current)}
-      />
+        style={{
+          width: 18,
+          height: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 4,
+          opacity: 0.72,
+          cursor: "pointer",
+          hover: { opacity: 1, backgroundColor: colors.controlHover },
+          active: { backgroundColor: colors.controlActive },
+        }}
+      >
+        <Icon name="help" size={11} />
+      </div>
       {open ? (
         <anchored
           testId="mapping-help-popover"
@@ -840,6 +853,7 @@ function HostPanel({
   treeLabel,
   nodes,
   source,
+  headerAction,
   footerHint,
   mappedIds,
   draggingId,
@@ -858,6 +872,7 @@ function HostPanel({
   treeLabel: string
   nodes: LayerNode[]
   source: boolean
+  headerAction?: React.ReactNode
   footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
@@ -896,27 +911,39 @@ function HostPanel({
         style={{
           flexShrink: 0,
           display: "flex",
-          flexDirection: "column",
-          gap: 2,
+          flexDirection: "row",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 8,
           paddingTop: 12,
           paddingRight: 16,
           paddingBottom: 10,
           paddingLeft: 16,
         }}
       >
-        <text
+        <div
           style={{
-            color: colors.text,
-            fontFamily: typography.family,
-            fontSize: typography.labelSize,
-            fontWeight: typography.labelWeight,
-            whiteSpace: "nowrap",
-            textOverflow: "ellipsis",
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
           }}
         >
-          {title}
-        </text>
-        <SecondaryText>{subtitle}</SecondaryText>
+          <text
+            style={{
+              color: colors.text,
+              fontFamily: typography.family,
+              fontSize: typography.labelSize,
+              fontWeight: typography.labelWeight,
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {title}
+          </text>
+          <SecondaryText>{subtitle}</SecondaryText>
+        </div>
+        {headerAction}
       </div>
       <InsetSeparator />
       <div
@@ -1142,8 +1169,6 @@ export function BridgeApp({
             }
           />
           <div style={{ flexGrow: 1 }} />
-          <MappingHelpPopover />
-          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
@@ -1189,6 +1214,7 @@ export function BridgeApp({
             onDrop={drop}
             onRemove={removeSource}
           />
+          {/* Mapping help is target context, not an edit-history action, so it stays out of the toolbar. */}
           <HostPanel
             panelId="painter"
             title="TARGET: PAINTER"
@@ -1196,6 +1222,7 @@ export function BridgeApp({
             treeLabel="Painter Stack"
             nodes={bridge.painter}
             source={false}
+            headerAction={<MappingHelpPopover />}
             footerHint={status === session.status ? undefined : status}
             mappedIds={mappedIds}
             draggingId={draggingId}
