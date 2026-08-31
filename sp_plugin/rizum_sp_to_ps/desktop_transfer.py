@@ -123,8 +123,9 @@ def apply_transfer_plan(plan, painter):
 
     resources = {}
     for item in plan.items:
-        resources[item.png] = _import_texture(item.png, painter.resource)
-        if item.mask_png is not None:
+        if item.png not in resources:
+            resources[item.png] = _import_texture(item.png, painter.resource)
+        if item.mask_png is not None and item.mask_png not in resources:
             resources[item.mask_png] = _import_texture(item.mask_png, painter.resource)
 
     warnings = []
