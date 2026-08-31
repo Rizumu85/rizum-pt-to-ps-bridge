@@ -14,6 +14,7 @@ import {
 } from "@gpuix/react"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
+import iconHelp from "./icons/circle-help.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
@@ -42,6 +43,7 @@ import {
 
 const icons = {
   check: iconCheck,
+  help: iconHelp,
   chevronDown: iconChevronDown,
   chevronRight: iconChevronRight,
   chevronUp: iconChevronUp,
@@ -308,11 +310,13 @@ function ContextSelect({
 function IconAction({
   icon,
   label,
+  testId,
   disabled = false,
   onClick,
 }: {
   icon: IconName
   label: string
+  testId?: string
   disabled?: boolean
   onClick: () => void
 }) {
@@ -322,6 +326,7 @@ function IconAction({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
+          testId={testId}
           onClick={disabled ? undefined : onClick}
           onMouseDown={disabled ? undefined : () => setPressed(true)}
           onMouseUp={disabled ? undefined : () => setPressed(false)}
@@ -379,6 +384,85 @@ function IconAction({
         <SecondaryText>{label}</SecondaryText>
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function PopoverText({ children }: { children: React.ReactNode }) {
+  return (
+    <text
+      style={{
+        color: colors.secondary,
+        fontFamily: typography.family,
+        fontSize: typography.secondarySize,
+        fontWeight: typography.secondaryWeight,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </text>
+  )
+}
+
+function MappingHelpPopover() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexShrink: 0 }}>
+      <IconAction
+        icon="help"
+        label="How mapping works"
+        testId="mapping-help-trigger"
+        onClick={() => setOpen((current) => !current)}
+      />
+      {open ? (
+        <anchored
+          testId="mapping-help-popover"
+          tabIndex={0}
+          onMouseDownOutside={() => setOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === "escape") setOpen(false)
+          }}
+          side="bottom"
+          align="end"
+          gap={6}
+          fit="snap"
+          snapMargin={8}
+          deferred
+          priority={2}
+          occlude
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.14, ease: motionEase }}
+            style={{
+              width: 240,
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              padding: 12,
+              borderRadius: 6,
+              borderWidth: 1,
+              borderColor: colors.line,
+              backgroundColor: colors.control,
+              boxShadow: {
+                offsetX: 0,
+                offsetY: 6,
+                blurRadius: 18,
+                spreadRadius: 0,
+                color: "#00000073",
+              },
+            }}
+          >
+            <PrimaryText>Map Photoshop layers</PrimaryText>
+            <PopoverText>Drag a source layer onto a Painter target.</PopoverText>
+            <PopoverText>Group: place inside</PopoverText>
+            <PopoverText>Layer: place after</PopoverText>
+            <PopoverText>Apply writes the transfer manifest.</PopoverText>
+          </motion.div>
+        </anchored>
+      ) : null}
+    </div>
   )
 }
 
@@ -1058,6 +1142,8 @@ export function BridgeApp({
             }
           />
           <div style={{ flexGrow: 1 }} />
+          <MappingHelpPopover />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
@@ -1110,7 +1196,7 @@ export function BridgeApp({
             treeLabel="Painter Stack"
             nodes={bridge.painter}
             source={false}
-            footerHint={compactStatus(status)}
+            footerHint={status === session.status ? undefined : status}
             mappedIds={mappedIds}
             draggingId={draggingId}
             dropTargetId={dropTargetId}
@@ -1183,13 +1269,6 @@ function uniqueStackOptions(contexts: PainterContext[]): ContextOption[] {
     })
   }
   return [...options.values()]
-}
-
-function compactStatus(value: string): string {
-  if (value === "Drag exported Photoshop layers into the Painter stack") {
-    return "Drop Photoshop layers here to map"
-  }
-  return value
 }
 
 const isEntryPoint =

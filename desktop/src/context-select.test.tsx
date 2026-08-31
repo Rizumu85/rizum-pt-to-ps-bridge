@@ -36,4 +36,28 @@ describe("Painter context selectors", () => {
       await app.close()
     }
   })
+
+  it("keeps mapping instructions behind the help popover", async () => {
+    const session = await loadBridgeSession({
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    const testRoot = createTestRoot({ width: 652, height: 484 })
+    const app = await connectTest(testRoot.renderer)
+
+    try {
+      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"} />)
+      testRoot.renderer.flush()
+
+      expect(await app.getByText("Drop Photoshop layers here to map").count()).toBe(0)
+      expect(await app.getByText("Map Photoshop layers").count()).toBe(0)
+
+      await app.getByTestId("mapping-help-trigger").click()
+      expect(await app.getByText("Map Photoshop layers").count()).toBeGreaterThan(0)
+      expect(await app.getByText("Group: place inside").count()).toBeGreaterThan(0)
+    } finally {
+      testRoot.unmount()
+      await app.close()
+    }
+  })
 })
