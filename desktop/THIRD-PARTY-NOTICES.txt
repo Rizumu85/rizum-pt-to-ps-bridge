@@ -1,0 +1,22 @@
+PT Bridge Desktop - Third-Party Notices
+=======================================
+
+MiSans VF
+---------
+
+PT Bridge Desktop uses the MiSans font.
+
+Copyright (c) Beijing Xiaomi Mobile Software Co., Ltd.
+
+The unmodified MiSans VF font is embedded as an application resource under
+the MiSans Font Intellectual Property License Agreement. A complete copy of
+that agreement is included at:
+
+  fonts/MiSans-LICENSE.pdf
+
+Official font and license source:
+
+  https://hyperos.mi.com/font/en/download/
+
+The bundled MiSans font may not be redistributed separately from PT Bridge
+Desktop.

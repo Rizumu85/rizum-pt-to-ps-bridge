@@ -908,8 +908,8 @@ function HostPanel({
           style={{
             color: colors.text,
             fontFamily: typography.family,
-            fontSize: 12,
-            fontWeight: typography.primaryWeight,
+            fontSize: typography.labelSize,
+            fontWeight: typography.labelWeight,
             whiteSpace: "nowrap",
             textOverflow: "ellipsis",
           }}
@@ -1272,9 +1272,13 @@ function uniqueStackOptions(contexts: PainterContext[]): ContextOption[] {
 }
 
 const isEntryPoint =
-  typeof Bun !== "undefined" && (Bun.isStandaloneExecutable || Bun.main === import.meta.path)
+  typeof Bun !== "undefined" &&
+  Bun.main.replaceAll("\\", "/") === import.meta.path.replaceAll("\\", "/")
 
 if (isEntryPoint) {
+  const { registerBundledFonts } = await import("./fonts")
+  registerBundledFonts()
+
   let session: BridgeSession
   try {
     const options = parseSessionOptions(Bun.argv.slice(2))

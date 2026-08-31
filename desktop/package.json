@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/main.tsx",
-    "build": "bun build --compile src/main.tsx --outfile dist/pt-bridge",
+    "build": "bun tools/build.ts",
     "screenshot": "bun tools/screenshot.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

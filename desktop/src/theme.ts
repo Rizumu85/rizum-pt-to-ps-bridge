@@ -21,9 +21,11 @@ export const colors = {
 // The upstream GPUI preview remains the visual contract; keeping its tokens
 // explicit here lets the real bridge evolve without importing preview runtime code.
 export const typography = {
-  family: "MiSans",
+  family: "MiSans VF",
   primarySize: 13,
   primaryWeight: 400,
+  labelSize: 12,
+  labelWeight: 400,
   secondarySize: 11,
   secondaryWeight: 400,
 }
