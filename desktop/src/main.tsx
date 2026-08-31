@@ -58,6 +58,7 @@ const panelRootIds = {
 } as const
 
 const motionEase: MotionEase = [0.23, 1, 0.32, 1]
+const panelTreeChildrenGap = 8
 const maskThumbnailSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${colors.maskDark}"/><path d="M0 8 8 0v8Z" fill="${colors.maskLight}"/></svg>`
 
 type IconName = keyof typeof icons
@@ -807,7 +808,9 @@ function PanelTree({
       <motion.div
         initial={false}
         animate={{
-          height: open ? visibleNodesHeight(nodes, expanded) + (footerHint ? 24 : 0) : 0,
+          height: open
+            ? panelTreeChildrenGap + visibleNodesHeight(nodes, expanded) + (footerHint ? 24 : 0)
+            : 0,
           opacity: open ? 1 : 0,
         }}
         transition={{ duration: 0.3, ease: motionEase }}
@@ -818,6 +821,8 @@ function PanelTree({
           pointerEvents: open ? "auto" : "none",
         }}
       >
+        {/* The root identity needs group spacing before its child collection; rows inside stay compact. */}
+        <div style={{ height: panelTreeChildrenGap, flexShrink: 0 }} />
         {nodes.map((node) => (
           <LayerRow
             key={node.id}
