@@ -216,7 +216,7 @@ async function writeAtomicJson(filePath: string, payload: unknown): Promise<void
 
 function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[] {
   const manifestDir = path.dirname(manifestPath)
-  return arrayValue(manifest.layers).map((value, index) => {
+  const records = arrayValue(manifest.layers).map((value, index) => {
     const layer = objectValue(value)
     const externalId = textValue(layer.source_id) || `selection-${index + 1}`
     const name = textValue(layer.display_name) || textValue(layer.name) || `Layer ${index + 1}`
@@ -238,7 +238,7 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
       opacity: numberValue(layer.opacity, 100),
       visible: layer.visible !== false,
     }
-    return {
+    const node: LayerNode = {
       id: `photoshop:${externalId}`,
       kind: isGroup ? "group" : "layer",
       name,
@@ -247,7 +247,31 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
       thumbnailPath: availableThumbnail(resolvedAsset),
       ref,
     }
+    if (isGroup) node.children = []
+    return { layer, node }
   })
+
+  // Full-document manifests list groups before their descendants. Rebuilding the
+  // tree here preserves old flat selections whose parent group was not exported.
+  const groups = new Map<string, LayerNode>()
+  const groupsById = new Map<string, LayerNode>()
+  for (const { node } of records) {
+    if (node.kind !== "group") continue
+    if (node.ref.path) groups.set(node.ref.path, node)
+    if (node.ref.nativeId) groupsById.set(node.ref.nativeId, node)
+  }
+  const roots: LayerNode[] = []
+  for (const { layer, node } of records) {
+    const layerPath = textValue(layer.path)
+    const separator = layerPath.lastIndexOf("/")
+    const parentPath = separator > 0 ? layerPath.slice(0, separator) : textValue(layer.group)
+    const parentId = textValue(layer.parent_id)
+    const parent = (parentId ? groupsById.get(parentId) : undefined)
+      ?? (parentPath ? groups.get(parentPath) : undefined)
+    if (parent && parent !== node) parent.children?.push(node)
+    else roots.push(node)
+  }
+  return roots
 }
 
 function painterContexts(snapshot: JsonObject): PainterContext[] {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
@@ -72,6 +72,48 @@ describe("desktop file transport", () => {
       stack: "",
       channel: "BaseColor",
     })
+  })
+
+  it("rebuilds a Photoshop document hierarchy from manifest paths", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-photoshop-tree-"))
+    const manifestPath = path.join(outputDir, "photoshop_selection.json")
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        schema_version: 1,
+        request_type: "photoshop_selection",
+        document: { name: "external.psd", path: "C:/art/external.psd" },
+        layers: [
+          {
+            source_id: "ps:1:10",
+            ps_layer_id: 10,
+            display_name: "Paint",
+            ps_kind: "group",
+            path: "Paint",
+            png: "paint.png",
+          },
+          {
+            source_id: "ps:1:11",
+            ps_layer_id: 11,
+            parent_id: 10,
+            display_name: "Details",
+            ps_kind: "pixel",
+            group: "Paint",
+            path: "Paint/Details",
+            png: "details.png",
+          },
+        ],
+      }),
+      "utf8",
+    )
+
+    const session = await loadBridgeSession({
+      photoshopManifest: manifestPath,
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+
+    expect(session.state.photoshop.map((node) => node.name)).toEqual(["Paint"])
+    expect(session.state.photoshop[0].children?.map((node) => node.name)).toEqual(["Details"])
   })
 
   it("writes Painter-to-Photoshop intent with the native Photoshop layer id", async () => {
