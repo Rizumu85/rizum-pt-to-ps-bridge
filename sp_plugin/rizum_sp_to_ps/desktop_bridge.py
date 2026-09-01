@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import sys
+import time
 from pathlib import Path
 
-from . import desktop_transfer, exporter
+from . import desktop_transfer, exporter, photoshop_automation
 
 
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
 MANIFEST_DIR_KEY = "desktop_manifest_dir"
 MANIFEST_PATH_KEY = "desktop_manifest_path"
+PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
 
 
 class DesktopBridgeController:
@@ -28,6 +32,9 @@ class DesktopBridgeController:
         self._transfer_path = None
         self._closing = False
         self._process_error_reported = False
+        self._photoshop_export_timer = None
+        self._photoshop_document_launch = None
+        self._photoshop_export_started_at = 0.0
 
         self.button = panel.dock_bridge_button
         self.button.setEnabled(True)
@@ -37,6 +44,7 @@ class DesktopBridgeController:
     def close(self):
         """Detach the controller and stop an owned desktop session on unload."""
         self._closing = True
+        self._clear_photoshop_export()
         try:
             self.button.clicked.disconnect(self.open)
         except (RuntimeError, TypeError):
@@ -122,18 +130,23 @@ class DesktopBridgeController:
             return None
         return path
 
-    def _choose_photoshop_manifest(self):
+    def _choose_photoshop_source(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         start_dir = settings.value(MANIFEST_DIR_KEY, "", str) or ""
         selected, _filter = self.QtWidgets.QFileDialog.getOpenFileName(
             self.panel.widget,
-            "Select Photoshop Selection",
+            "Connect Photoshop Document",
             start_dir,
-            "Photoshop Selection (photoshop_selection.json);;JSON Files (*.json)",
+            "Photoshop Document (*.psd *.psb);;"
+            "Photoshop Selection (photoshop_selection.json);;"
+            "JSON Files (*.json)",
         )
         if not selected:
             return None
-        return Path(selected)
+        path = Path(selected)
+        settings.setValue(MANIFEST_DIR_KEY, str(path.parent))
+        settings.sync()
+        return path
 
     def _remember_photoshop_manifest(self, path):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
@@ -142,10 +155,16 @@ class DesktopBridgeController:
         settings.sync()
 
     def _connect_photoshop(self):
-        manifest_path = self._choose_photoshop_manifest()
-        if manifest_path is None:
+        source_path = self._choose_photoshop_source()
+        if source_path is None:
             self.panel.status.setText("Photoshop connection cancelled.")
             return
+        if source_path.suffix.lower() in {".psd", ".psb"}:
+            self._start_photoshop_document_export(source_path)
+            return
+        self._connect_photoshop_manifest(source_path)
+
+    def _connect_photoshop_manifest(self, manifest_path):
         try:
             _validate_photoshop_manifest(manifest_path)
         except Exception as exc:
@@ -154,6 +173,98 @@ class DesktopBridgeController:
             return
         self._remember_photoshop_manifest(manifest_path)
         self._launch_desktop(manifest_path)
+
+    def _start_photoshop_document_export(self, source_path):
+        try:
+            session_root = (
+                exporter.default_output_dir(self.panel.user_settings)
+                / "_desktop_bridge"
+                / "photoshop_documents"
+            )
+            output_dir = _photoshop_document_session_dir(session_root, source_path)
+            launch = photoshop_automation.write_photoshop_document_launcher(
+                source_path,
+                output_dir,
+            )
+        except Exception as exc:
+            self.panel.status.setText("Photoshop document could not be prepared.")
+            self._show("Bridge", str(exc))
+            return
+
+        launched, message = self.panel.launch_photoshop(launch.launcher_path)
+        if not launched:
+            self.panel.status.setText("Photoshop document could not be opened.")
+            self._show("Bridge", message)
+            return
+
+        # Photoshop's JSX entry point is reliable before UXP panels are opened;
+        # the atomic result file keeps the Painter UI responsive while it runs.
+        self._clear_photoshop_export()
+        self._photoshop_document_launch = launch
+        self._photoshop_export_started_at = time.monotonic()
+        timer = self.QtCore.QTimer(self.panel.widget)
+        timer.setInterval(400)
+        timer.timeout.connect(self._poll_photoshop_document_export)
+        self._photoshop_export_timer = timer
+        self.button.setEnabled(False)
+        self.button.setToolTip("Photoshop is reading the selected document")
+        self.panel.status.setText(f"Reading Photoshop layers from {source_path.name}...")
+        timer.start()
+
+    def _poll_photoshop_document_export(self):
+        launch = self._photoshop_document_launch
+        if launch is None:
+            return
+        elapsed = time.monotonic() - self._photoshop_export_started_at
+        if elapsed > PHOTOSHOP_EXPORT_TIMEOUT_SECONDS:
+            self._clear_photoshop_export()
+            self.panel.status.setText("Photoshop document export timed out.")
+            self._show(
+                "Bridge",
+                "Photoshop did not finish reading the document within 30 minutes.",
+            )
+            return
+        if not launch.result_path.is_file():
+            return
+        try:
+            payload = json.loads(launch.result_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return
+        except OSError as exc:
+            self._clear_photoshop_export()
+            self.panel.status.setText("Photoshop result could not be read.")
+            self._show("Bridge", str(exc))
+            return
+
+        self._clear_photoshop_export()
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            self.panel.status.setText("Photoshop could not read the selected document.")
+            self._show("Bridge", _photoshop_export_error_summary(payload))
+            return
+        manifest_path = Path(payload.get("manifest") or launch.manifest_path)
+        try:
+            _validate_photoshop_manifest(manifest_path)
+        except Exception as exc:
+            self.panel.status.setText("Photoshop selection could not be connected.")
+            self._show("Bridge", str(exc))
+            return
+
+        self._remember_photoshop_manifest(manifest_path)
+        exported_count = int(payload.get("exported_count") or 0)
+        self.panel.status.setText(f"Loaded {exported_count} Photoshop layer(s).")
+        self._launch_desktop(manifest_path)
+
+    def _clear_photoshop_export(self):
+        timer = self._photoshop_export_timer
+        self._photoshop_export_timer = None
+        self._photoshop_document_launch = None
+        self._photoshop_export_started_at = 0.0
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+        if not self._closing:
+            self.button.setEnabled(True)
+            self.button.setToolTip("Map layers between Painter and Photoshop")
 
     def _desktop_error(self, process_error):
         if self._closing or self._process_error_reported:
@@ -310,3 +421,31 @@ def _desktop_request_type(path):
     if not isinstance(payload, dict):
         raise RuntimeError("Desktop response must be a JSON object.")
     return payload.get("request_type")
+
+
+def _photoshop_document_session_dir(root, source_path):
+    source = Path(source_path).resolve()
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source.stem).strip("._")
+    if not safe_stem:
+        safe_stem = "photoshop_document"
+    identity = hashlib.sha256(str(source).casefold().encode("utf-8")).hexdigest()[:10]
+    return Path(root) / f"{safe_stem}-{identity}"
+
+
+def _photoshop_export_error_summary(payload):
+    if not isinstance(payload, dict):
+        return "Photoshop returned an invalid document export result."
+    errors = payload.get("errors")
+    if not isinstance(errors, list) or not errors:
+        return "Photoshop did not create a usable layer manifest."
+    lines = []
+    for entry in errors[:8]:
+        if isinstance(entry, dict):
+            layer = entry.get("layer") or "Photoshop"
+            detail = entry.get("error") or "Unknown error"
+            lines.append(f"{layer}: {detail}")
+        else:
+            lines.append(str(entry))
+    if len(errors) > 8:
+        lines.append(f"...and {len(errors) - 8} more error(s).")
+    return "\n".join(lines)

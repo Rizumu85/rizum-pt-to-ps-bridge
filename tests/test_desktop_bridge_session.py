@@ -7,6 +7,8 @@ from sp_plugin.rizum_sp_to_ps.desktop_bridge import (
     MANIFEST_PATH_KEY,
     DesktopBridgeController,
     _desktop_request_type,
+    _photoshop_document_session_dir,
+    _photoshop_export_error_summary,
 )
 
 
@@ -93,6 +95,29 @@ class DesktopBridgeSessionTests(unittest.TestCase):
                 _desktop_request_type(request),
                 "desktop_connect_photoshop",
             )
+
+    def test_photoshop_document_session_is_stable_and_path_specific(self):
+        root = Path("C:/bridge")
+        first = _photoshop_document_session_dir(root, Path("C:/art/Hero Dress.psd"))
+        same = _photoshop_document_session_dir(root, Path("C:/art/Hero Dress.psd"))
+        other = _photoshop_document_session_dir(root, Path("D:/art/Hero Dress.psd"))
+
+        self.assertEqual(first, same)
+        self.assertNotEqual(first, other)
+        self.assertTrue(first.name.startswith("Hero_Dress-"))
+
+    def test_photoshop_export_errors_are_bounded_for_the_dialog(self):
+        payload = {
+            "errors": [
+                {"layer": f"Layer {index}", "error": "Could not render"}
+                for index in range(10)
+            ]
+        }
+
+        message = _photoshop_export_error_summary(payload)
+
+        self.assertIn("Layer 0: Could not render", message)
+        self.assertIn("...and 2 more error(s).", message)
 
 
 if __name__ == "__main__":
