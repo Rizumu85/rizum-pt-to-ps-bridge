@@ -37,6 +37,7 @@ export type BridgeSession = {
   initialPainterContextId: string
   status: string
   sourceDocument: JsonObject
+  sourceContext: JsonObject
   targetDocument: JsonObject
 }
 
@@ -88,7 +89,8 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
   const target = await readJsonObject(targetSnapshotPath)
   const photoshop = photoshopNodes(source, sourceManifestPath)
   const contexts = painterContexts(target)
-  const initialContext = contexts[0]
+  const sourceContext = await photoshopDocumentContext(source, sourceManifestPath)
+  const initialContext = matchingPainterContext(contexts, sourceContext) ?? contexts[0]
   if (photoshop.length === 0) throw new Error("Photoshop selection manifest has no exported layers")
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
@@ -106,8 +108,9 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
     photoshopSubtitle: textValue(sourceDocument.name) || textValue(source.document_name) || "Selection",
     painterContexts: contexts,
     initialPainterContextId: initialContext.id,
-    status: "Drag exported Photoshop layers into the Painter stack",
+    status: "Drag layers between Photoshop and Painter to map a transfer",
     sourceDocument,
+    sourceContext,
     targetDocument,
   }
 }
@@ -124,6 +127,7 @@ export function failedBridgeSession(error: unknown): BridgeSession {
     initialPainterContextId: "",
     status: message,
     sourceDocument: {},
+    sourceContext: {},
     targetDocument: {},
   }
 }
@@ -134,21 +138,20 @@ export async function writeTransferManifest(
   painterContextId: string,
 ): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
-  if (state.mappings.length === 0) throw new Error("Map at least one Photoshop layer before Apply")
+  if (state.mappings.length === 0) throw new Error("Map at least one layer before Apply")
   const painterContext = session.painterContexts.find((context) => context.id === painterContextId)
   if (!painterContext) throw new Error("The selected Painter context is no longer available")
 
   const payload = {
-    schema_version: 1,
+    schema_version: 2,
     request_type: "desktop_transfer",
     created_at: new Date().toISOString(),
-    source: {
-      host: "photoshop",
+    photoshop: {
       manifest: session.sourceManifestPath,
       document: session.sourceDocument,
+      context: session.sourceContext,
     },
-    target: {
-      host: "substance_painter",
+    painter: {
       snapshot: session.targetSnapshotPath,
       document: session.targetDocument,
       context: {
@@ -161,6 +164,7 @@ export async function writeTransferManifest(
     },
     transfers: state.mappings.map((mapping, order) => ({
       order,
+      direction: mapping.direction,
       source: manifestRef(mapping.source),
       target: manifestRef(mapping.target),
       insertion: mapping.placement,
@@ -191,6 +195,7 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
     const ref: HostLayerRef = {
       host: "photoshop",
       externalId,
+      nativeId: textValue(layer.ps_layer_id) || externalId,
       kind: textValue(layer.ps_kind) || "layer",
       path: textValue(layer.path) || (group ? `${group}/${name}` : name),
       assetPath: resolvedAsset,
@@ -226,7 +231,7 @@ function painterContexts(snapshot: JsonObject): PainterContext[] {
       throw new Error(`Painter snapshot context ${index + 1} is missing texture_set or channel`)
     }
 
-    const nodes = requestNodes(arrayValue(record.layers), "")
+    const nodes = requestNodes(arrayValue(record.layers), "", channel)
     if (nodes.length === 0) {
       throw new Error(`Painter snapshot context ${textureSet} / ${channelLabel} has no layers`)
     }
@@ -250,7 +255,7 @@ function painterContexts(snapshot: JsonObject): PainterContext[] {
   return contexts
 }
 
-function requestNodes(values: unknown[], parentPath: string): LayerNode[] {
+function requestNodes(values: unknown[], parentPath: string, channel: string): LayerNode[] {
   return values.map((value, index) => {
     const node = objectValue(value)
     const name = textValue(node.name) || textValue(node.display_name) || `Layer ${index + 1}`
@@ -270,12 +275,17 @@ function requestNodes(values: unknown[], parentPath: string): LayerNode[] {
       ref: {
         host: "substance_painter",
         externalId: uid,
+        nativeId: uid,
         kind: kindText,
         path: nodePath,
         assetPath: resolvedAsset,
         maskPath: assetPath(node.mask_asset),
+        blendMode: textValue(node.ps_blend_mode) || textValue(node.blend_mode) || "normal",
+        opacity: channelNumberValue(node.opacity, channel, 100),
+        visible: node.visible !== false,
+        hasMask: Boolean(node.mask_asset) || node.has_mask === true,
       },
-      children: isGroup ? requestNodes(childValues, nodePath) : undefined,
+      children: isGroup ? requestNodes(childValues, nodePath, channel) : undefined,
     } satisfies LayerNode
   })
 }
@@ -317,7 +327,7 @@ function humanize(value: string): string {
 function manifestRef(ref: HostLayerRef) {
   return {
     host: ref.host,
-    id: ref.externalId,
+    id: ref.nativeId ?? ref.externalId,
     kind: ref.kind,
     path: ref.path,
     png: ref.assetPath ?? null,
@@ -325,7 +335,38 @@ function manifestRef(ref: HostLayerRef) {
     blend_mode: ref.blendMode ?? null,
     opacity: ref.opacity ?? null,
     visible: ref.visible ?? null,
+    has_mask: ref.hasMask === true,
   }
+}
+
+async function photoshopDocumentContext(
+  selection: JsonObject,
+  manifestPath: string,
+): Promise<JsonObject> {
+  const relativePath = textValue(selection.sidecar) || textValue(selection.painter_snapshot)
+  if (!relativePath) return {}
+  const sidecarPath = resolveAsset(path.dirname(manifestPath), relativePath)
+  if (!existsSync(sidecarPath)) return {}
+  const candidate = await readJsonObject(sidecarPath)
+  return textValue(candidate.texture_set) && textValue(candidate.channel) ? candidate : {}
+}
+
+function matchingPainterContext(
+  contexts: PainterContext[],
+  sourceContext: JsonObject,
+): PainterContext | null {
+  const textureSet = textValue(sourceContext.texture_set)
+  const stack = textValue(sourceContext.stack)
+  const channel = textValue(sourceContext.channel)
+  if (!textureSet || !channel) return null
+  return (
+    contexts.find(
+      (context) =>
+        context.textureSet === textureSet &&
+        context.stack === stack &&
+        context.channel === channel,
+    ) ?? null
+  )
 }
 
 function assetPath(value: unknown): string | null {
@@ -376,4 +417,10 @@ function nullableText(value: unknown): string | null {
 
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback
+}
+
+function channelNumberValue(value: unknown, channel: string, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  const values = objectValue(value)
+  return numberValue(values[channel], numberValue(values.mask, fallback))
 }

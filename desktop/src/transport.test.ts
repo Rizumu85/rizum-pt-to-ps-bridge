@@ -4,7 +4,7 @@ import path from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { transferToPainter } from "./model"
+import { transferBetweenHosts } from "./model"
 import { loadBridgeSession, parseSessionOptions, writeTransferManifest } from "./transport"
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
@@ -41,7 +41,7 @@ describe("desktop file transport", () => {
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
       output: path.join(outputDir, "desktop_transfer.json"),
     })
-    const mapped = transferToPainter(
+    const mapped = transferBetweenHosts(
       session.state,
       "photoshop:ps:42:101",
       "substance_painter:sp-working",
@@ -50,8 +50,10 @@ describe("desktop file transport", () => {
     const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
     const manifest = JSON.parse(await readFile(output, "utf8"))
 
+    expect(manifest.schema_version).toBe(2)
     expect(manifest.request_type).toBe("desktop_transfer")
     expect(manifest.transfers[0].insertion).toBe("inside")
+    expect(manifest.transfers[0].direction).toBe("photoshop_to_painter")
     expect(manifest.transfers[0].source.mask_png).toMatch(/color_pass_mask\.png$/)
     expect(manifest.transfers[0].source).toMatchObject({
       blend_mode: "overlay",
@@ -59,10 +61,41 @@ describe("desktop file transport", () => {
       visible: true,
     })
     expect(manifest.transfers[0].target.id).toBe("sp-working")
-    expect(manifest.target.context).toMatchObject({
+    expect(manifest.painter.context).toMatchObject({
       texture_set: "M_body",
       stack: "",
       channel: "BaseColor",
+    })
+  })
+
+  it("writes Painter-to-Photoshop intent with the native Photoshop layer id", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
+    const session = await loadBridgeSession({
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const mapped = transferBetweenHosts(
+      session.state,
+      "substance_painter:sp-lighten",
+      "photoshop:ps:42:100",
+    )
+
+    const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
+    const manifest = JSON.parse(await readFile(output, "utf8"))
+
+    expect(manifest.transfers[0]).toMatchObject({
+      direction: "painter_to_photoshop",
+      insertion: "after",
+      source: {
+        host: "substance_painter",
+        id: "sp-lighten",
+        has_mask: true,
+      },
+      target: {
+        host: "photoshop",
+        id: "100",
+      },
     })
   })
 

@@ -25,7 +25,7 @@ class PhotoshopSelectionManifestTests(unittest.TestCase):
 
         self.assertIn('request_type: "photoshop_selection"', writer)
         self.assertIn("source_id: layer.source_id", writer)
-        self.assertIn("painter_snapshot: sidecarPathForPsd", writer)
+        self.assertIn("sidecar: sidecarPathForPsd", writer)
         self.assertIn("ps_layer_id: layer.ps_layer_id", writer)
         self.assertIn("png: layer.png", writer)
         self.assertIn("mask_png: layer.mask_png", writer)

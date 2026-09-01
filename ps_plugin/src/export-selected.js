@@ -147,7 +147,7 @@ async function writeSelectionManifest(folder, result) {
       name: result.documentName,
       path: result.documentPath
     },
-    painter_snapshot: sidecarPathForPsd(result.documentPath),
+    sidecar: sidecarPathForPsd(result.documentPath),
     layers: result.layers
       .filter((layer) => Boolean(layer.png))
       .map((layer) => ({

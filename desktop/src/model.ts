@@ -1,10 +1,12 @@
 export type LayerKind = "group" | "layer"
 export type HostId = "photoshop" | "substance_painter"
 export type Placement = "inside" | "after"
+export type TransferDirection = "photoshop_to_painter" | "painter_to_photoshop"
 
 export type HostLayerRef = {
   host: HostId
   externalId: string
+  nativeId?: string | null
   kind: string
   path: string
   assetPath?: string | null
@@ -12,6 +14,7 @@ export type HostLayerRef = {
   blendMode?: string | null
   opacity?: number | null
   visible?: boolean | null
+  hasMask?: boolean
 }
 
 export type LayerNode = {
@@ -26,6 +29,7 @@ export type LayerNode = {
 }
 
 export type TransferMapping = {
+  direction: TransferDirection
   sourceId: string
   targetId: string
   placement: Placement
@@ -110,34 +114,57 @@ export function insertAtTarget(
   return next
 }
 
-export function transferToPainter(
+export function transferBetweenHosts(
   state: BridgeState,
   sourceId: string,
   targetId: string,
 ): BridgeState {
-  const target = findNode(state.painter, targetId)
-  if (!target) return state
+  const sourceHost = sourceId.startsWith("photoshop:")
+    ? "photoshop"
+    : "substance_painter"
+  const targetHost = sourceHost === "photoshop" ? "substance_painter" : "photoshop"
+  const sourceNodes = state[hostCollection(sourceHost)]
+  const targetNodes = state[hostCollection(targetHost)]
+  const source = findNode(sourceNodes, sourceId)
+  const target = findNode(targetNodes, targetId)
+  if (!source || !target) return state
+  if (source.ref.host !== sourceHost || target.ref.host !== targetHost) return state
 
-  const [photoshop, source] = removeNode(state.photoshop, sourceId)
-  if (!source) return state
+  const [remainingSource, removed] = removeNode(sourceNodes, sourceId)
+  if (!removed) return state
+  const nextTarget = insertAtTarget(targetNodes, targetId, removed)
+  const direction: TransferDirection =
+    sourceHost === "photoshop" ? "photoshop_to_painter" : "painter_to_photoshop"
 
   return {
-    photoshop,
-    painter: insertAtTarget(state.painter, targetId, source),
+    photoshop: sourceHost === "photoshop" ? remainingSource : nextTarget,
+    painter: sourceHost === "substance_painter" ? remainingSource : nextTarget,
     mappings: [
       ...state.mappings,
       {
+        direction,
         sourceId,
         targetId,
         placement: target.kind === "group" ? "inside" : "after",
-        source: source.ref,
+        source: removed.ref,
         target: target.ref,
       },
     ],
   }
 }
 
-export function removeFromPhotoshop(state: BridgeState, sourceId: string): BridgeState {
-  const [photoshop, removed] = removeNode(state.photoshop, sourceId)
-  return removed ? { ...state, photoshop } : state
+export function removeFromHost(
+  state: BridgeState,
+  host: HostId,
+  sourceId: string,
+): BridgeState {
+  const collection = hostCollection(host)
+  const source = findNode(state[collection], sourceId)
+  if (!source || source.ref.host !== host) return state
+  const [nodes, removed] = removeNode(state[collection], sourceId)
+  return removed ? { ...state, [collection]: nodes } : state
+}
+
+function hostCollection(host: HostId): "photoshop" | "painter" {
+  return host === "photoshop" ? "photoshop" : "painter"
 }

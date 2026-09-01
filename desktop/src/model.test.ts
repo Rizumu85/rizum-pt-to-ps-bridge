@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   cloneState,
-  removeFromPhotoshop,
-  transferToPainter,
+  removeFromHost,
+  transferBetweenHosts,
   type BridgeState,
   type HostId,
   type LayerNode,
@@ -39,10 +39,10 @@ function fixture(): BridgeState {
   }
 }
 
-describe("transferToPainter", () => {
+describe("transferBetweenHosts", () => {
   it("moves a nested Photoshop layer into a Painter group and records intent", () => {
     const original = fixture()
-    const next = transferToPainter(original, "photoshop:color", "substance_painter:working")
+    const next = transferBetweenHosts(original, "photoshop:color", "substance_painter:working")
 
     expect(next.photoshop[0].children?.map((node) => node.id)).toEqual(["photoshop:paint"])
     expect(next.painter[1].children?.at(-1)?.id).toBe("photoshop:color")
@@ -50,11 +50,16 @@ describe("transferToPainter", () => {
       sourceId: "photoshop:color",
       targetId: "substance_painter:working",
       placement: "inside",
+      direction: "photoshop_to_painter",
     })
   })
 
   it("records after placement when the target is a layer", () => {
-    const next = transferToPainter(fixture(), "photoshop:cleanup", "substance_painter:maskout")
+    const next = transferBetweenHosts(
+      fixture(),
+      "photoshop:cleanup",
+      "substance_painter:maskout",
+    )
 
     expect(next.mappings[0].placement).toBe("after")
     expect(next.painter.map((node) => node.id)).toEqual([
@@ -67,17 +72,41 @@ describe("transferToPainter", () => {
   it("does not mutate the current bridge state", () => {
     const original = fixture()
     const snapshot = cloneState(original)
-    transferToPainter(original, "photoshop:cleanup", "substance_painter:maskout")
+    transferBetweenHosts(original, "photoshop:cleanup", "substance_painter:maskout")
 
     expect(original).toEqual(snapshot)
   })
 
-  it("removes a source row without mapping it into Painter", () => {
-    const original = fixture()
-    const next = removeFromPhotoshop(original, "photoshop:cleanup")
+  it("moves a Painter layer into Photoshop and records the reverse direction", () => {
+    const next = transferBetweenHosts(
+      fixture(),
+      "substance_painter:recolor",
+      "photoshop:group",
+    )
 
-    expect(next.photoshop.map((node) => node.id)).not.toContain("photoshop:cleanup")
-    expect(next.painter).toEqual(original.painter)
-    expect(next.mappings).toEqual([])
+    expect(next.painter[1].children).toEqual([])
+    expect(next.photoshop[0].children?.at(-1)?.id).toBe("substance_painter:recolor")
+    expect(next.mappings[0]).toMatchObject({
+      direction: "painter_to_photoshop",
+      sourceId: "substance_painter:recolor",
+      targetId: "photoshop:group",
+      placement: "inside",
+    })
+  })
+
+  it("removes a native row from either host without creating a mapping", () => {
+    const original = fixture()
+    const withoutPhotoshop = removeFromHost(original, "photoshop", "photoshop:cleanup")
+    const withoutPainter = removeFromHost(
+      withoutPhotoshop,
+      "substance_painter",
+      "substance_painter:maskout",
+    )
+
+    expect(withoutPainter.photoshop.map((node) => node.id)).not.toContain("photoshop:cleanup")
+    expect(withoutPainter.painter.map((node) => node.id)).not.toContain(
+      "substance_painter:maskout",
+    )
+    expect(withoutPainter.mappings).toEqual([])
   })
 })

@@ -26,9 +26,11 @@ import iconX from "../../icons/x.svg" with { type: "text" }
 
 import {
   cloneState,
-  removeFromPhotoshop,
-  transferToPainter,
+  findNode,
+  removeFromHost,
+  transferBetweenHosts,
   type BridgeState,
+  type HostId,
   type LayerNode,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
@@ -477,8 +479,8 @@ function MappingHelpPopover() {
               },
             }}
           >
-            <PrimaryText>Map Photoshop layers</PrimaryText>
-            <PopoverText>Drag a source layer onto a Painter target.</PopoverText>
+            <PrimaryText>Map between hosts</PrimaryText>
+            <PopoverText>Drag a native layer onto the other host.</PopoverText>
             <PopoverText>Group: place inside</PopoverText>
             <PopoverText>Layer: place after</PopoverText>
             <PopoverText>Apply writes the transfer manifest.</PopoverText>
@@ -552,9 +554,10 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 
 type LayerRowProps = {
   node: LayerNode
-  source: boolean
+  host: HostId
   mappedIds: Set<string>
   draggingId: string | null
+  draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
@@ -567,9 +570,10 @@ type LayerRowProps = {
 
 function LayerRow({
   node,
-  source,
+  host,
   mappedIds,
   draggingId,
+  draggingHost,
   dropTargetId,
   expanded,
   onToggle,
@@ -581,7 +585,9 @@ function LayerRow({
 }: LayerRowProps) {
   const [hovered, setHovered] = useState(false)
   const open = node.kind === "group" && expanded.has(node.id)
-  const activeDrop = !source && draggingId !== null && dropTargetId === node.id
+  const nativeNode = node.ref.host === host
+  const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
+  const activeDrop = acceptsDrop && dropTargetId === node.id
   const mapped = mappedIds.has(node.id)
   const children = node.children ?? []
 
@@ -589,14 +595,14 @@ function LayerRow({
     <div
       onMouseEnter={() => {
         setHovered(true)
-        if (!source && draggingId) onDropTarget(node.id)
+        if (acceptsDrop && draggingId) onDropTarget(node.id)
       }}
       onMouseLeave={() => {
         setHovered(false)
-        if (!source && dropTargetId === node.id) onDropTarget(null)
+        if (acceptsDrop && dropTargetId === node.id) onDropTarget(null)
       }}
       onMouseUp={() => {
-        if (!source && draggingId) onDrop(node.id)
+        if (acceptsDrop && draggingId) onDrop(node.id)
         onDragEnd()
       }}
       style={{
@@ -626,7 +632,7 @@ function LayerRow({
       ) : null}
       <div
         onMouseDown={() => {
-          if (source) onDragStart(node.id)
+          if (nativeNode) onDragStart(node.id)
         }}
         style={{
           height: metrics.rowHeight,
@@ -640,9 +646,9 @@ function LayerRow({
           // Mapping uses a quiet row wash; the former white leading stripe read as stray decoration.
           backgroundColor: mapped ? colors.mapped : undefined,
           opacity: draggingId === node.id ? 0.48 : 1,
-          cursor: source ? "move" : "default",
+          cursor: nativeNode ? "move" : "default",
           hover: node.kind === "group" ? undefined : { backgroundColor: colors.controlHover },
-          active: source ? { backgroundColor: colors.controlActive } : undefined,
+          active: nativeNode ? { backgroundColor: colors.controlActive } : undefined,
         }}
       >
         <div
@@ -667,7 +673,7 @@ function LayerRow({
         <div style={{ minWidth: 0, flexGrow: 1 }}>
           <PrimaryText>{node.name}</PrimaryText>
         </div>
-        {source && hovered ? (
+        {nativeNode && hovered ? (
           <div
             onClick={() => onRemove(node.id)}
             style={{
@@ -706,9 +712,10 @@ function LayerRow({
             <LayerRow
               key={child.id}
               node={child}
-              source={source}
+              host={host}
               mappedIds={mappedIds}
               draggingId={draggingId}
+              draggingHost={draggingHost}
               dropTargetId={dropTargetId}
               expanded={expanded}
               onToggle={onToggle}
@@ -729,10 +736,11 @@ function PanelTree({
   panelId,
   label,
   nodes,
-  source,
+  host,
   footerHint,
   mappedIds,
   draggingId,
+  draggingHost,
   dropTargetId,
   expanded,
   onToggle,
@@ -745,10 +753,11 @@ function PanelTree({
   panelId: keyof typeof panelRootIds
   label: string
   nodes: LayerNode[]
-  source: boolean
+  host: HostId
   footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
+  draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
@@ -856,9 +865,10 @@ function PanelTree({
           <LayerRow
             key={node.id}
             node={node}
-            source={source}
+            host={host}
             mappedIds={mappedIds}
             draggingId={draggingId}
+            draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={onToggle}
@@ -893,11 +903,12 @@ function HostPanel({
   subtitle,
   treeLabel,
   nodes,
-  source,
+  host,
   headerAction,
   footerHint,
   mappedIds,
   draggingId,
+  draggingHost,
   dropTargetId,
   expanded,
   onToggle,
@@ -912,11 +923,12 @@ function HostPanel({
   subtitle: string
   treeLabel: string
   nodes: LayerNode[]
-  source: boolean
+  host: HostId
   headerAction?: React.ReactNode
   footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
+  draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
@@ -999,10 +1011,11 @@ function HostPanel({
           panelId={panelId}
           label={treeLabel}
           nodes={nodes}
-          source={source}
+          host={host}
           footerHint={footerHint}
           mappedIds={mappedIds}
           draggingId={draggingId}
+          draggingHost={draggingHost}
           dropTargetId={dropTargetId}
           expanded={expanded}
           onToggle={onToggle}
@@ -1044,6 +1057,11 @@ export function BridgeApp({
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
+  const draggingHost = useMemo(() => {
+    if (!draggingId) return null
+    const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
+    return node?.ref.host ?? null
+  }, [bridge, draggingId])
   const activePainterContext = useMemo(
     () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
     [activePainterContextId, session.painterContexts],
@@ -1069,14 +1087,14 @@ export function BridgeApp({
     setStatus(message)
   }
 
-  const removeSource = (id: string) => {
-    const next = removeFromPhotoshop(bridge, id)
-    mutate(next, "Source row removed")
+  const removeSource = (host: HostId, id: string) => {
+    const next = removeFromHost(bridge, host, id)
+    mutate(next, "Layer removed from this mapping session")
   }
 
   const drop = (targetId: string) => {
     if (!draggingId) return
-    const next = transferToPainter(bridge, draggingId, targetId)
+    const next = transferBetweenHosts(bridge, draggingId, targetId)
     mutate(next, "Mapping updated")
     setDraggingId(null)
     setDropTargetId(null)
@@ -1242,13 +1260,14 @@ export function BridgeApp({
         >
           <HostPanel
             panelId="photoshop"
-            title="SOURCE: PHOTOSHOP"
+            title="PHOTOSHOP"
             subtitle={session.photoshopSubtitle}
             treeLabel="Selected Layers"
             nodes={bridge.photoshop}
-            source
+            host="photoshop"
             mappedIds={mappedIds}
             draggingId={draggingId}
+            draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
@@ -1256,20 +1275,21 @@ export function BridgeApp({
             onDragEnd={() => setDraggingId(null)}
             onDropTarget={setDropTargetId}
             onDrop={drop}
-            onRemove={removeSource}
+            onRemove={(id) => removeSource("photoshop", id)}
           />
-          {/* Mapping help is target context, not an edit-history action, so it stays out of the toolbar. */}
+          {/* Mapping help explains both panes, while the toolbar remains reserved for real commands. */}
           <HostPanel
             panelId="painter"
-            title="TARGET: PAINTER"
+            title="SUBSTANCE PAINTER"
             subtitle={activePainterContext?.subtitle || "No snapshot loaded"}
             treeLabel="Painter Stack"
             nodes={bridge.painter}
-            source={false}
+            host="substance_painter"
             headerAction={<MappingHelpPopover />}
             footerHint={status === session.status ? undefined : status}
             mappedIds={mappedIds}
             draggingId={draggingId}
+            draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
@@ -1277,7 +1297,7 @@ export function BridgeApp({
             onDragEnd={() => setDraggingId(null)}
             onDropTarget={setDropTargetId}
             onDrop={drop}
-            onRemove={removeSource}
+            onRemove={(id) => removeSource("substance_painter", id)}
           />
         </div>
         </motion.div>
