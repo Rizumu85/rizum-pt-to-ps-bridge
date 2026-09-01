@@ -128,10 +128,17 @@ class DesktopTransferTests(unittest.TestCase):
         self.manifest.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "request_type": "desktop_transfer",
-                    "target": {
-                        "host": "substance_painter",
+                    "photoshop": {
+                        "document": {
+                            "id": 42,
+                            "name": "example.psd",
+                            "path": "C:/projects/example.psd",
+                        },
+                        "context": {},
+                    },
+                    "painter": {
                         "document": {
                             "uuid": "project-1",
                             "path": "C:/projects/example.spp",
@@ -145,6 +152,7 @@ class DesktopTransferTests(unittest.TestCase):
                     "transfers": [
                         {
                             "order": 0,
+                            "direction": "photoshop_to_painter",
                             "insertion": "after",
                             "source": {
                                 "host": "photoshop",
@@ -177,11 +185,12 @@ class DesktopTransferTests(unittest.TestCase):
 
         self.assertEqual(plan.texture_set, "M_body")
         self.assertEqual(plan.channel, "BaseColor")
-        self.assertEqual(plan.items[0].target_uid, 0x1A)
-        self.assertEqual(plan.items[0].name, "Paint edit")
-        self.assertEqual(plan.items[0].blend_mode, "overlay")
-        self.assertEqual(plan.items[0].opacity, 65)
-        self.assertFalse(plan.items[0].visible)
+        self.assertEqual(plan.painter_imports[0].target_uid, 0x1A)
+        self.assertEqual(plan.painter_imports[0].name, "Paint edit")
+        self.assertEqual(plan.painter_imports[0].blend_mode, "overlay")
+        self.assertEqual(plan.painter_imports[0].opacity, 65)
+        self.assertFalse(plan.painter_imports[0].visible)
+        self.assertEqual(plan.photoshop_exports, ())
 
     def test_apply_creates_one_channel_fill_and_a_bitmap_mask(self):
         plan = load_transfer_plan(self.manifest)
@@ -217,6 +226,40 @@ class DesktopTransferTests(unittest.TestCase):
             _ScopedModification.names[-1],
             "PT Bridge: import Photoshop layers",
         )
+
+    def test_plan_preserves_painter_to_photoshop_direction_and_native_ids(self):
+        reverse_manifest = self.root / "reverse_transfer.json"
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"] = [
+            {
+                "order": 0,
+                "direction": "painter_to_photoshop",
+                "insertion": "after",
+                "source": {
+                    "host": "substance_painter",
+                    "id": "2b",
+                    "kind": "FillLayer",
+                    "path": "Working/Recolor",
+                    "blend_mode": "COLOR",
+                    "opacity": 72,
+                    "visible": True,
+                },
+                "target": {
+                    "host": "photoshop",
+                    "id": "101",
+                    "kind": "pixel",
+                    "path": "Retouch",
+                },
+            }
+        ]
+        reverse_manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        plan = load_transfer_plan(reverse_manifest)
+
+        self.assertEqual(plan.painter_imports, ())
+        self.assertEqual(plan.photoshop_exports[0].source_uid, 0x2B)
+        self.assertEqual(plan.photoshop_exports[0].target_layer_id, 101)
+        self.assertEqual(plan.photoshop_exports[0].name, "Recolor")
 
     def test_missing_source_png_is_rejected_before_painter_import(self):
         self.layer_png.unlink()

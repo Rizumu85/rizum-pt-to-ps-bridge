@@ -26,9 +26,16 @@ def reload_plugin():
     import importlib
 
     from sp_plugin import rizum_sp_to_ps as bridge_package
-    from sp_plugin.rizum_sp_to_ps import desktop_bridge, desktop_transfer
+    from sp_plugin.rizum_sp_to_ps import (
+        desktop_bridge,
+        desktop_transfer,
+        exporter,
+        photoshop_automation,
+    )
 
     global _close_plugin, _start_plugin
+    importlib.reload(exporter)
+    importlib.reload(photoshop_automation)
     importlib.reload(desktop_transfer)
     importlib.reload(desktop_bridge)
     importlib.reload(bridge_package.ui)

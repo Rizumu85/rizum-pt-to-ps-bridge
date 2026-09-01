@@ -1,4 +1,4 @@
-"""Apply explicit desktop transfer manifests to the active Painter project."""
+"""Execute explicit desktop mappings across Painter and Photoshop."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import exporter, photoshop_automation
 from .blend_map import DIRECT_BLEND_MODES
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 REQUEST_TYPE = "desktop_transfer"
 
 
@@ -19,7 +20,7 @@ class DesktopTransferError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class TransferItem:
+class PainterImportItem:
     """One Photoshop bitmap insertion requested by the desktop mapper."""
 
     order: int
@@ -35,8 +36,24 @@ class TransferItem:
 
 
 @dataclass(frozen=True)
+class PhotoshopExportItem:
+    """One Painter node insertion requested for the selected Photoshop document."""
+
+    order: int
+    name: str
+    source_uid: int
+    source_kind: str
+    target_layer_id: int
+    target_kind: str
+    insertion: str
+    blend_mode: str
+    opacity: float
+    visible: bool
+
+
+@dataclass(frozen=True)
 class TransferPlan:
-    """Validated host-independent data required for one Painter mutation."""
+    """Validated bidirectional work requested by one desktop Apply action."""
 
     manifest_path: Path
     project_uuid: str
@@ -44,16 +61,25 @@ class TransferPlan:
     texture_set: str
     stack: str
     channel: str
-    items: tuple[TransferItem, ...]
+    photoshop_document: dict
+    photoshop_context: dict
+    painter_imports: tuple[PainterImportItem, ...]
+    photoshop_exports: tuple[PhotoshopExportItem, ...]
 
 
 @dataclass(frozen=True)
 class TransferResult:
-    """Summary returned after Painter accepts a transfer plan."""
+    """Summary returned after both host handoffs are prepared."""
 
-    count: int
+    imported_count: int
+    exported_count: int
     names: tuple[str, ...]
     warnings: tuple[str, ...]
+    photoshop_launcher: Path | None = None
+
+    @property
+    def count(self):
+        return self.imported_count + self.exported_count
 
 
 def load_transfer_plan(manifest_path):
@@ -72,23 +98,34 @@ def load_transfer_plan(manifest_path):
     if root.get("request_type") != REQUEST_TYPE:
         raise DesktopTransferError("JSON file is not a desktop_transfer manifest.")
 
-    target = _mapping(root.get("target"), "target")
-    if target.get("host") != "substance_painter":
-        raise DesktopTransferError("Transfer target host must be substance_painter.")
-    context = _mapping(target.get("context"), "target.context")
-    document = _mapping(target.get("document", {}), "target.document")
-    texture_set = _required_text(context, "texture_set", "target.context")
-    channel = _required_text(context, "channel", "target.context")
+    painter_record = _mapping(root.get("painter"), "painter")
+    photoshop_record = _mapping(root.get("photoshop"), "photoshop")
+    context = _mapping(painter_record.get("context"), "painter.context")
+    document = _mapping(painter_record.get("document", {}), "painter.document")
+    photoshop_document = _mapping(
+        photoshop_record.get("document", {}),
+        "photoshop.document",
+    )
+    photoshop_context = _mapping(
+        photoshop_record.get("context", {}),
+        "photoshop.context",
+    )
+    texture_set = _required_text(context, "texture_set", "painter.context")
+    channel = _required_text(context, "channel", "painter.context")
     stack = _optional_text(context.get("stack"))
 
     transfers = root.get("transfers")
     if not isinstance(transfers, list) or not transfers:
         raise DesktopTransferError("Transfer manifest contains no mapped layers.")
 
-    items = tuple(
-        _transfer_item(record, index, path.parent)
-        for index, record in enumerate(transfers)
-    )
+    painter_imports = []
+    photoshop_exports = []
+    for index, record in enumerate(transfers):
+        direction, item = _transfer_item(record, index, path.parent)
+        if direction == "photoshop_to_painter":
+            painter_imports.append(item)
+        else:
+            photoshop_exports.append(item)
     return TransferPlan(
         manifest_path=path,
         project_uuid=_optional_text(document.get("uuid")),
@@ -96,12 +133,15 @@ def load_transfer_plan(manifest_path):
         texture_set=texture_set,
         stack=stack,
         channel=channel,
-        items=items,
+        photoshop_document=dict(photoshop_document),
+        photoshop_context=dict(photoshop_context),
+        painter_imports=tuple(painter_imports),
+        photoshop_exports=tuple(photoshop_exports),
     )
 
 
-def apply_transfer_manifest(manifest_path, painter=None):
-    """Apply a validated desktop transfer as one Painter history entry."""
+def apply_transfer_manifest(manifest_path, settings=None, painter=None):
+    """Execute local Painter work and prepare any Photoshop-side handoff."""
     plan = load_transfer_plan(manifest_path)
     if painter is None:
         try:
@@ -110,19 +150,31 @@ def apply_transfer_manifest(manifest_path, painter=None):
             raise DesktopTransferError(
                 "Desktop transfers must be applied inside Substance 3D Painter."
             ) from exc
-    return apply_transfer_plan(plan, painter)
+    _validate_project(plan, painter.project)
+    launcher = _prepare_photoshop_transfer(plan, settings or {})
+    result = apply_transfer_plan(plan, painter)
+    return TransferResult(
+        imported_count=result.imported_count,
+        exported_count=len(plan.photoshop_exports),
+        names=tuple(
+            [item.name for item in plan.painter_imports]
+            + [item.name for item in plan.photoshop_exports]
+        ),
+        warnings=result.warnings,
+        photoshop_launcher=launcher,
+    )
 
 
 def apply_transfer_plan(plan, painter):
-    """Apply an already validated transfer plan through Painter's layerstack API."""
+    """Apply only the Photoshop-to-Painter portion as one history entry."""
     _validate_project(plan, painter.project)
     resolved = [
         _resolve_target(item, plan, painter.layerstack)
-        for item in plan.items
+        for item in plan.painter_imports
     ]
 
     resources = {}
-    for item in plan.items:
+    for item in plan.painter_imports:
         if item.png not in resources:
             resources[item.png] = _import_texture(item.png, painter.resource)
         if item.mask_png is not None and item.mask_png not in resources:
@@ -131,7 +183,13 @@ def apply_transfer_plan(plan, painter):
     warnings = []
     # The desktop Apply action is one user intent; grouping every layerstack edit
     # keeps both recomputation and Painter history aligned with that decision.
-    with painter.layerstack.ScopedModification("PT Bridge: import Photoshop layers"):
+    if resolved:
+        modification = painter.layerstack.ScopedModification(
+            "PT Bridge: import Photoshop layers"
+        )
+    else:
+        modification = _NullContext()
+    with modification:
         for item, target_node, channel_type in resolved:
             position = _insertion_position(item, target_node, painter.layerstack)
             fill = painter.layerstack.insert_fill(position)
@@ -164,32 +222,102 @@ def apply_transfer_plan(plan, painter):
                 mask_fill.set_source(None, resources[item.mask_png].identifier())
 
     return TransferResult(
-        count=len(plan.items),
-        names=tuple(item.name for item in plan.items),
+        imported_count=len(plan.painter_imports),
+        exported_count=0,
+        names=tuple(item.name for item in plan.painter_imports),
         warnings=tuple(warnings),
     )
+
+
+class _NullContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _type, _value, _traceback):
+        return False
+
+
+def _prepare_photoshop_transfer(plan, settings):
+    if not plan.photoshop_exports:
+        return None
+
+    context = {
+        "texture_set": plan.texture_set,
+        "stack": plan.stack,
+        "channel": plan.channel,
+    }
+    target_udim = plan.photoshop_context.get("udim")
+    if target_udim is not None:
+        context["udim"] = target_udim
+
+    output_dir = plan.manifest_path.parent / "painter_to_photoshop"
+    rendered = exporter.export_desktop_nodes(
+        output_dir / "assets",
+        context,
+        [format(item.source_uid, "x") for item in plan.photoshop_exports],
+        settings,
+    )
+    if len(rendered) != len(plan.photoshop_exports):
+        raise DesktopTransferError(
+            "Painter did not render every mapped Photoshop transfer source."
+        )
+
+    layers = []
+    for item, asset in zip(plan.photoshop_exports, rendered):
+        layers.append(
+            {
+                "order": item.order,
+                "name": item.name,
+                "source_uid": format(item.source_uid, "x"),
+                "source_kind": item.source_kind,
+                "png": asset["png"],
+                "mask_png": asset.get("mask_png"),
+                "target_layer_id": item.target_layer_id,
+                "target_kind": item.target_kind,
+                "insertion": item.insertion,
+                "blend_mode": item.blend_mode,
+                "opacity": item.opacity,
+                "visible": item.visible,
+            }
+        )
+
+    request_path = output_dir / "photoshop_transfer.json"
+    exporter.write_json_atomic(
+        request_path,
+        {
+            "schema_version": 1,
+            "request_type": "painter_to_photoshop_transfer",
+            "document": plan.photoshop_document,
+            "context": plan.photoshop_context,
+            "layers": layers,
+        },
+    )
+    return photoshop_automation.write_photoshop_transfer_launcher(request_path)
 
 
 def _transfer_item(value, fallback_order, manifest_dir):
     record = _mapping(value, f"transfers[{fallback_order}]")
     source = _mapping(record.get("source"), f"transfers[{fallback_order}].source")
     target = _mapping(record.get("target"), f"transfers[{fallback_order}].target")
-    if source.get("host") != "photoshop":
+    direction = _required_text(
+        record,
+        "direction",
+        f"transfers[{fallback_order}]",
+    )
+    hosts = {
+        "photoshop_to_painter": ("photoshop", "substance_painter"),
+        "painter_to_photoshop": ("substance_painter", "photoshop"),
+    }
+    if direction not in hosts:
         raise DesktopTransferError(
-            f"Transfer {fallback_order + 1} source host must be photoshop."
+            f"Transfer {fallback_order + 1} uses unsupported direction {direction!r}."
         )
-    if target.get("host") != "substance_painter":
+    expected_source, expected_target = hosts[direction]
+    if source.get("host") != expected_source or target.get("host") != expected_target:
         raise DesktopTransferError(
-            f"Transfer {fallback_order + 1} target host must be substance_painter."
+            f"Transfer {fallback_order + 1} hosts do not match {direction}."
         )
 
-    png = _asset_path(source.get("png"), manifest_dir, "source PNG")
-    mask_png = _asset_path(
-        source.get("mask_png"),
-        manifest_dir,
-        "source mask PNG",
-        required=False,
-    )
     insertion = _required_text(record, "insertion", f"transfers[{fallback_order}]")
     target_kind = _required_text(
         target,
@@ -202,12 +330,39 @@ def _transfer_item(value, fallback_order, manifest_dir):
         )
     if insertion == "inside" and "group" not in target_kind.casefold():
         raise DesktopTransferError(
-            f"Transfer {fallback_order + 1} can only insert inside a Painter group."
+            f"Transfer {fallback_order + 1} can only insert inside a group."
         )
 
+    if direction == "painter_to_photoshop":
+        logical_path = _optional_text(source.get("path")).replace("\\", "/")
+        name = logical_path.rsplit("/", 1)[-1] if logical_path else "Painter Layer"
+        return direction, PhotoshopExportItem(
+            order=_integer(record.get("order"), fallback_order),
+            name=name,
+            source_uid=_uid(source.get("id"), fallback_order),
+            source_kind=_required_text(
+                source,
+                "kind",
+                f"transfers[{fallback_order}].source",
+            ),
+            target_layer_id=_decimal_id(target.get("id"), fallback_order),
+            target_kind=target_kind,
+            insertion=insertion,
+            blend_mode=_optional_text(source.get("blend_mode")) or "normal",
+            opacity=_number(source.get("opacity"), 100.0),
+            visible=source.get("visible") is not False,
+        )
+
+    png = _asset_path(source.get("png"), manifest_dir, "source PNG")
+    mask_png = _asset_path(
+        source.get("mask_png"),
+        manifest_dir,
+        "source mask PNG",
+        required=False,
+    )
     logical_path = _optional_text(source.get("path")).replace("\\", "/")
     name = logical_path.rsplit("/", 1)[-1] if logical_path else png.stem
-    return TransferItem(
+    return direction, PainterImportItem(
         order=_integer(record.get("order"), fallback_order),
         name=name,
         png=png,
@@ -338,7 +493,17 @@ def _uid(value, index):
         return int(text, 16)
     except (TypeError, ValueError) as exc:
         raise DesktopTransferError(
-            f"Transfer {index + 1} has an invalid Painter target UID: {text!r}."
+            f"Transfer {index + 1} has an invalid Painter node UID: {text!r}."
+        ) from exc
+
+
+def _decimal_id(value, index):
+    text = _optional_text(value)
+    try:
+        return int(text, 10)
+    except (TypeError, ValueError) as exc:
+        raise DesktopTransferError(
+            f"Transfer {index + 1} has an invalid Photoshop layer id: {text!r}."
         ) from exc
 
 

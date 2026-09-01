@@ -30,7 +30,7 @@ class DesktopBridgeController:
 
         self.button = panel.dock_bridge_button
         self.button.setEnabled(True)
-        self.button.setToolTip("Map Photoshop layers into Painter")
+        self.button.setToolTip("Map layers between Painter and Photoshop")
         self.button.clicked.connect(self.open)
 
     def close(self):
@@ -52,7 +52,7 @@ class DesktopBridgeController:
                 process.kill()
 
     def open(self):
-        """Choose a Photoshop selection and launch one native mapping session."""
+        """Choose the Photoshop peer document and launch one mapping session."""
         if self._process is not None:
             return
         if not self.panel._project_is_open():
@@ -102,7 +102,7 @@ class DesktopBridgeController:
         self._process = process
         self.button.setEnabled(False)
         self.button.setToolTip("PT Bridge desktop is open")
-        self.panel.status.setText("Mapping Photoshop layers in PT Bridge...")
+        self.panel.status.setText("Mapping Painter and Photoshop layers...")
         process.start()
 
     def _choose_photoshop_manifest(self):
@@ -157,17 +157,37 @@ class DesktopBridgeController:
             return
 
         try:
-            result = desktop_transfer.apply_transfer_manifest(transfer_path)
+            result = desktop_transfer.apply_transfer_manifest(
+                transfer_path,
+                settings=self.panel.user_settings,
+            )
         except Exception as exc:
             process.deleteLater()
-            self.panel.status.setText("Bridge import failed.")
+            self.panel.status.setText("Bridge transfer failed.")
             self._show("Bridge", str(exc))
             return
 
-        self.panel.status.setText(
-            f"Imported {result.count} Photoshop layer(s) into Painter."
-        )
-        message = f"Imported {result.count} Photoshop layer(s) into Painter."
+        if result.photoshop_launcher is not None:
+            launched, launch_message = self.panel.launch_photoshop(
+                result.photoshop_launcher
+            )
+            if not launched:
+                process.deleteLater()
+                self.panel.status.setText("Photoshop transfer could not start.")
+                self._show("Bridge", launch_message)
+                return
+
+        parts = []
+        if result.imported_count:
+            parts.append(
+                f"Imported {result.imported_count} Photoshop layer(s) into Painter"
+            )
+        if result.exported_count:
+            parts.append(
+                f"sent {result.exported_count} Painter layer(s) to Photoshop"
+            )
+        message = "; ".join(parts) + "."
+        self.panel.status.setText(message)
         if result.warnings:
             message += "\n\n" + "\n".join(result.warnings)
         process.deleteLater()
@@ -177,7 +197,7 @@ class DesktopBridgeController:
         process = self._process
         self._process = None
         self.button.setEnabled(not self._closing)
-        self.button.setToolTip("Map Photoshop layers into Painter")
+        self.button.setToolTip("Map layers between Painter and Photoshop")
         return process
 
     def _show(self, title, message):

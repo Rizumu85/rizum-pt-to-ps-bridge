@@ -126,6 +126,11 @@ def _write_json_atomic(path, payload):
     temporary_path.replace(path)
 
 
+def write_json_atomic(path, payload):
+    """Publish host handoff JSON without exposing a partial request."""
+    _write_json_atomic(path, payload)
+
+
 def default_output_dir(settings=None):
     """Return the default folder for Painter-to-Photoshop build bundles."""
     settings = settings or {}
@@ -263,6 +268,112 @@ def write_build_bundles(
         geometry_baker.close()
 
     return written
+
+
+def export_desktop_nodes(output_dir, context, source_uids, settings=None):
+    """Render mapped Painter nodes through the production export pipeline."""
+    context = dict(context or {})
+    source_uids = [str(uid).strip().lower() for uid in source_uids]
+    if not source_uids:
+        return []
+
+    required = ("texture_set", "channel")
+    missing = [key for key in required if not str(context.get(key) or "").strip()]
+    if missing:
+        raise ValueError(
+            "Desktop Painter context is missing: " + ", ".join(missing)
+        )
+
+    # Mapping chooses an explicit context in Desktop, so stale export-dialog
+    # selection filters must not silently hide that source from this operation.
+    export_settings = dict(settings or {})
+    for key in ("texture_sets", "stacks", "channels"):
+        export_settings.pop(key, None)
+
+    modules = _load_painter_modules()
+    stack_records = list(_iter_stack_records(modules, export_settings))
+    previews = _build_export_requests(modules, export_settings, stack_records)
+    matching = [
+        request
+        for request in previews
+        if request.get("texture_set") == context.get("texture_set")
+        and str(request.get("stack") or "") == str(context.get("stack") or "")
+        and request.get("channel") == context.get("channel")
+    ]
+    requested_udim = context.get("udim")
+    if requested_udim is not None:
+        matching = [
+            request
+            for request in matching
+            if int(request.get("udim") or 0) == int(requested_udim)
+        ]
+    if not matching:
+        raise ValueError(
+            "Painter no longer has the mapped texture set / stack / channel context."
+        )
+
+    preview = matching[0]
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    node_exporter = stack_node_export.StackNodeExporter()
+    geometry_baker = geometry_mask.GeometryMaskBaker()
+    exported = []
+    try:
+        for order, source_uid in enumerate(source_uids):
+            selected = _find_node_by_uid(preview.get("layers", []), source_uid)
+            if selected is None:
+                raise ValueError(
+                    f"Painter layer {source_uid!r} no longer exists in the mapped context."
+                )
+
+            selected = deepcopy(selected)
+            # A desktop mapping represents one dragged object. Groups therefore
+            # cross hosts as one visual object instead of leaking their full
+            # internal Painter implementation into the Photoshop target.
+            selected["bake_policy"] = "bake"
+            selected["children"] = []
+            selected["content_effects"] = []
+            selected["mask_effects"] = []
+
+            bundle = root / f"{order + 1:03d}_{_safe_filename(selected.get('name'))}"
+            (bundle / "png").mkdir(parents=True, exist_ok=True)
+            item_preview = deepcopy(preview)
+            item_preview["layers"] = [selected]
+            build_request = build_request_from_preview(
+                item_preview,
+                bundle,
+                export_settings,
+            )
+            export_request_assets(
+                build_request,
+                node_exporter=node_exporter,
+                geometry_baker=geometry_baker,
+            )
+            rendered = build_request["layers"][0]
+            asset = rendered.get("asset")
+            if not asset or not Path(asset["path"]).is_file():
+                raise RuntimeError(
+                    f"Painter rendered no visible pixels for {selected.get('name')!r}."
+                )
+            mask_asset = rendered.get("mask_asset")
+            exported.append(
+                {
+                    "uid": source_uid,
+                    "name": selected.get("name") or source_uid,
+                    "kind": selected.get("kind") or "layer",
+                    "png": str(Path(asset["path"]).resolve()),
+                    "mask_png": (
+                        str(Path(mask_asset["path"]).resolve())
+                        if mask_asset and Path(mask_asset["path"]).is_file()
+                        else None
+                    ),
+                }
+            )
+    finally:
+        node_exporter.close()
+        geometry_baker.close()
+
+    return exported
 
 
 def build_request_from_preview(preview_request, bundle_dir, settings=None):
@@ -1555,6 +1666,18 @@ def _finalize_geometry_masks(nodes):
             node.pop("geometry_mask_asset", None)
         _finalize_geometry_masks(node.get("children", []))
         _finalize_geometry_masks(node.get("content_effects", []))
+
+
+def _find_node_by_uid(nodes, source_uid):
+    target = str(source_uid or "").strip().lower().removeprefix("0x")
+    for node in nodes:
+        uid_hex = str(node.get("uid_hex") or "").strip().lower().removeprefix("0x")
+        if uid_hex == target:
+            return node
+        child = _find_node_by_uid(node.get("children", []), target)
+        if child is not None:
+            return child
+    return None
 
 
 def _remove_file_if_exists(path):
