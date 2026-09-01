@@ -38,6 +38,7 @@ import {
   failedBridgeSession,
   loadBridgeSession,
   parseSessionOptions,
+  writeConnectPhotoshopRequest,
   writeTransferManifest,
   type BridgeSession,
   type PainterContext,
@@ -387,6 +388,36 @@ function IconAction({
         <SecondaryText>{label}</SecondaryText>
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function ConnectPhotoshopAction({ onClick }: { onClick: () => void }) {
+  const [pressed, setPressed] = useState(false)
+  return (
+    <div
+      testId="connect-photoshop"
+      onClick={onClick}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      style={{
+        height: 32,
+        paddingLeft: 12,
+        paddingRight: 12,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        borderRadius: metrics.rowRadius,
+        backgroundColor: pressed ? colors.controlActive : colors.control,
+        cursor: "pointer",
+        hover: { backgroundColor: colors.controlHover },
+      }}
+    >
+      <Icon name="folder" size={14} />
+      <PrimaryText>Connect Photoshop</PrimaryText>
+    </div>
   )
 }
 
@@ -905,6 +936,7 @@ function HostPanel({
   nodes,
   host,
   headerAction,
+  emptyContent,
   footerHint,
   mappedIds,
   draggingId,
@@ -925,6 +957,7 @@ function HostPanel({
   nodes: LayerNode[]
   host: HostId
   headerAction?: React.ReactNode
+  emptyContent?: React.ReactNode
   footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
@@ -1007,24 +1040,26 @@ function HostPanel({
           padding: 8,
         }}
       >
-        <PanelTree
-          panelId={panelId}
-          label={treeLabel}
-          nodes={nodes}
-          host={host}
-          footerHint={footerHint}
-          mappedIds={mappedIds}
-          draggingId={draggingId}
-          draggingHost={draggingHost}
-          dropTargetId={dropTargetId}
-          expanded={expanded}
-          onToggle={onToggle}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onDropTarget={onDropTarget}
-          onDrop={onDrop}
-          onRemove={onRemove}
-        />
+        {emptyContent ?? (
+          <PanelTree
+            panelId={panelId}
+            label={treeLabel}
+            nodes={nodes}
+            host={host}
+            footerHint={footerHint}
+            mappedIds={mappedIds}
+            draggingId={draggingId}
+            draggingHost={draggingHost}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={onToggle}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDropTarget={onDropTarget}
+            onDrop={onDrop}
+            onRemove={onRemove}
+          />
+        )}
       </div>
     </div>
   )
@@ -1033,10 +1068,12 @@ function HostPanel({
 export function BridgeApp({
   session,
   onApply,
+  onConnectPhotoshop,
   onApplied,
 }: {
   session: BridgeSession
   onApply: (state: BridgeState, painterContextId: string) => Promise<string>
+  onConnectPhotoshop: () => Promise<string>
   onApplied?: (output: string) => void
 }) {
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
@@ -1168,6 +1205,16 @@ export function BridgeApp({
     }
   }
 
+  const connectPhotoshop = async () => {
+    setStatus("Opening Photoshop connection...")
+    try {
+      const output = await onConnectPhotoshop()
+      onApplied?.(output)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const toggle = (id: string) => {
     setExpanded((current) => {
       const next = new Set(current)
@@ -1265,6 +1312,31 @@ export function BridgeApp({
             treeLabel="Selected Layers"
             nodes={bridge.photoshop}
             host="photoshop"
+            headerAction={
+              session.photoshopConnected ? (
+                <IconAction
+                  icon="folder"
+                  label="Change Photoshop document"
+                  testId="change-photoshop"
+                  onClick={connectPhotoshop}
+                />
+              ) : undefined
+            }
+            emptyContent={
+              session.photoshopConnected ? undefined : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <ConnectPhotoshopAction onClick={connectPhotoshop} />
+                </div>
+              )
+            }
             mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
@@ -1382,6 +1454,7 @@ if (isEntryPoint) {
     <BridgeApp
       session={session}
       onApply={(state, contextId) => writeTransferManifest(session, state, contextId)}
+      onConnectPhotoshop={() => writeConnectPhotoshopRequest(session)}
       onApplied={() => {
         // Painter owns the destination mutation, so a successful atomic write
         // is the desktop process's terminal state and its unambiguous handoff.

@@ -19,7 +19,13 @@ describe("Painter context selectors", () => {
     const app = await connectTest(testRoot.renderer)
 
     try {
-      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"} />)
+      testRoot.render(
+        <BridgeApp
+          session={session}
+          onApply={async () => "unused"}
+          onConnectPhotoshop={async () => "unused"}
+        />,
+      )
       testRoot.renderer.flush()
       await app.getByTestId("context-select:Channel:").click()
       await app.getByTestId("context-option:Channel::1").click()
@@ -46,15 +52,53 @@ describe("Painter context selectors", () => {
     const app = await connectTest(testRoot.renderer)
 
     try {
-      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"} />)
+      testRoot.render(
+        <BridgeApp
+          session={session}
+          onApply={async () => "unused"}
+          onConnectPhotoshop={async () => "unused"}
+        />,
+      )
       testRoot.renderer.flush()
 
       expect(await app.getByText("Drop Photoshop layers here to map").count()).toBe(0)
-      expect(await app.getByText("Map Photoshop layers").count()).toBe(0)
+      expect(await app.getByText("Map between hosts").count()).toBe(0)
 
       await app.getByTestId("mapping-help-trigger").click()
-      expect(await app.getByText("Map Photoshop layers").count()).toBeGreaterThan(0)
+      expect(await app.getByText("Map between hosts").count()).toBeGreaterThan(0)
       expect(await app.getByText("Group: place inside").count()).toBeGreaterThan(0)
+    } finally {
+      testRoot.unmount()
+      await app.close()
+    }
+  })
+
+  it("opens Painter content without blocking on a Photoshop file picker", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(fixtureDir, "desktop_connect_request.json"),
+    })
+    const testRoot = createTestRoot({ width: 652, height: 484 })
+    const app = await connectTest(testRoot.renderer)
+    let requested = false
+
+    try {
+      testRoot.render(
+        <BridgeApp
+          session={session}
+          onApply={async () => "unused"}
+          onConnectPhotoshop={async () => {
+            requested = true
+            return "connect.json"
+          }}
+        />,
+      )
+      testRoot.renderer.flush()
+
+      expect(await app.getByText("No selection loaded").count()).toBeGreaterThan(0)
+      expect(await app.getByText("Locator").count()).toBeGreaterThan(0)
+      await app.getByTestId("connect-photoshop").click()
+      expect(requested).toBe(true)
     } finally {
       testRoot.unmount()
       await app.close()

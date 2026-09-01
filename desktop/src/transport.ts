@@ -12,7 +12,7 @@ import {
 type JsonObject = Record<string, unknown>
 
 export type SessionOptions = {
-  photoshopManifest: string
+  photoshopManifest?: string
   painterSnapshot?: string
   output?: string
 }
@@ -29,6 +29,7 @@ export type PainterContext = {
 
 export type BridgeSession = {
   state: BridgeState
+  photoshopConnected: boolean
   sourceManifestPath: string
   targetSnapshotPath: string
   outputPath: string
@@ -67,48 +68,49 @@ export function parseSessionOptions(
     index += 1
   }
 
-  if (!values.photoshopManifest) {
-    throw new Error("Pass --session <photoshop_selection.json> to load a transfer session")
+  if (!values.painterSnapshot && !values.photoshopManifest) {
+    throw new Error("Pass --painter <painter_snapshot.json> to open PT Bridge")
   }
-  return values as SessionOptions
+  return values
 }
 
 export async function loadBridgeSession(options: SessionOptions): Promise<BridgeSession> {
-  const sourceManifestPath = path.resolve(options.photoshopManifest)
-  const source = await readJsonObject(sourceManifestPath)
-  if (source.request_type !== "photoshop_selection") {
-    throw new Error("Photoshop manifest request_type must be 'photoshop_selection'")
-  }
-  if (source.schema_version !== 1) {
-    throw new Error("Photoshop selection manifest uses an unsupported schema_version")
-  }
-
+  const sourceManifestPath = options.photoshopManifest
+    ? path.resolve(options.photoshopManifest)
+    : ""
+  const source = sourceManifestPath ? await readPhotoshopSelection(sourceManifestPath) : {}
   const targetSnapshotPath = path.resolve(
     options.painterSnapshot ?? targetSnapshotFromSelection(source, sourceManifestPath),
   )
   const target = await readJsonObject(targetSnapshotPath)
-  const photoshop = photoshopNodes(source, sourceManifestPath)
+  const photoshop = sourceManifestPath ? photoshopNodes(source, sourceManifestPath) : []
   const contexts = painterContexts(target)
-  const sourceContext = await photoshopDocumentContext(source, sourceManifestPath)
+  const sourceContext = sourceManifestPath
+    ? await photoshopDocumentContext(source, sourceManifestPath)
+    : {}
   const initialContext = matchingPainterContext(contexts, sourceContext) ?? contexts[0]
-  if (photoshop.length === 0) throw new Error("Photoshop selection manifest has no exported layers")
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
   const sourceDocument = objectValue(source.document)
   const targetDocument = objectValue(target.project)
   const outputPath = path.resolve(
-    options.output ?? path.join(path.dirname(sourceManifestPath), "desktop_transfer.json"),
+    options.output ?? path.join(path.dirname(sourceManifestPath || targetSnapshotPath), "desktop_transfer.json"),
   )
 
   return {
     state: { photoshop, painter: initialContext.nodes, mappings: [] },
+    photoshopConnected: Boolean(sourceManifestPath),
     sourceManifestPath,
     targetSnapshotPath,
     outputPath,
-    photoshopSubtitle: textValue(sourceDocument.name) || textValue(source.document_name) || "Selection",
+    photoshopSubtitle: sourceManifestPath
+      ? textValue(sourceDocument.name) || textValue(source.document_name) || "Selection"
+      : "No selection loaded",
     painterContexts: contexts,
     initialPainterContextId: initialContext.id,
-    status: "Drag layers between Photoshop and Painter to map a transfer",
+    status: sourceManifestPath
+      ? "Drag layers between Photoshop and Painter to map a transfer"
+      : "Connect Photoshop to start mapping layers",
     sourceDocument,
     sourceContext,
     targetDocument,
@@ -119,6 +121,7 @@ export function failedBridgeSession(error: unknown): BridgeSession {
   const message = error instanceof Error ? error.message : String(error)
   return {
     state: structuredClone(emptyBridgeState),
+    photoshopConnected: false,
     sourceManifestPath: "",
     targetSnapshotPath: "",
     outputPath: "",
@@ -130,6 +133,17 @@ export function failedBridgeSession(error: unknown): BridgeSession {
     sourceContext: {},
     targetDocument: {},
   }
+}
+
+export async function writeConnectPhotoshopRequest(session: BridgeSession): Promise<string> {
+  if (!session.outputPath) throw new Error("The transfer session has no output path")
+  await writeAtomicJson(session.outputPath, {
+    schema_version: 1,
+    request_type: "desktop_connect_photoshop",
+    created_at: new Date().toISOString(),
+    painter_snapshot: session.targetSnapshotPath,
+  })
+  return session.outputPath
 }
 
 export async function writeTransferManifest(
@@ -171,15 +185,33 @@ export async function writeTransferManifest(
     })),
   }
 
-  await mkdir(path.dirname(session.outputPath), { recursive: true })
-  const temporaryPath = `${session.outputPath}.tmp-${process.pid}`
+  await writeAtomicJson(session.outputPath, payload)
+  return session.outputPath
+}
+
+async function readPhotoshopSelection(manifestPath: string): Promise<JsonObject> {
+  const selection = await readJsonObject(manifestPath)
+  if (selection.request_type !== "photoshop_selection") {
+    throw new Error("Photoshop manifest request_type must be 'photoshop_selection'")
+  }
+  if (selection.schema_version !== 1) {
+    throw new Error("Photoshop selection manifest uses an unsupported schema_version")
+  }
+  if (arrayValue(selection.layers).length === 0) {
+    throw new Error("Photoshop selection manifest has no exported layers")
+  }
+  return selection
+}
+
+async function writeAtomicJson(filePath: string, payload: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true })
+  const temporaryPath = `${filePath}.tmp-${process.pid}`
   await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8")
-  await unlink(session.outputPath).catch((error: NodeJS.ErrnoException) => {
+  await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") throw error
   })
-  // The destination plugin must never observe a half-written transfer contract.
-  await rename(temporaryPath, session.outputPath)
-  return session.outputPath
+  // Painter watches this contract after the desktop exits, so replacement must be atomic.
+  await rename(temporaryPath, filePath)
 }
 
 function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[] {

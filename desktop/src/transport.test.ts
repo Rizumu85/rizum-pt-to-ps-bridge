@@ -5,7 +5,12 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { transferBetweenHosts } from "./model"
-import { loadBridgeSession, parseSessionOptions, writeTransferManifest } from "./transport"
+import {
+  loadBridgeSession,
+  parseSessionOptions,
+  writeConnectPhotoshopRequest,
+  writeTransferManifest,
+} from "./transport"
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
@@ -111,6 +116,31 @@ describe("desktop file transport", () => {
       photoshopManifest: "selection.json",
       painterSnapshot: "target.json",
       output: undefined,
+    })
+  })
+
+  it("opens with Painter only until Photoshop is connected", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
+    const output = path.join(outputDir, "desktop_transfer.json")
+    const options = parseSessionOptions([
+      "--painter",
+      path.join(fixtureDir, "painter_snapshot.json"),
+      "--output",
+      output,
+    ])
+    const session = await loadBridgeSession(options)
+
+    expect(session.photoshopConnected).toBe(false)
+    expect(session.photoshopSubtitle).toBe("No selection loaded")
+    expect(session.state.photoshop).toEqual([])
+    expect(session.state.painter.length).toBeGreaterThan(0)
+
+    await writeConnectPhotoshopRequest(session)
+    const request = JSON.parse(await readFile(output, "utf8"))
+    expect(request).toMatchObject({
+      schema_version: 1,
+      request_type: "desktop_connect_photoshop",
+      painter_snapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
   })
 })

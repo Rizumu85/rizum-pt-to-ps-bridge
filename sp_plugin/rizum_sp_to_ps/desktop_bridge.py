@@ -13,6 +13,7 @@ from . import desktop_transfer, exporter
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
 MANIFEST_DIR_KEY = "desktop_manifest_dir"
+MANIFEST_PATH_KEY = "desktop_manifest_path"
 
 
 class DesktopBridgeController:
@@ -52,7 +53,7 @@ class DesktopBridgeController:
                 process.kill()
 
     def open(self):
-        """Choose the Photoshop peer document and launch one mapping session."""
+        """Launch one mapping session with the last connected Photoshop document."""
         if self._process is not None:
             return
         if not self.panel._project_is_open():
@@ -62,11 +63,12 @@ class DesktopBridgeController:
             self._show("Bridge", "Painter project is still loading or not editable.")
             return
 
-        manifest_path = self._choose_photoshop_manifest()
-        if manifest_path is None:
-            return
+        self._launch_desktop(self._recent_photoshop_manifest())
+
+    def _launch_desktop(self, manifest_path):
         try:
-            _validate_photoshop_manifest(manifest_path)
+            if manifest_path is not None:
+                _validate_photoshop_manifest(manifest_path)
             executable = _desktop_executable()
             session_dir = exporter.default_output_dir(
                 self.panel.user_settings
@@ -87,16 +89,15 @@ class DesktopBridgeController:
         self._process_error_reported = False
         process = self.QtCore.QProcess(self.panel.widget)
         process.setProgram(str(executable))
-        process.setArguments(
-            [
-                "--session",
-                str(manifest_path),
-                "--painter",
-                str(snapshot_path),
-                "--output",
-                str(transfer_path),
-            ]
-        )
+        arguments = [
+            "--painter",
+            str(snapshot_path),
+            "--output",
+            str(transfer_path),
+        ]
+        if manifest_path is not None:
+            arguments[0:0] = ["--session", str(manifest_path)]
+        process.setArguments(arguments)
         process.finished.connect(self._desktop_finished)
         process.errorOccurred.connect(self._desktop_error)
         self._process = process
@@ -104,6 +105,22 @@ class DesktopBridgeController:
         self.button.setToolTip("PT Bridge desktop is open")
         self.panel.status.setText("Mapping Painter and Photoshop layers...")
         process.start()
+
+    def _recent_photoshop_manifest(self):
+        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        saved = settings.value(MANIFEST_PATH_KEY, "", str) or ""
+        if not saved:
+            return None
+        path = Path(saved)
+        try:
+            _validate_photoshop_manifest(path)
+        except RuntimeError:
+            # A stale document must become an explicit disconnected state instead
+            # of blocking every future Bridge launch before the mapper is visible.
+            settings.remove(MANIFEST_PATH_KEY)
+            settings.sync()
+            return None
+        return path
 
     def _choose_photoshop_manifest(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
@@ -116,10 +133,27 @@ class DesktopBridgeController:
         )
         if not selected:
             return None
-        path = Path(selected)
+        return Path(selected)
+
+    def _remember_photoshop_manifest(self, path):
+        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        settings.setValue(MANIFEST_PATH_KEY, str(path))
         settings.setValue(MANIFEST_DIR_KEY, str(path.parent))
         settings.sync()
-        return path
+
+    def _connect_photoshop(self):
+        manifest_path = self._choose_photoshop_manifest()
+        if manifest_path is None:
+            self.panel.status.setText("Photoshop connection cancelled.")
+            return
+        try:
+            _validate_photoshop_manifest(manifest_path)
+        except Exception as exc:
+            self.panel.status.setText("Photoshop selection could not be connected.")
+            self._show("Bridge", str(exc))
+            return
+        self._remember_photoshop_manifest(manifest_path)
+        self._launch_desktop(manifest_path)
 
     def _desktop_error(self, process_error):
         if self._closing or self._process_error_reported:
@@ -154,6 +188,23 @@ class DesktopBridgeController:
         if transfer_path is None or not transfer_path.is_file():
             process.deleteLater()
             self.panel.status.setText("Bridge mapping cancelled.")
+            return
+
+        try:
+            request_type = _desktop_request_type(transfer_path)
+        except Exception as exc:
+            process.deleteLater()
+            self.panel.status.setText("Bridge response could not be read.")
+            self._show("Bridge", str(exc))
+            return
+        if request_type == "desktop_connect_photoshop":
+            process.deleteLater()
+            self._connect_photoshop()
+            return
+        if request_type != "desktop_transfer":
+            process.deleteLater()
+            self.panel.status.setText("Bridge response is unsupported.")
+            self._show("Bridge", f"Unsupported desktop request: {request_type or '(missing)'}")
             return
 
         try:
@@ -247,3 +298,15 @@ def _validate_photoshop_manifest(path):
         raise RuntimeError("Selected JSON file is not a Photoshop selection manifest.")
     if not isinstance(payload.get("layers"), list) or not payload["layers"]:
         raise RuntimeError("Photoshop selection manifest contains no exported layers.")
+
+
+def _desktop_request_type(path):
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RuntimeError(f"Could not read desktop response: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Desktop response is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Desktop response must be a JSON object.")
+    return payload.get("request_type")
