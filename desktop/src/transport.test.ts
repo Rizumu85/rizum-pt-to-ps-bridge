@@ -27,6 +27,7 @@ describe("desktop file transport", () => {
       "Paint edit",
       "Color pass",
       "Mask cleanup",
+      "Retouch group",
     ])
     expect(session.state.painter[2].children?.map((node) => node.name)).toEqual([
       "Lighten",
@@ -78,7 +79,7 @@ describe("desktop file transport", () => {
     const mapped = transferBetweenHosts(
       session.state,
       "substance_painter:sp-lighten",
-      "photoshop:ps:42:100",
+      "photoshop:ps:42:103",
     )
 
     const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
@@ -86,7 +87,7 @@ describe("desktop file transport", () => {
 
     expect(manifest.transfers[0]).toMatchObject({
       direction: "painter_to_photoshop",
-      insertion: "after",
+      insertion: "inside",
       source: {
         host: "substance_painter",
         id: "sp-lighten",
@@ -94,7 +95,8 @@ describe("desktop file transport", () => {
       },
       target: {
         host: "photoshop",
-        id: "100",
+        id: "103",
+        kind: "group",
       },
     })
   })

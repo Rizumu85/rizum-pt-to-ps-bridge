@@ -40,6 +40,16 @@
       "blend_mode": "normal",
       "opacity": 100,
       "png": "png/mask_cleanup.png"
+    },
+    {
+      "source_id": "ps:42:103",
+      "ps_layer_id": 103,
+      "display_name": "Retouch group",
+      "ps_kind": "group",
+      "path": "Retouch group",
+      "blend_mode": "normal",
+      "opacity": 100,
+      "png": "png/retouch_group.png"
     }
   ]
 }

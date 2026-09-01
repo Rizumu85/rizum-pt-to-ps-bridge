@@ -188,6 +188,8 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
     const layer = objectValue(value)
     const externalId = textValue(layer.source_id) || `selection-${index + 1}`
     const name = textValue(layer.display_name) || textValue(layer.name) || `Layer ${index + 1}`
+    const kindText = textValue(layer.ps_kind) || "layer"
+    const isGroup = /group/i.test(kindText)
     const group = textValue(layer.group)
     const relativeAsset = textValue(layer.png)
     const relativeMask = textValue(layer.mask_png)
@@ -196,7 +198,7 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
       host: "photoshop",
       externalId,
       nativeId: textValue(layer.ps_layer_id) || externalId,
-      kind: textValue(layer.ps_kind) || "layer",
+      kind: kindText,
       path: textValue(layer.path) || (group ? `${group}/${name}` : name),
       assetPath: resolvedAsset,
       maskPath: relativeMask ? resolveAsset(manifestDir, relativeMask) : null,
@@ -206,9 +208,9 @@ function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[]
     }
     return {
       id: `photoshop:${externalId}`,
-      kind: "layer",
+      kind: isGroup ? "group" : "layer",
       name,
-      detail: layerDetail(layer),
+      detail: isGroup ? "Group" : layerDetail(layer),
       masked: Boolean(relativeMask),
       thumbnailPath: availableThumbnail(resolvedAsset),
       ref,
