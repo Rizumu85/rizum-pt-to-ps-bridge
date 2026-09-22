@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
   type MotionEase,
   type PublicInstance,
+  type EventPayload,
 } from "@gpuix/react"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
@@ -21,7 +22,6 @@ import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
 import iconFolder from "../../icons/folder.svg" with { type: "text" }
-import iconFolderFilled from "../../icons/folder-filled.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
 import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
@@ -55,20 +55,13 @@ const icons = {
   chevronRight: iconChevronRight,
   chevronUp: iconChevronUp,
   folder: iconFolder,
-  folderFilled: iconFolderFilled,
   redo: iconRedo,
   reset: iconReset,
   undo: iconUndo,
   x: iconX,
 } as const
 
-const panelRootIds = {
-  photoshop: "panel-root:photoshop",
-  painter: "panel-root:painter",
-} as const
-
 const motionEase: MotionEase = [0.23, 1, 0.32, 1]
-const panelTreeChildrenGap = 8
 const maskThumbnailSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${colors.maskDark}"/><path d="M0 8 8 0v8Z" fill="${colors.maskLight}"/></svg>`
 
 type IconName = keyof typeof icons
@@ -375,7 +368,7 @@ function IconAction({
               opacity: pressed ? 0.7 : 1,
             }}
             transition={{ duration: pressed ? 0.08 : 0.18, ease: motionEase }}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
           >
             <Icon name={icon} size="100%" />
           </motion.div>
@@ -610,346 +603,129 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
   )
 }
 
-type LayerRowProps = {
-  node: LayerNode
+type TreeInteraction = {
   host: HostId
   selectedIds: Set<string>
   mappedIds: Set<string>
+  hoveredId: string | null
+  hoveredGroupId: string | null
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
-  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
+  onDragStart: (id: string, event: EventPayload) => void
+  onPointerMove: (event: EventPayload, rowId?: string) => void
   onDragEnd: () => void
-  onDropTarget: (id: string | null) => void
+  onHover: (id: string | null) => void
   onDrop: (id: string) => void
   onRemove: (id: string) => void
 }
 
-function LayerRow({
-  node,
-  host,
-  selectedIds,
-  mappedIds,
-  draggingId,
-  draggingHost,
-  dropTargetId,
-  expanded,
-  onToggle,
-  onDragStart,
-  onDragEnd,
-  onDropTarget,
-  onDrop,
-  onRemove,
-}: LayerRowProps) {
-  const [hovered, setHovered] = useState(false)
+function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
+  const {
+    host, selectedIds, mappedIds, hoveredId, hoveredGroupId, draggingId,
+    draggingHost, dropTargetId, expanded, onToggle, onDragStart, onPointerMove,
+    onDragEnd, onHover, onDrop, onRemove,
+  } = interaction
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
   const activeDrop = acceptsDrop && dropTargetId === node.id
   const mapped = mappedIds.has(node.id)
+  const hovered = hoveredId === node.id
+  const selected = selectedIds.has(node.id)
   const children = node.children ?? []
 
   return (
     <div
-      onMouseEnter={() => {
-        setHovered(true)
-        if (acceptsDrop && draggingId) onDropTarget(node.id)
-      }}
-      onMouseLeave={() => {
-        setHovered(false)
-        if (acceptsDrop && dropTargetId === node.id) onDropTarget(null)
-      }}
-      onMouseUp={() => {
-        if (acceptsDrop && draggingId) onDrop(node.id)
-        onDragEnd()
-      }}
+      testId={`layer-group:${node.id}`}
       style={{
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
-        marginLeft: 24,
-        padding: node.kind === "group" ? 4 : 0,
-        borderRadius: 8,
-        backgroundColor: node.kind === "group" && hovered ? colors.groupHover : undefined,
+        position: "relative", display: "flex", flexDirection: "column", minWidth: 0,
+        borderRadius: metrics.rowRadius,
+        backgroundColor: hoveredGroupId === node.id ? colors.groupHover : undefined,
       }}
     >
-      {activeDrop ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.12, ease: motionEase }}
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 5,
-            left: 5,
-            height: 2,
-            backgroundColor: colors.drop,
-            pointerEvents: "none",
-          }}
-        />
-      ) : null}
+      {activeDrop ? <div
+        testId={`drop-indicator:${node.id}`}
+        style={{
+          position: "absolute", left: 5, right: 5, top: metrics.rowHeight - 2, height: 2,
+          backgroundColor: colors.drop, pointerEvents: "none",
+        }}
+      /> : null}
       <div
         testId={`layer-row:${node.id}`}
-        aria-selected={selectedIds.has(node.id)}
-        onMouseDown={(event) => {
-          if (event.button !== 2) onDragStart(node.id, {
-            toggle: event.modifiers?.ctrl || event.modifiers?.cmd,
-            range: event.modifiers?.shift,
-          })
+        aria-selected={selected}
+        // Only the header owns pointer events: a folder's descendants must not
+        // replace the hovered row or its drop target through ancestor handlers.
+        onMouseEnter={() => onHover(node.id)}
+        onMouseLeave={() => { if (hovered) onHover(null) }}
+        onMouseMove={event => {
+          if (!hovered) onHover(node.id)
+          onPointerMove(event, node.id)
+        }}
+        onMouseUp={() => {
+          if (acceptsDrop && draggingId) onDrop(node.id)
+          onDragEnd()
         }}
         style={{
-          height: metrics.rowHeight,
-          paddingLeft: 8,
-          paddingRight: 8,
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 9,
+          position: "relative",
+          height: metrics.rowHeight, flexShrink: 0,
+          paddingLeft: 8, paddingRight: 8,
+          display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
           borderRadius: metrics.rowRadius,
-          // Mapping uses a quiet row wash; the former white leading stripe read as stray decoration.
-          backgroundColor: selectedIds.has(node.id) ? colors.controlActive : mapped ? colors.mapped : undefined,
-          opacity: draggingId === node.id ? 0.48 : 1,
+          backgroundColor: selected ? colors.controlActive : hovered ? colors.controlHover : mapped ? colors.mapped : undefined,
+          opacity: draggingId === node.id ? 0.65 : 1,
           cursor: "move",
-          hover: node.kind === "group" || selectedIds.has(node.id) ? undefined : { backgroundColor: colors.controlHover },
-          active: { backgroundColor: colors.controlActive },
         }}
       >
         <div
           testId={`layer-toggle:${node.id}`}
-          onClick={() => {
-            if (node.kind === "group") onToggle(node.id)
-          }}
+          onClick={() => { onDragEnd(); if (node.kind === "group") onToggle(node.id) }}
           style={{
-            width: 14,
-            height: 28,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            width: 14, height: 28, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
             cursor: node.kind === "group" ? "pointer" : "default",
           }}
         >
-          {node.kind === "group" ? (
-            <DisclosureIcon open={open} />
-          ) : null}
+          {node.kind === "group" ? <DisclosureIcon open={open} /> : null}
         </div>
-        <LayerThumbnail node={node} />
-        <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
-          <PrimaryText>{node.name}</PrimaryText>
-          {mapped ? <text style={{ fontSize: typography.secondarySize, color: colors.secondary }}>Pending</text> : null}
-        </div>
-        {nativeNode && hovered ? (
-          <div
-            testId={`layer-remove:${node.id}`}
-            onClick={() => onRemove(node.id)}
-            style={{
-              width: 22,
-              height: 22,
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 5,
-              cursor: "pointer",
-              hover: { backgroundColor: "#FF453A29" },
-            }}
-          >
-            <Icon name="x" size={12} color={colors.danger} />
+        <div
+          onMouseDown={event => { if (event.button === 0) onDragStart(node.id, event) }}
+          onMouseUp={() => { if (acceptsDrop && draggingId) onDrop(node.id); onDragEnd() }}
+          style={{ minWidth: 0, flexGrow: 1, height: "100%", display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}
+        >
+          <LayerThumbnail node={node} />
+          <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
+            <PrimaryText>{node.name}</PrimaryText>
+            {mapped ? <text style={{ fontSize: typography.secondarySize, color: colors.secondary }}>Pending</text> : null}
           </div>
-        ) : null}
+        </div>
+        {nativeNode ? <div
+          testId={`layer-remove:${node.id}`}
+          onClick={() => { onDragEnd(); onRemove(node.id) }}
+          style={{
+            width: 22, height: 22, flexShrink: 0, display: "flex",
+            alignItems: "center", justifyContent: "center", borderRadius: 5,
+            cursor: "pointer", hover: { backgroundColor: "#FF453A29" },
+            opacity: hovered ? 1 : 0, pointerEvents: hovered ? undefined : "none",
+          }}
+        >
+          <Icon name="x" size={12} color={colors.danger} />
+        </div> : null}
       </div>
-      {/* Mounted descendants let interrupted toggles retarget the same accordion transition. */}
-      {node.kind === "group" ? (
-        <motion.div
-          initial={false}
-          animate={{
-            height: open ? visibleNodesHeight(children, expanded) : 0,
-            opacity: open ? 1 : 0,
-          }}
-          transition={{ duration: 0.3, ease: motionEase }}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            // Explicit "auto" also occludes the ancestor's native wheel handler.
-            pointerEvents: open ? undefined : "none",
-          }}
-        >
-          {children.map((child) => (
-            <LayerRow
-              key={child.id}
-              node={child}
-              host={host}
-              selectedIds={selectedIds} mappedIds={mappedIds}
-              draggingId={draggingId}
-              draggingHost={draggingHost}
-              dropTargetId={dropTargetId}
-              expanded={expanded}
-              onToggle={onToggle}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDropTarget={onDropTarget}
-              onDrop={onDrop}
-              onRemove={onRemove}
-            />
-          ))}
-        </motion.div>
-      ) : null}
-    </div>
-  )
-}
-
-function PanelTree({
-  panelId,
-  label,
-  nodes,
-  host,
-  selectedIds,
-  mappedIds,
-  draggingId,
-  draggingHost,
-  dropTargetId,
-  expanded,
-  onToggle,
-  onDragStart,
-  onDragEnd,
-  onDropTarget,
-  onDrop,
-  onRemove,
-}: {
-  panelId: keyof typeof panelRootIds
-  label: string
-  nodes: LayerNode[]
-  host: HostId
-  selectedIds: Set<string>
-  mappedIds: Set<string>
-  draggingId: string | null
-  draggingHost: HostId | null
-  dropTargetId: string | null
-  expanded: Set<string>
-  onToggle: (id: string) => void
-  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
-  onDragEnd: () => void
-  onDropTarget: (id: string | null) => void
-  onDrop: (id: string) => void
-  onRemove: (id: string) => void
-}) {
-  const [hovered, setHovered] = useState(false)
-  const rootId = panelRootIds[panelId]
-  const open = expanded.has(rootId)
-
-  return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        padding: 4,
-        borderRadius: 8,
-        backgroundColor: hovered ? colors.groupHover : undefined,
-      }}
-    >
-      <div
-        testId={`panel-tree-toggle:${panelId}`}
-        onClick={() => onToggle(rootId)}
-        style={{
-          height: 40,
-          paddingLeft: 8,
-          paddingRight: 8,
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 9,
-          borderRadius: metrics.rowRadius,
-          cursor: "pointer",
-        }}
-      >
-        <div
-          style={{
-            width: 14,
-            height: 17,
-            flexShrink: 0,
-            alignSelf: "flex-start",
-            marginTop: 5,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <DisclosureIcon open={open} />
-        </div>
-        <div
-          style={{
-            width: 17,
-            height: 17,
-            flexShrink: 0,
-            alignSelf: "flex-start",
-            marginTop: 5,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon name="folderFilled" size={17} />
-        </div>
-        <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-          {/* The tree root names the collection, so it must outrank the layer rows it contains. */}
-          <text
-            style={{
-              color: colors.text,
-              fontFamily: typography.family,
-              fontSize: typography.primarySize,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {label}
-          </text>
-          <SecondaryText>{`${countNodes(nodes)} Layers`}</SecondaryText>
-        </div>
-      </div>
-      <motion.div
+      {node.kind === "group" ? <motion.div
         initial={false}
-        animate={{
-          height: open
-            ? panelTreeChildrenGap + visibleNodesHeight(nodes, expanded)
-            : 0,
-          opacity: open ? 1 : 0,
-        }}
-        transition={{ duration: 0.3, ease: motionEase }}
+        animate={{ height: open ? visibleNodesHeight(children, expanded) : 0, opacity: open ? 1 : 0 }}
+        transition={{ duration: 0.2, ease: motionEase }}
         style={{
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          pointerEvents: open ? undefined : "none",
+          display: "flex", flexDirection: "column", overflow: "hidden",
+          // Depth has one owner; folder decoration must not shift sibling columns.
+          marginLeft: metrics.treeIndent, pointerEvents: open ? undefined : "none",
         }}
       >
-        {/* The root identity needs group spacing before its child collection; rows inside stay compact. */}
-        <div style={{ height: panelTreeChildrenGap, flexShrink: 0 }} />
-        {nodes.map((node) => (
-          <LayerRow
-            key={node.id}
-            node={node}
-            host={host}
-            selectedIds={selectedIds} mappedIds={mappedIds}
-            draggingId={draggingId}
-            draggingHost={draggingHost}
-            dropTargetId={dropTargetId}
-            expanded={expanded}
-            onToggle={onToggle}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDropTarget={onDropTarget}
-            onDrop={onDrop}
-            onRemove={onRemove}
-          />
-        ))}
-      </motion.div>
+        {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
+      </motion.div> : null}
     </div>
   )
 }
@@ -958,45 +734,33 @@ function HostPanel({
   panelId,
   title,
   subtitle,
-  treeLabel,
   nodes,
   host,
   headerAction,
   emptyContent,
   selectedIds,
   mappedIds,
+  hoveredId,
+  hoveredGroupId,
   draggingId,
   draggingHost,
   dropTargetId,
   expanded,
   onToggle,
   onDragStart,
+  onPointerMove,
   onDragEnd,
-  onDropTarget,
+  onHover,
   onDrop,
   onRemove,
 }: {
-  panelId: keyof typeof panelRootIds
+  panelId: "photoshop" | "painter"
   title: string
   subtitle: string
-  treeLabel: string
   nodes: LayerNode[]
-  host: HostId
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
-  selectedIds: Set<string>
-  mappedIds: Set<string>
-  draggingId: string | null
-  draggingHost: HostId | null
-  dropTargetId: string | null
-  expanded: Set<string>
-  onToggle: (id: string) => void
-  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
-  onDragEnd: () => void
-  onDropTarget: (id: string | null) => void
-  onDrop: (id: string) => void
-  onRemove: (id: string) => void
-}) {
+} & TreeInteraction) {
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
     <div
@@ -1061,23 +825,24 @@ function HostPanel({
       {emptyContent ? (
         <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0 }}>{emptyContent}</div>
       ) : <LayerScroll id={panelId}>
-          <PanelTree
-            panelId={panelId}
-            label={treeLabel}
-            nodes={nodes}
+          {nodes.map(node => <LayerRow
+            key={node.id}
+            node={node}
             host={host}
             selectedIds={selectedIds} mappedIds={mappedIds}
+            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={onToggle}
             onDragStart={onDragStart}
+            onPointerMove={onPointerMove}
             onDragEnd={onDragEnd}
-            onDropTarget={onDropTarget}
+            onHover={onHover}
             onDrop={onDrop}
             onRemove={onRemove}
-          />
+          />)}
       </LayerScroll>}
     </div>
   )
@@ -1104,6 +869,8 @@ export function BridgeApp({
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const press = useRef<{ id: string; x: number; y: number } | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const selectionAnchor = useRef<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -1119,6 +886,7 @@ export function BridgeApp({
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
+  const hoveredGroupId = nearestGroup(bridge.photoshop, hoveredId) ?? nearestGroup(bridge.painter, hoveredId)
   const draggingHost = useMemo(() => {
     if (!draggingId) return null
     const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
@@ -1162,7 +930,13 @@ export function BridgeApp({
     mutate(next, "Layer removed from this mapping session")
   }
 
-  const startDrag = (id: string, modifiers: { toggle?: boolean; range?: boolean } = {}) => {
+  const endDrag = () => {
+    press.current = null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const startDrag = (id: string, event: EventPayload) => {
     if (pending.current) return
     // Native row presses do not bubble focus like DOM clicks; keep editing
     // shortcuts with the staging area without stealing focus from open menus.
@@ -1170,11 +944,28 @@ export function BridgeApp({
     const nodes = findNode(bridge.photoshop, id) ? bridge.photoshop : bridge.painter
     const source = findNode(nodes, id)
     if (!source) return
+    const modifiers = { toggle: event.modifiers?.ctrl || event.modifiers?.cmd, range: event.modifiers?.shift }
     const visible = visibleSourceIds(nodes, source.ref.host, expanded)
     const next = selectLayerIds(selectedIds, selectionAnchor.current, id, visible, modifiers)
     setSelectedIds(next)
     if (!modifiers.range) selectionAnchor.current = id
-    setDraggingId(next.has(id) ? id : null)
+    press.current = next.has(id) ? { id, x: event.x ?? 0, y: event.y ?? 0 } : null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const movePointer = (event: EventPayload, rowId?: string) => {
+    if (event.pressedButton !== 0 || pending.current) { endDrag(); return }
+    const start = press.current
+    if (!start) return
+    // A press is selection, not a drag. Native child controls can consume mouse-up,
+    // so released-button movement also clears the gesture instead of leaving a ghost drop.
+    if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
+    const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
+    const target = rowId ? findNode(bridge.photoshop, rowId) ?? findNode(bridge.painter, rowId) : null
+    setDraggingId(start.id)
+    const targetHost = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
+    setDropTargetId(target && target.ref.host === targetHost && source?.ref.host !== targetHost ? rowId! : null)
   }
 
   const drop = (targetId: string) => {
@@ -1185,8 +976,7 @@ export function BridgeApp({
       setFailed(true)
     }
     mutate(next, "Mapping updated")
-    setDraggingId(null)
-    setDropTargetId(null)
+    endDrag()
   }
 
   const undo = () => {
@@ -1324,7 +1114,7 @@ export function BridgeApp({
         tabIndex={0}
         onKeyDown={(event) => {
           if (pending.current) return
-          if (event.key === "escape") { setDraggingId(null); setDropTargetId(null); return }
+          if (event.key === "escape") { endDrag(); return }
           if (!(event.modifiers?.ctrl || event.modifiers?.cmd)) return
           if (event.key === "z") { if (event.modifiers.shift) redo(); else undo() }
           if (event.key === "y") redo()
@@ -1395,10 +1185,7 @@ export function BridgeApp({
         </div>
         <InsetSeparator />
         <div
-          onMouseUp={() => {
-            setDraggingId(null)
-            setDropTargetId(null)
-          }}
+          onMouseUp={endDrag}
           style={{
             flexGrow: 1,
             minHeight: 0,
@@ -1412,7 +1199,6 @@ export function BridgeApp({
             panelId="photoshop"
             title="PHOTOSHOP"
             subtitle={session.photoshopSubtitle}
-            treeLabel="Selected Layers"
             nodes={bridge.photoshop}
             host="photoshop"
             headerAction={
@@ -1442,14 +1228,16 @@ export function BridgeApp({
               )
             }
             selectedIds={selectedIds} mappedIds={mappedIds}
+            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
             onDragStart={startDrag}
-            onDragEnd={() => setDraggingId(null)}
-            onDropTarget={setDropTargetId}
+            onPointerMove={movePointer}
+            onDragEnd={endDrag}
+            onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("photoshop", id)}
           />
@@ -1458,19 +1246,20 @@ export function BridgeApp({
             panelId="painter"
             title="SUBSTANCE PAINTER"
             subtitle={activePainterContext?.subtitle || "No snapshot loaded"}
-            treeLabel="Painter Stack"
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
             selectedIds={selectedIds} mappedIds={mappedIds}
+            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
             onDragStart={startDrag}
-            onDragEnd={() => setDraggingId(null)}
-            onDropTarget={setDropTargetId}
+            onPointerMove={movePointer}
+            onDragEnd={endDrag}
+            onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("substance_painter", id)}
           />
@@ -1495,7 +1284,7 @@ export function BridgeApp({
 }
 
 function collectExpandedIds(state: BridgeState): Set<string> {
-  const ids = new Set<string>(Object.values(panelRootIds))
+  const ids = new Set<string>()
   const visit = (nodes: LayerNode[]) => {
     for (const node of nodes) {
       if (node.kind === "group") ids.add(node.id)
@@ -1507,19 +1296,33 @@ function collectExpandedIds(state: BridgeState): Set<string> {
   return ids
 }
 
-function countNodes(nodes: LayerNode[]): number {
-  return nodes.reduce((count, node) => count + 1 + countNodes(node.children ?? []), 0)
+function nearestGroup(nodes: LayerNode[], id: string | null, parent: string | null = null): string | null {
+  if (!id) return null
+  for (const node of nodes) {
+    if (node.id === id) return node.kind === "group" ? node.id : parent
+    const nested = node.children ? nearestGroup(node.children, id, node.id) : null
+    if (nested) return nested
+  }
+  return null
 }
 
 function visibleNodesHeight(nodes: LayerNode[], expanded: Set<string>): number {
   return nodes.reduce((height, node) => {
-    const ownHeight = metrics.rowHeight + (node.kind === "group" ? 8 : 0)
+    const ownHeight = metrics.rowHeight
     const childHeight =
       node.kind === "group" && expanded.has(node.id)
         ? visibleNodesHeight(node.children ?? [], expanded)
         : 0
     return height + ownHeight + childHeight
   }, 0)
+}
+
+export function initialWindowHeight(state: BridgeState): number {
+  const expanded = collectExpandedIds(state)
+  const content = Math.max(visibleNodesHeight(state.photoshop, expanded), visibleNodesHeight(state.painter, expanded))
+  // Shared proportions fit content at a stable density; long data trees scroll
+  // rather than forcing every session into the previous tall, narrow silhouette.
+  return Math.max(metrics.minWindowHeight, Math.min(metrics.maxInitialHeight, content + 160))
 }
 
 function bridgeStateForContext(
@@ -1582,7 +1385,7 @@ if (isEntryPoint) {
     {
       title: "PT Bridge",
       width: metrics.windowWidth,
-      height: metrics.windowHeight,
+      height: initialWindowHeight(session.state),
       minWidth: 560,
       minHeight: 420,
       windowBackground: "opaque",

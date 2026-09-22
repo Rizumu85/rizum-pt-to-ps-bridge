@@ -1,7 +1,7 @@
 import path from "node:path"
 
 import { connectTest } from "@gpuix/react/automation"
-import { createTestRoot } from "@gpuix/react/testing"
+import { createTestRoot } from "./test-root"
 import { describe, expect, it, vi } from "vitest"
 
 import { BridgeApp } from "./main"
@@ -48,6 +48,11 @@ describe("Painter context selectors", () => {
         expect(await app.getByText("Pending").count()).toBe(2)
         expect(await app.getByText("Working").count()).toBe(1)
       }
+      // The menu's exit timer is JavaScript time, not the native animation clock.
+      await vi.waitFor(async () => {
+        expect(await app.getByTestId("context-option:Texture Set::1").count()).toBe(0)
+      })
+      root.renderer.flush()
       await app.getByTestId("change-photoshop").click()
       expect(connect).not.toHaveBeenCalled()
       expect(await app.getByText("Apply or reset pending transfers before changing documents.").count()).toBe(1)

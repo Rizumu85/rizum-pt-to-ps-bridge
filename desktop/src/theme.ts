@@ -32,12 +32,15 @@ export const typography = {
 }
 
 export const metrics = {
-  windowWidth: 580,
-  windowHeight: 680,
+  windowWidth: 700,
+  minWindowHeight: 420,
+  maxInitialHeight: 580,
   cardRadius: 8,
   rowRadius: 6,
   toolbarHeight: 43,
-  rowHeight: 34,
+  rowHeight: 32,
+  treeIndent: 18,
+  dragThreshold: 5,
   panelGap: 16,
   contentPadding: 16,
 }
