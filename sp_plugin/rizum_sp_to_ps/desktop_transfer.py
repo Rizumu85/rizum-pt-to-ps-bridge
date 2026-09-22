@@ -75,7 +75,7 @@ class TransferResult:
     exported_count: int
     names: tuple[str, ...]
     warnings: tuple[str, ...]
-    photoshop_launcher: Path | None = None
+    photoshop_launch: photoshop_automation.PhotoshopScriptLaunch | None = None
 
     @property
     def count(self):
@@ -161,7 +161,7 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None):
             + [item.name for item in plan.photoshop_exports]
         ),
         warnings=result.warnings,
-        photoshop_launcher=launcher,
+        photoshop_launch=launcher,
     )
 
 

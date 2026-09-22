@@ -2,7 +2,8 @@
     __RIZUM_JSON_RUNTIME__
     var requestPath = __RIZUM_TRANSFER_REQUEST_PATH__;
     var resultPath = File(requestPath).parent.fsName + "/photoshop_transfer_result.json";
-    var result = { inserted: [], errors: [], warnings: [], saved: false };
+    var progressPath = File(requestPath).parent.fsName + "/photoshop_transfer_progress.json";
+    var result = { success: false, inserted: [], errors: [], warnings: [], saved: false };
     var previousDialogs = app.displayDialogs;
     var previousRulerUnits = app.preferences.rulerUnits;
 
@@ -11,19 +12,38 @@
     app.bringToFront();
 
     try {
+        publishProgress("reading_request", 0, 0);
         var request = readJson(requestPath);
         validateRequest(request);
+        publishProgress("opening_document", 0, request.layers.length);
         var document = resolveDocument(request.document || {});
         app.activeDocument = document;
-        var anchors = {};
+        var targets = [];
+        // Validate every destination before inserting anything. A stale mapping
+        // must not leave a half-applied batch that a retry would duplicate.
+        for (var targetIndex = 0; targetIndex < request.layers.length; targetIndex += 1) {
+            var mapped = request.layers[targetIndex];
+            var destination = findLayerById(document, Number(mapped.target_layer_id));
+            if (!destination) {
+                throw new Error("Photoshop target layer no longer exists: " + mapped.target_layer_id);
+            }
+            if (mapped.insertion !== "after" && mapped.insertion !== "inside") {
+                throw new Error("Unsupported insertion: " + mapped.insertion);
+            }
+            if (mapped.insertion === "inside" && destination.typename !== "LayerSet") {
+                throw new Error("Mapped inside target is no longer a Photoshop group");
+            }
+            if (!File(mapped.png).exists || (mapped.mask_png && !File(mapped.mask_png).exists)) {
+                throw new Error("Mapped PNG or mask is missing: " + mapped.name);
+            }
+            targets.push(destination);
+        }
+        publishProgress("transferring_layers", 0, request.layers.length);
 
         for (var index = 0; index < request.layers.length; index += 1) {
             var item = request.layers[index];
             try {
-                var target = findLayerById(document, Number(item.target_layer_id));
-                if (!target) {
-                    throw new Error("Photoshop target layer no longer exists: " + item.target_layer_id);
-                }
+                var target = targets[index];
                 var placed = placePngLayer(item.png, document);
                 placed.name = String(item.name || "Painter Layer");
                 placed.visible = item.visible !== false;
@@ -33,7 +53,7 @@
                     placed.blendMode = blendMode;
                 }
                 placed.rasterize(RasterizeType.ENTIRELAYER);
-                moveMappedLayer(placed, target, item, anchors);
+                moveMappedLayer(placed, target, item);
                 if (item.mask_png) {
                     applyMask(document, placed, item.mask_png);
                 }
@@ -44,10 +64,13 @@
                     message: errorMessage(itemError)
                 });
             }
+            publishProgress("transferring_layers", index + 1, request.layers.length);
         }
 
         if (result.errors.length === 0) {
+            result.success = true;
             try {
+                publishProgress("saving_document", request.layers.length, request.layers.length);
                 document.fullName;
                 document.save();
                 result.saved = true;
@@ -58,17 +81,13 @@
     } catch (error) {
         result.errors.push({ name: requestPath, message: errorMessage(error) });
     } finally {
-        writeResult(resultPath, result);
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
+        writeJsonAtomic(resultPath, result);
     }
 
-    if (result.errors.length > 0) {
-        alert(
-            "Rizum PT Bridge inserted " + result.inserted.length +
-            " layer(s), with " + result.errors.length +
-            " error(s).\n\nDetails: " + resultPath
-        );
+    function publishProgress(phase, completed, total) {
+        writeJsonAtomic(progressPath, { phase: phase, completed: completed, total: total });
     }
 
     function validateRequest(request) {
@@ -83,25 +102,20 @@
     function resolveDocument(descriptor) {
         var targetId = Number(descriptor.id);
         var targetPath = String(descriptor.path || "");
-        var targetName = String(descriptor.name || "");
         var index;
 
         for (index = 0; index < app.documents.length; index += 1) {
             var candidate = app.documents[index];
-            if (!isNaN(targetId) && Number(candidate.id) === targetId) {
-                return candidate;
-            }
-            if (targetPath && documentPath(candidate) === normalizedPath(targetPath)) {
+            // Native IDs are session-local and can be reused after Photoshop
+            // restarts. A saved document's path is the authoritative identity.
+            if (targetPath) {
+                if (documentPath(candidate) === normalizedPath(targetPath)) return candidate;
+            } else if (!isNaN(targetId) && Number(candidate.id) === targetId) {
                 return candidate;
             }
         }
         if (targetPath && File(targetPath).exists) {
             return app.open(File(targetPath));
-        }
-        for (index = 0; index < app.documents.length; index += 1) {
-            if (targetName && String(app.documents[index].name) === targetName) {
-                return app.documents[index];
-            }
         }
         throw new Error("The Photoshop document used by Desktop Bridge is not open or available");
     }
@@ -141,10 +155,18 @@
             throw new Error("PNG asset does not exist: " + path);
         }
         app.activeDocument = targetDocument;
-        placeEmbeddedFile(file);
-        var placed = targetDocument.activeLayer;
-        if (!placed) {
-            throw new Error("Photoshop did not create a placed layer: " + path);
+        // Place replaces a selected empty raster layer in Photoshop. Give it an
+        // owned placeholder so a user's empty layer or group child cannot vanish.
+        var placeholder = targetDocument.artLayers.add();
+        var placeholderId = Number(placeholder.id);
+        var placed = null;
+        try {
+            placeEmbeddedFile(file);
+            placed = targetDocument.activeLayer;
+            if (!placed) throw new Error("Photoshop did not create a placed layer: " + path);
+        } finally {
+            var remaining = findLayerById(targetDocument, placeholderId);
+            if (remaining && (!placed || Number(placed.id) !== placeholderId)) remaining.remove();
         }
         return placed;
     }
@@ -164,20 +186,14 @@
         executeAction(charIDToTypeID("Plc "), descriptor, DialogModes.NO);
     }
 
-    function moveMappedLayer(layer, target, item, anchors) {
-        var key = String(item.insertion) + ":" + String(item.target_layer_id);
-        var previous = anchors[key];
-        if (previous) {
-            layer.move(previous, ElementPlacement.PLACEAFTER);
-        } else if (item.insertion === "inside") {
-            if (target.typename !== "LayerSet") {
-                throw new Error("Mapped inside target is no longer a Photoshop group");
-            }
-            layer.move(target, ElementPlacement.PLACEATBEGINNING);
+    function moveMappedLayer(layer, target, item) {
+        // Replay each drop exactly as the desktop preview: group drops append;
+        // repeated drops on one layer insert immediately below that same layer.
+        if (item.insertion === "inside") {
+            layer.move(target, ElementPlacement.PLACEATEND);
         } else {
             layer.move(target, ElementPlacement.PLACEAFTER);
         }
-        anchors[key] = layer;
     }
 
     function opacityPercent(value) {
@@ -185,9 +201,7 @@
         if (isNaN(opacity)) {
             return 100;
         }
-        if (opacity >= 0 && opacity <= 1) {
-            opacity *= 100;
-        }
+        // The transfer contract uses percentages, including values below 1%.
         return Math.max(0, Math.min(100, opacity));
     }
 
@@ -304,14 +318,17 @@
         return JSON.parse(text);
     }
 
-    function writeResult(path, state) {
-        var file = File(path);
-        file.encoding = "UTF8";
-        if (!file.open("w")) {
-            return;
+    function writeJsonAtomic(path, state) {
+        var target = File(path);
+        var temporary = File(path + ".tmp");
+        temporary.encoding = "UTF8";
+        if (!temporary.open("w")) {
+            throw new Error("Could not write Photoshop receipt: " + path);
         }
-        file.write(JSON.stringify(state, null, 2));
-        file.close();
+        temporary.write(JSON.stringify(state, null, 2));
+        temporary.close();
+        if (target.exists && !target.remove()) throw new Error("Could not replace receipt: " + path);
+        if (!temporary.rename(target.name)) throw new Error("Could not publish receipt: " + path);
     }
 
     function errorMessage(error) {

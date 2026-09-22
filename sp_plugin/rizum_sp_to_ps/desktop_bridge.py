@@ -34,8 +34,10 @@ class DesktopBridgeController:
         self._transfer_path = None
         self._closing = False
         self._process_error_reported = False
+        self._applying_transfer = False
         self._photoshop_export_timer = None
-        self._photoshop_document_launch = None
+        self._photoshop_launch = None
+        self._pending_transfer_result = None
         self._photoshop_export_started_at = 0.0
         self._photoshop_progress_dialog = None
         self._photoshop_script_started = False
@@ -77,7 +79,7 @@ class DesktopBridgeController:
         """Launch one mapping session with the last connected Photoshop document."""
         if (
             self._process is not None or self._source_dialog is not None
-            or self._photoshop_document_launch is not None
+            or self._photoshop_launch is not None or self._applying_transfer
         ):
             return
         if not self.panel._project_is_open():
@@ -209,7 +211,7 @@ class DesktopBridgeController:
         try:
             _validate_photoshop_manifest(manifest_path)
         except Exception as exc:
-            self._photoshop_connection_failed(str(exc))
+            self._photoshop_job_failed(str(exc))
             return
         self._remember_photoshop_manifest(manifest_path)
         self._launch_desktop(manifest_path)
@@ -227,20 +229,24 @@ class DesktopBridgeController:
                 output_dir,
             )
         except Exception as exc:
-            self._photoshop_connection_failed(str(exc))
+            self._photoshop_job_failed(str(exc))
             return
 
+        self._start_photoshop_job(launch, source_path.name)
+
+    def _start_photoshop_job(self, launch, label, transfer_result=None):
         self._clear_photoshop_export()
-        self._photoshop_document_launch = launch
+        self._photoshop_launch = launch
+        self._pending_transfer_result = transfer_result
         self._photoshop_export_started_at = time.monotonic()
-        self._show_photoshop_progress(source_path.name)
+        self._show_photoshop_progress(label)
         try:
             launched, message = self.panel.launch_photoshop(launch.launcher_path)
         except Exception as exc:
-            self._photoshop_connection_failed(str(exc))
+            self._photoshop_job_failed(str(exc))
             return
         if not launched:
-            self._photoshop_connection_failed(message)
+            self._photoshop_job_failed(message)
             return
 
         # Process launch only acknowledges the OS handoff. Require a JSX receipt
@@ -248,11 +254,11 @@ class DesktopBridgeController:
         self._trace("photoshop_launch_requested", str(launch.launcher_path))
         timer = self.QtCore.QTimer(self.panel.widget)
         timer.setInterval(400)
-        timer.timeout.connect(self._poll_photoshop_document_export)
+        timer.timeout.connect(self._poll_photoshop_job)
         self._photoshop_export_timer = timer
         self.button.setEnabled(False)
-        self.button.setToolTip("Photoshop is reading the selected document")
-        self.panel.status.setText(f"Reading Photoshop layers from {source_path.name}...")
+        self.button.setToolTip("Photoshop operation in progress")
+        self.panel.status.setText(f"Waiting for Photoshop: {label}")
         timer.start()
 
     def _show_photoshop_progress(self, name):
@@ -260,7 +266,7 @@ class DesktopBridgeController:
         # handoff visible until the manifest is ready; a hidden dock label is not
         # sufficient feedback, and launching a second mapper would allow duplicates.
         dialog = self.QtWidgets.QProgressDialog(self.panel.widget.window())
-        dialog.setWindowTitle("PT Bridge - Connect Photoshop")
+        dialog.setWindowTitle("PT Bridge - Photoshop")
         dialog.setWindowModality(self.QtCore.Qt.WindowModality.NonModal)
         dialog.setWindowFlag(self.QtCore.Qt.WindowType.WindowCloseButtonHint, False)
         dialog.setCancelButton(None)
@@ -285,7 +291,7 @@ class DesktopBridgeController:
         if not isinstance(payload, dict):
             return
         phase = payload.get("phase")
-        if phase not in {"reading_request", "opening_document", "exporting_layers"}:
+        if phase not in {"reading_request", "opening_document", "exporting_layers", "transferring_layers", "saving_document"}:
             return
         self._photoshop_script_started = True
         if phase != self._photoshop_export_phase:
@@ -298,39 +304,51 @@ class DesktopBridgeController:
         completed = payload.get("completed", 0)
         if not isinstance(total, int) or not isinstance(completed, int):
             return
-        if phase == "exporting_layers" and total > 0:
+        if phase in {"exporting_layers", "transferring_layers"} and total > 0:
             dialog.setRange(0, total)
             dialog.setValue(max(0, min(completed, total)))
-            message = f"Reading Photoshop layers: {completed} / {total}"
+            action = "Reading" if phase == "exporting_layers" else "Inserting"
+            message = f"{action} Photoshop layers: {completed} / {total}"
+        elif phase == "saving_document":
+            message = "Saving Photoshop document..."
         else:
             message = "Opening Photoshop document..."
         dialog.setLabelText(message)
         self.panel.status.setText(message)
 
-    def _photoshop_connection_failed(self, message):
-        self._trace("photoshop_connection_failed", message)
+    def _photoshop_job_failed(self, message):
+        self._trace("photoshop_job_failed", message)
+        transfer = self._pending_transfer_result
         self._clear_photoshop_export()
         if self._closing:
+            return
+        if transfer is not None:
+            # A cross-host operation is not atomic. Never retry Painter edits
+            # because Photoshop failed, or claim both hosts rolled back together.
+            self.panel.status.setText("Photoshop transfer was not confirmed.")
+            if transfer.imported_count:
+                message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
+            self._show("Bridge transfer incomplete", message)
             return
         self._launch_desktop(self._recent_photoshop_manifest())
         self.panel.status.setText("Photoshop connection failed.")
         self._show("Bridge", message)
 
-    def _poll_photoshop_document_export(self):
-        launch = self._photoshop_document_launch
+    def _poll_photoshop_job(self):
+        launch = self._photoshop_launch
         if launch is None:
             return
         elapsed = time.monotonic() - self._photoshop_export_started_at
         if not launch.result_path.is_file():
             self._update_photoshop_progress(launch.progress_path)
             if not self._photoshop_script_started and elapsed > PHOTOSHOP_START_TIMEOUT_SECONDS:
-                self._photoshop_connection_failed(
-                    "Photoshop did not start the connection script within 2 minutes. "
+                self._photoshop_job_failed(
+                    "Photoshop did not start the script within 2 minutes. "
                     "Check Photoshop for a startup or script confirmation dialog."
                 )
             elif elapsed > PHOTOSHOP_EXPORT_TIMEOUT_SECONDS:
-                self._photoshop_connection_failed(
-                    "Photoshop did not finish reading the document within 30 minutes."
+                self._photoshop_job_failed(
+                    "Photoshop did not finish the operation within 30 minutes."
                 )
             return
         try:
@@ -338,17 +356,20 @@ class DesktopBridgeController:
         except (OSError, ValueError) as exc:
             # JSX publishes with rename; a malformed published receipt is a
             # terminal failure, not a partially written file to wait on forever.
-            self._photoshop_connection_failed(f"Photoshop result could not be read: {exc}")
+            self._photoshop_job_failed(f"Photoshop result could not be read: {exc}")
             return
 
+        if self._pending_transfer_result is not None:
+            self._finish_photoshop_transfer(payload)
+            return
         if not isinstance(payload, dict) or payload.get("success") is not True:
-            self._photoshop_connection_failed(_photoshop_export_error_summary(payload))
+            self._photoshop_job_failed(_photoshop_export_error_summary(payload))
             return
         manifest_path = Path(payload.get("manifest") or launch.manifest_path)
         try:
             _validate_photoshop_manifest(manifest_path)
         except Exception as exc:
-            self._photoshop_connection_failed(str(exc))
+            self._photoshop_job_failed(str(exc))
             return
 
         self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
@@ -358,10 +379,43 @@ class DesktopBridgeController:
         self.panel.status.setText(f"Loaded {exported_count} Photoshop layer(s).")
         self._launch_desktop(manifest_path)
 
+    def _finish_photoshop_transfer(self, payload):
+        transfer = self._pending_transfer_result
+        inserted = payload.get("inserted") if isinstance(payload, dict) else None
+        if not isinstance(inserted, list):
+            self._photoshop_job_failed("Photoshop returned an invalid transfer result.")
+            return
+        count = len(inserted)
+        if payload.get("success") is not True or count != transfer.exported_count:
+            message = f"Inserted {count} of {transfer.exported_count} layer(s) into Photoshop.\n"
+            message += _photoshop_export_error_summary(payload)
+            message += "\n\nCheck both documents before retrying; completed inserts were not undone."
+            self._photoshop_job_failed(message)
+            return
+        self._trace("photoshop_transfer_ready", str(count))
+        self._clear_photoshop_export()
+        warnings = list(transfer.warnings) + [str(value) for value in payload.get("warnings", [])]
+        if payload.get("saved") is not True and not payload.get("warnings"):
+            warnings.append("Photoshop changes are open but have not been saved.")
+        self._report_transfer_complete(transfer.imported_count, count, warnings)
+
+    def _report_transfer_complete(self, imported_count, exported_count, warnings):
+        parts = []
+        if imported_count:
+            parts.append(f"Imported {imported_count} Photoshop layer(s) into Painter")
+        if exported_count:
+            parts.append(f"inserted {exported_count} Painter layer(s) into Photoshop")
+        message = "; ".join(parts) + "."
+        self.panel.status.setText(message)
+        if warnings:
+            message += "\n\n" + "\n".join(warnings)
+        self._show("Bridge complete", message)
+
     def _clear_photoshop_export(self):
         timer = self._photoshop_export_timer
         self._photoshop_export_timer = None
-        self._photoshop_document_launch = None
+        self._photoshop_launch = None
+        self._pending_transfer_result = None
         self._photoshop_export_started_at = 0.0
         self._photoshop_script_started = False
         self._photoshop_export_phase = None
@@ -438,6 +492,9 @@ class DesktopBridgeController:
             self._show("Bridge", f"Unsupported desktop request: {request_type or '(missing)'}")
             return
 
+        self._applying_transfer = True
+        self.button.setEnabled(False)
+        self.panel.status.setText("Applying mapped layers...")
         try:
             result = desktop_transfer.apply_transfer_manifest(
                 transfer_path,
@@ -448,32 +505,17 @@ class DesktopBridgeController:
             self.panel.status.setText("Bridge transfer failed.")
             self._show("Bridge", str(exc))
             return
+        finally:
+            self._applying_transfer = False
+            self.button.setEnabled(not self._closing)
 
-        if result.photoshop_launcher is not None:
-            launched, launch_message = self.panel.launch_photoshop(
-                result.photoshop_launcher
-            )
-            if not launched:
-                process.deleteLater()
-                self.panel.status.setText("Photoshop transfer could not start.")
-                self._show("Bridge", launch_message)
-                return
-
-        parts = []
-        if result.imported_count:
-            parts.append(
-                f"Imported {result.imported_count} Photoshop layer(s) into Painter"
-            )
-        if result.exported_count:
-            parts.append(
-                f"sent {result.exported_count} Painter layer(s) to Photoshop"
-            )
-        message = "; ".join(parts) + "."
-        self.panel.status.setText(message)
-        if result.warnings:
-            message += "\n\n" + "\n".join(result.warnings)
         process.deleteLater()
-        self._show("Bridge complete", message)
+        if result.photoshop_launch is not None:
+            self._start_photoshop_job(
+                result.photoshop_launch, f"Insert {result.exported_count} layer(s)", result,
+            )
+        else:
+            self._report_transfer_complete(result.imported_count, 0, result.warnings)
 
     def _take_process(self):
         process = self._process
@@ -590,8 +632,8 @@ def _photoshop_export_error_summary(payload):
     lines = []
     for entry in errors[:8]:
         if isinstance(entry, dict):
-            layer = entry.get("layer") or "Photoshop"
-            detail = entry.get("error") or "Unknown error"
+            layer = entry.get("layer") or entry.get("name") or "Photoshop"
+            detail = entry.get("error") or entry.get("message") or "Unknown error"
             lines.append(f"{layer}: {detail}")
         else:
             lines.append(str(entry))

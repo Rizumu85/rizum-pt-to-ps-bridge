@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from sp_plugin.rizum_sp_to_ps.exporter import _build_painter_snapshot
+from sp_plugin.rizum_sp_to_ps.exporter import _build_painter_snapshot, _snapshot_opacities
 
 
 class _Named:
@@ -103,6 +103,15 @@ class _Project:
 
 
 class PainterSnapshotTests(unittest.TestCase):
+    def test_snapshot_opacity_is_channel_specific_percent_even_below_one_percent(self):
+        nodes = [{"opacity": {"BaseColor": 0.01, "Normal": 0.65}, "children": [
+            {"opacity": {"BaseColor": 0.005}}, {"opacity": None},
+        ]}]
+        _snapshot_opacities(nodes, "BaseColor")
+        self.assertEqual(nodes[0]["opacity"], 1)
+        self.assertEqual(nodes[0]["children"][0]["opacity"], 0.5)
+        self.assertEqual(nodes[0]["children"][1]["opacity"], 100)
+
     @patch(
         "sp_plugin.rizum_sp_to_ps.exporter._used_channel_identifier_set",
         return_value=None,

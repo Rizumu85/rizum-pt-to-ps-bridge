@@ -761,6 +761,7 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
 
             layers = deepcopy(stack_record["layer_records"])
             _project_nodes_for_channel(layers, channel_name)
+            _snapshot_opacities(layers, channel_name)
             is_color = _call_or_attr(channel, "is_color", False)
             contexts.append(
                 {
@@ -793,6 +794,15 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
         "project": _project_info(modules["project"]),
         "contexts": contexts,
     }
+
+
+def _snapshot_opacities(nodes, channel_name):
+    # Desktop and Photoshop use percentages. Convert Painter's per-channel
+    # fractions at this boundary, never guess the unit from a value <= 1.
+    for node in nodes:
+        values = node.get("opacity") or {}
+        node["opacity"] = max(0.0, min(1.0, values.get(channel_name, 1.0))) * 100.0
+        _snapshot_opacities(node.get("children", []), channel_name)
 
 
 def _build_export_requests(modules, settings, stack_records=None):

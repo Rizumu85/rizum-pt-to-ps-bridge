@@ -9,6 +9,8 @@ from pathlib import Path
 LAUNCHER_FILENAME = "_build_in_photoshop.jsx"
 _EXPORT_LIST_TOKEN = "__RIZUM_EXPORT_LIST_PATH__"
 TRANSFER_LAUNCHER_FILENAME = "_transfer_to_photoshop.jsx"
+TRANSFER_RESULT_FILENAME = "photoshop_transfer_result.json"
+TRANSFER_PROGRESS_FILENAME = "photoshop_transfer_progress.json"
 _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
 DOCUMENT_LAUNCHER_FILENAME = "_export_photoshop_document.jsx"
 DOCUMENT_REQUEST_FILENAME = "photoshop_document_request.json"
@@ -22,12 +24,12 @@ _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 
 
 @dataclass(frozen=True)
-class PhotoshopDocumentLaunch:
+class PhotoshopScriptLaunch:
     launcher_path: Path
     request_path: Path
     result_path: Path
-    manifest_path: Path
     progress_path: Path
+    manifest_path: Path | None = None
 
 
 def _embed_json_runtime(template):
@@ -73,8 +75,12 @@ def write_photoshop_transfer_launcher(request_path):
         json.dumps(str(request), ensure_ascii=True),
     )
     launcher_path = request.parent / TRANSFER_LAUNCHER_FILENAME
+    result_path = request.parent / TRANSFER_RESULT_FILENAME
+    progress_path = request.parent / TRANSFER_PROGRESS_FILENAME
+    result_path.unlink(missing_ok=True)
+    progress_path.unlink(missing_ok=True)
     launcher_path.write_text(script, encoding="utf-8")
-    return launcher_path
+    return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)
 
 
 def write_photoshop_document_launcher(psd_path, output_dir):
@@ -129,7 +135,7 @@ def write_photoshop_document_launcher(psd_path, output_dir):
         script = script.replace(token, json.dumps(str(path), ensure_ascii=True))
     launcher_path = destination / DOCUMENT_LAUNCHER_FILENAME
     launcher_path.write_text(script, encoding="utf-8")
-    return PhotoshopDocumentLaunch(
+    return PhotoshopScriptLaunch(
         launcher_path=launcher_path,
         request_path=request_path,
         result_path=result_path,
