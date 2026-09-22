@@ -11,6 +11,65 @@ import { loadBridgeSession } from "./transport"
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("Painter context selectors", () => {
+  it("selects and transfers a batch with visible pending state, then undoes Reset", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+    })
+    const root = createTestRoot({ width: 652, height: 720 })
+    const app = await connectTest(root.renderer)
+    const apply = vi.fn(async (_state: BridgeState, _context: string) => "result.json")
+    const connect = vi.fn(async () => "unused")
+    try {
+      root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={connect} />)
+      root.renderer.flush()
+      await app.getByText("Paint edit").click()
+      await app.getByText("Color pass").click({ modifiers: "ctrl" })
+      expect(await app.getByText("2 selected").count()).toBe(1)
+      await app.mouse.down(app.getByText("Color pass"))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.up(app.getByText("Working"))
+      expect(await app.getByText("2 pending transfers").count()).toBe(1)
+      expect(await app.getByText("Pending").count()).toBe(2)
+      root.renderer.simulateKeystrokes("ctrl-z")
+      root.renderer.dispatchNativeEvents()
+      root.renderer.flush()
+      expect(await app.getByText("Pending").count()).toBe(0)
+      root.renderer.simulateKeystrokes("ctrl-shift-z")
+      root.renderer.dispatchNativeEvents()
+      root.renderer.flush()
+      expect(await app.getByText("Pending").count()).toBe(2)
+      for (const selector of ["Channel:", "Texture Set:"]) {
+        await app.getByTestId(`context-select:${selector}`).click()
+        await app.getByTestId(`context-option:${selector}:1`).click()
+        expect(await app.getByText("Apply or reset pending transfers before changing the target.").count()).toBe(1)
+        expect(await app.getByText("Pending").count()).toBe(2)
+        expect(await app.getByText("Working").count()).toBe(1)
+      }
+      await app.getByTestId("change-photoshop").click()
+      expect(connect).not.toHaveBeenCalled()
+      expect(await app.getByText("Apply or reset pending transfers before changing documents.").count()).toBe(1)
+      await app.getByText("Paint edit").click()
+      await app.getByText("Color pass").click({ modifiers: "ctrl" })
+      await app.mouse.down(app.getByText("Color pass"))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.move(app.getByText("MaskOut"), { pressedButton: 0 })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.up(app.getByText("MaskOut"))
+      expect(await app.getByText("2 pending transfers").count()).toBe(1)
+      await app.getByTestId("action:reset").click()
+      expect(await app.getByText("Pending").count()).toBe(0)
+      await app.getByTestId("action:undo").click()
+      expect(await app.getByText("2 pending transfers").count()).toBe(1)
+      await app.getByTestId("action:check").click()
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      expect(apply.mock.calls[0][0].mappings).toHaveLength(2)
+      expect(apply.mock.calls[0][0].mappings.every(mapping => mapping.targetId === "substance_painter:sp-maskout")).toBe(true)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("collapses groups, removes a row, resets, and maps in the reverse direction", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),

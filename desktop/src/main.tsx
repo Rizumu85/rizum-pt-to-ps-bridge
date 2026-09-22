@@ -3,6 +3,7 @@ import { LayerScroll } from "./layer-scroll"
 import {
   motion,
   render,
+  useGpuixRequired,
   Select,
   SelectContent,
   SelectItem,
@@ -12,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
   type MotionEase,
+  type PublicInstance,
 } from "@gpuix/react"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
@@ -29,7 +31,9 @@ import {
   cloneState,
   findNode,
   removeFromHost,
-  transferBetweenHosts,
+  transferSelection,
+  selectLayerIds,
+  visibleSourceIds,
   type BridgeState,
   type HostId,
   type LayerNode,
@@ -609,13 +613,14 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 type LayerRowProps = {
   node: LayerNode
   host: HostId
+  selectedIds: Set<string>
   mappedIds: Set<string>
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
-  onDragStart: (id: string) => void
+  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
   onDragEnd: () => void
   onDropTarget: (id: string | null) => void
   onDrop: (id: string) => void
@@ -625,6 +630,7 @@ type LayerRowProps = {
 function LayerRow({
   node,
   host,
+  selectedIds,
   mappedIds,
   draggingId,
   draggingHost,
@@ -687,8 +693,12 @@ function LayerRow({
       ) : null}
       <div
         testId={`layer-row:${node.id}`}
-        onMouseDown={() => {
-          if (nativeNode) onDragStart(node.id)
+        aria-selected={selectedIds.has(node.id)}
+        onMouseDown={(event) => {
+          if (event.button !== 2) onDragStart(node.id, {
+            toggle: event.modifiers?.ctrl || event.modifiers?.cmd,
+            range: event.modifiers?.shift,
+          })
         }}
         style={{
           height: metrics.rowHeight,
@@ -700,11 +710,11 @@ function LayerRow({
           gap: 9,
           borderRadius: metrics.rowRadius,
           // Mapping uses a quiet row wash; the former white leading stripe read as stray decoration.
-          backgroundColor: mapped ? colors.mapped : undefined,
+          backgroundColor: selectedIds.has(node.id) ? colors.controlActive : mapped ? colors.mapped : undefined,
           opacity: draggingId === node.id ? 0.48 : 1,
-          cursor: nativeNode ? "move" : "default",
-          hover: node.kind === "group" ? undefined : { backgroundColor: colors.controlHover },
-          active: nativeNode ? { backgroundColor: colors.controlActive } : undefined,
+          cursor: "move",
+          hover: node.kind === "group" || selectedIds.has(node.id) ? undefined : { backgroundColor: colors.controlHover },
+          active: { backgroundColor: colors.controlActive },
         }}
       >
         <div
@@ -727,8 +737,9 @@ function LayerRow({
           ) : null}
         </div>
         <LayerThumbnail node={node} />
-        <div style={{ minWidth: 0, flexGrow: 1 }}>
+        <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
           <PrimaryText>{node.name}</PrimaryText>
+          {mapped ? <text style={{ fontSize: typography.secondarySize, color: colors.secondary }}>Pending</text> : null}
         </div>
         {nativeNode && hovered ? (
           <div
@@ -772,7 +783,7 @@ function LayerRow({
               key={child.id}
               node={child}
               host={host}
-              mappedIds={mappedIds}
+              selectedIds={selectedIds} mappedIds={mappedIds}
               draggingId={draggingId}
               draggingHost={draggingHost}
               dropTargetId={dropTargetId}
@@ -796,6 +807,7 @@ function PanelTree({
   label,
   nodes,
   host,
+  selectedIds,
   mappedIds,
   draggingId,
   draggingHost,
@@ -812,13 +824,14 @@ function PanelTree({
   label: string
   nodes: LayerNode[]
   host: HostId
+  selectedIds: Set<string>
   mappedIds: Set<string>
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
-  onDragStart: (id: string) => void
+  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
   onDragEnd: () => void
   onDropTarget: (id: string | null) => void
   onDrop: (id: string) => void
@@ -923,7 +936,7 @@ function PanelTree({
             key={node.id}
             node={node}
             host={host}
-            mappedIds={mappedIds}
+            selectedIds={selectedIds} mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -950,6 +963,7 @@ function HostPanel({
   host,
   headerAction,
   emptyContent,
+  selectedIds,
   mappedIds,
   draggingId,
   draggingHost,
@@ -970,13 +984,14 @@ function HostPanel({
   host: HostId
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
+  selectedIds: Set<string>
   mappedIds: Set<string>
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
-  onDragStart: (id: string) => void
+  onDragStart: (id: string, modifiers?: { toggle?: boolean; range?: boolean }) => void
   onDragEnd: () => void
   onDropTarget: (id: string | null) => void
   onDrop: (id: string) => void
@@ -1051,7 +1066,7 @@ function HostPanel({
             label={treeLabel}
             nodes={nodes}
             host={host}
-            mappedIds={mappedIds}
+            selectedIds={selectedIds} mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -1079,6 +1094,8 @@ export function BridgeApp({
   onConnectPhotoshop: () => Promise<string>
   onApplied?: (output: string) => void
 }) {
+  const renderer = useGpuixRequired()
+  const rootRef = useRef<PublicInstance | null>(null)
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
   const [activePainterContextId, setActivePainterContextId] = useState(
     session.initialPainterContextId,
@@ -1087,6 +1104,8 @@ export function BridgeApp({
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const selectionAnchor = useRef<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
@@ -1128,18 +1147,43 @@ export function BridgeApp({
     setHistory((current) => [...current, cloneState(bridge)])
     setRedoStack([])
     setBridge(next)
+    setSelectedIds(new Set())
     setStatus(message)
     setFailed(false)
   }
 
   const removeSource = (host: HostId, id: string) => {
     const next = removeFromHost(bridge, host, id)
+    if (next === bridge) {
+      setStatus("This target has pending transfers")
+      setFailed(true)
+      return
+    }
     mutate(next, "Layer removed from this mapping session")
+  }
+
+  const startDrag = (id: string, modifiers: { toggle?: boolean; range?: boolean } = {}) => {
+    if (pending.current) return
+    // Native row presses do not bubble focus like DOM clicks; keep editing
+    // shortcuts with the staging area without stealing focus from open menus.
+    if (rootRef.current) renderer.focusElement?.(rootRef.current.id)
+    const nodes = findNode(bridge.photoshop, id) ? bridge.photoshop : bridge.painter
+    const source = findNode(nodes, id)
+    if (!source) return
+    const visible = visibleSourceIds(nodes, source.ref.host, expanded)
+    const next = selectLayerIds(selectedIds, selectionAnchor.current, id, visible, modifiers)
+    setSelectedIds(next)
+    if (!modifiers.range) selectionAnchor.current = id
+    setDraggingId(next.has(id) ? id : null)
   }
 
   const drop = (targetId: string) => {
     if (!draggingId) return
-    const next = transferBetweenHosts(bridge, draggingId, targetId)
+    const next = transferSelection(bridge, selectedIds, targetId)
+    if (next === bridge) {
+      setStatus("This target has pending transfers")
+      setFailed(true)
+    }
     mutate(next, "Mapping updated")
     setDraggingId(null)
     setDropTargetId(null)
@@ -1151,6 +1195,7 @@ export function BridgeApp({
     if (!previous) return
     setRedoStack((current) => [...current, cloneState(bridge)])
     setBridge(previous)
+    setSelectedIds(new Set())
     setHistory((current) => current.slice(0, -1))
     setStatus("Last mapping undone")
     setFailed(false)
@@ -1162,6 +1207,7 @@ export function BridgeApp({
     if (!next) return
     setHistory((current) => [...current, cloneState(bridge)])
     setBridge(next)
+    setSelectedIds(new Set())
     setRedoStack((current) => current.slice(0, -1))
     setStatus("Last mapping restored")
     setFailed(false)
@@ -1170,9 +1216,9 @@ export function BridgeApp({
   const reset = () => {
     if (pending.current) return
     const next = bridgeStateForContext(session, activePainterContext)
-    setBridge(next)
-    setHistory([])
-    setRedoStack([])
+    // Reset is an edit to the staging area, not a destructive history boundary.
+    if (JSON.stringify(next) === JSON.stringify(bridge)) return
+    mutate(next, "Mapping reset")
     setDraggingId(null)
     setDropTargetId(null)
     setExpanded(collectExpandedIds(next))
@@ -1183,11 +1229,17 @@ export function BridgeApp({
   const switchPainterContext = (context: PainterContext | undefined) => {
     if (pending.current) return
     if (!context || context.id === activePainterContextId) return
+    if (bridge.mappings.length > 0) {
+      setStatus("Apply or reset pending transfers before changing the target.")
+      setFailed(true)
+      return
+    }
     const next = bridgeStateForContext(session, context)
     // Target references belong to one Painter context; carrying mappings across
     // a context switch would silently apply them to a different stack/channel.
     setActivePainterContextId(context.id)
     setBridge(next)
+    setSelectedIds(new Set())
     setHistory([])
     setRedoStack([])
     setDraggingId(null)
@@ -1231,6 +1283,11 @@ export function BridgeApp({
 
   const connectPhotoshop = async () => {
     if (pending.current) return
+    if (bridge.mappings.length > 0) {
+      setStatus("Apply or reset pending transfers before changing documents.")
+      setFailed(true)
+      return
+    }
     pending.current = true
     setBusy(true)
     setFailed(false)
@@ -1263,6 +1320,15 @@ export function BridgeApp({
     <TooltipProvider delayDuration={320} skipDelayDuration={250} disableHoverableContent>
       <div
         testId="bridge-root"
+        ref={rootRef}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (pending.current) return
+          if (event.key === "escape") { setDraggingId(null); setDropTargetId(null); return }
+          if (!(event.modifiers?.ctrl || event.modifiers?.cmd)) return
+          if (event.key === "z") { if (event.modifiers.shift) redo(); else undo() }
+          if (event.key === "y") redo()
+        }}
         style={{ width: "100%", height: "100%", backgroundColor: colors.canvas }}
       >
         <motion.div
@@ -1375,13 +1441,13 @@ export function BridgeApp({
                 </div>
               )
             }
-            mappedIds={mappedIds}
+            selectedIds={selectedIds} mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
-            onDragStart={setDraggingId}
+            onDragStart={startDrag}
             onDragEnd={() => setDraggingId(null)}
             onDropTarget={setDropTargetId}
             onDrop={drop}
@@ -1396,27 +1462,30 @@ export function BridgeApp({
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
-            mappedIds={mappedIds}
+            selectedIds={selectedIds} mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
             expanded={expanded}
             onToggle={toggle}
-            onDragStart={setDraggingId}
+            onDragStart={startDrag}
             onDragEnd={() => setDraggingId(null)}
             onDropTarget={setDropTargetId}
             onDrop={drop}
             onRemove={(id) => removeSource("substance_painter", id)}
           />
         </div>
-        {status !== session.status || !activePainterContext ? (
+        {status !== session.status || !activePainterContext || selectedIds.size > 0 ? (
           <div testId="bridge-status" role="status" style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}>
             <text style={{
               color: failed ? colors.danger : colors.secondary,
               fontSize: typography.secondarySize,
               fontFamily: typography.family,
               whiteSpace: "normal",
-            }}>{status}</text>
+            }}>{failed || busy ? status : [
+              selectedIds.size ? `${selectedIds.size} selected` : "",
+              bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
+            ].filter(Boolean).join(" · ") || status}</text>
           </div>
         ) : null}
         </motion.div>

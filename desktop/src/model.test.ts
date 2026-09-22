@@ -4,6 +4,9 @@ import {
   cloneState,
   removeFromHost,
   transferBetweenHosts,
+  transferSelection,
+  selectLayerIds,
+  visibleSourceIds,
   type BridgeState,
   type HostId,
   type LayerNode,
@@ -40,6 +43,63 @@ function fixture(): BridgeState {
 }
 
 describe("transferBetweenHosts", () => {
+  it("retargets pending batches without duplicating transfers or changing their order", () => {
+    const ids = new Set(["photoshop:paint", "photoshop:color"])
+    const staged = transferSelection(fixture(), ids, "substance_painter:working")
+    const next = transferSelection(staged, ids, "substance_painter:maskout")
+    expect(next.mappings).toHaveLength(2)
+    expect(next.mappings.every(mapping => mapping.targetId === "substance_painter:maskout")).toBe(true)
+    expect(next.painter.map(node => node.id)).toEqual([
+      "substance_painter:maskout", "photoshop:paint", "photoshop:color", "substance_painter:working",
+    ])
+    expect(next.painter[3].children?.map(node => node.id)).toEqual(["substance_painter:recolor"])
+    expect(visibleSourceIds(staged.painter, "photoshop", new Set(["substance_painter:working"]))).toEqual([...ids])
+  })
+
+  it("retargets a flattened Painter group and preserves its original source reference", () => {
+    const staged = transferBetweenHosts(fixture(), "substance_painter:working", "photoshop:group")
+    const next = transferBetweenHosts(staged, "substance_painter:working", "photoshop:cleanup")
+    expect(next.mappings).toHaveLength(1)
+    expect(next.mappings[0]).toMatchObject({ targetId: "photoshop:cleanup", source: { kind: "group" } })
+    expect(next.photoshop.at(-1)?.id).toBe("substance_painter:working")
+    expect(next.photoshop.at(-1)?.children).toBeUndefined()
+  })
+
+  it("cannot transfer away a destination of another pending transfer", () => {
+    const staged = transferBetweenHosts(fixture(), "photoshop:paint", "substance_painter:working")
+    expect(transferBetweenHosts(staged, "substance_painter:working", "photoshop:cleanup")).toBe(staged)
+  })
+
+  it("keeps a multi-layer drop ordered and records one transfer per selected root", () => {
+    const next = transferSelection(fixture(), new Set(["photoshop:paint", "photoshop:color"]), "substance_painter:maskout")
+    expect(next.painter.map(node => node.id).slice(0, 3)).toEqual([
+      "substance_painter:maskout", "photoshop:paint", "photoshop:color",
+    ])
+    expect(next.mappings).toHaveLength(2)
+  })
+
+  it("previews a selected group as the same single rendered object Apply produces", () => {
+    const next = transferSelection(fixture(), new Set(["photoshop:group", "photoshop:paint"]), "substance_painter:working")
+    expect(next.mappings).toHaveLength(1)
+    const pending = next.painter[1].children?.at(-1)
+    expect(pending?.kind).toBe("layer")
+    expect(pending?.children).toBeUndefined()
+    expect(pending?.ref.kind).toBe("group")
+  })
+
+  it("cannot hide a destination that contains pending transfers", () => {
+    const mapped = transferBetweenHosts(fixture(), "photoshop:paint", "substance_painter:working")
+    expect(removeFromHost(mapped, "substance_painter", "substance_painter:working")).toBe(mapped)
+  })
+
+  it("selects ranges, toggles membership, and preserves a selected batch on drag", () => {
+    const visible = ["a", "b", "c", "d"]
+    const range = selectLayerIds(new Set(["a"]), "a", "c", visible, { range: true })
+    expect([...range]).toEqual(["a", "b", "c"])
+    expect([...selectLayerIds(range, "a", "b", visible, { toggle: true })]).toEqual(["a", "c"])
+    expect(selectLayerIds(range, "a", "b", visible, {})).toEqual(range)
+  })
+
   it("moves a nested Photoshop layer into a Painter group and records intent", () => {
     const original = fixture()
     const next = transferBetweenHosts(original, "photoshop:color", "substance_painter:working")
