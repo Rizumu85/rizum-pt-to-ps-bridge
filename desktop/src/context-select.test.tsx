@@ -2,7 +2,7 @@ import path from "node:path"
 
 import { connectTest } from "@gpuix/react/automation"
 import { createTestRoot } from "@gpuix/react/testing"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { BridgeApp } from "./main"
 import { loadBridgeSession } from "./transport"
@@ -10,6 +10,51 @@ import { loadBridgeSession } from "./transport"
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("Painter context selectors", () => {
+  it("scrolls a long Painter stack without moving the Photoshop pane", async () => {
+    const session = await loadBridgeSession({ painterSnapshot: path.join(fixtureDir, "painter_snapshot.json") })
+    session.state.painter = Array.from({ length: 60 }, (_, index) => ({
+      ...session.state.painter[0], id: `long-${index}`, name: `Long layer ${index}`,
+      kind: "layer" as const, children: undefined,
+    }))
+    const testRoot = createTestRoot({ width: 652, height: 484 })
+    const app = await connectTest(testRoot.renderer)
+    try {
+      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"}
+        onConnectPhotoshop={async () => "unused"} />)
+      testRoot.renderer.flush()
+      await new Promise(resolve => setTimeout(resolve, 450))
+      const before = await app.getByText("Long layer 0").bounds()
+      const button = await app.getByTestId("connect-photoshop").bounds()
+      await app.getByTestId("layer-scrollbar:painter").click()
+      testRoot.renderer.flush()
+      const after = await app.getByText("Long layer 0").bounds()
+      expect(after.y).toBeLessThan(before.y - 100)
+      expect(await app.getByTestId("connect-photoshop").bounds()).toEqual(button)
+    } finally {
+      testRoot.unmount()
+      await app.close()
+    }
+  })
+  it("connects Photoshop from the empty pane", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    const testRoot = createTestRoot({ width: 652, height: 484 })
+    const app = await connectTest(testRoot.renderer)
+    const connect = vi.fn(async () => "request.json")
+    const applied = vi.fn()
+    try {
+      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"}
+        onConnectPhotoshop={connect} onApplied={applied} />)
+      testRoot.renderer.flush()
+      await app.getByTestId("connect-photoshop").click()
+      await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce())
+      expect(applied).toHaveBeenCalledWith("request.json")
+    } finally {
+      testRoot.unmount()
+      await app.close()
+    }
+  })
   it("switches the rendered Painter tree with the texture set selector", async () => {
     const session = await loadBridgeSession({
       photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),

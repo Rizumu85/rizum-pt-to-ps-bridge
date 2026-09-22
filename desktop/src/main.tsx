@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { LayerScroll } from "./layer-scroll"
 import {
   motion,
   render,
@@ -1032,15 +1033,9 @@ function HostPanel({
         {headerAction}
       </div>
       <InsetSeparator />
-      <div
-        style={{
-          flexGrow: 1,
-          minHeight: 0,
-          overflow: "scroll",
-          padding: 8,
-        }}
-      >
-        {emptyContent ?? (
+      {emptyContent ? (
+        <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0 }}>{emptyContent}</div>
+      ) : <LayerScroll id={panelId}>
           <PanelTree
             panelId={panelId}
             label={treeLabel}
@@ -1059,8 +1054,7 @@ function HostPanel({
             onDrop={onDrop}
             onRemove={onRemove}
           />
-        )}
-      </div>
+      </LayerScroll>}
     </div>
   )
 }
