@@ -1,3 +1,5 @@
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +10,23 @@ from sp_plugin.rizum_sp_to_ps.photoshop_automation import (
 
 
 class PhotoshopTransferLauncherTests(unittest.TestCase):
+    def test_fresh_host_returns_the_real_error_without_global_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            request = Path(directory) / "photoshop_transfer.json"
+            request.write_text("{}", encoding="utf-8")
+            launcher = write_photoshop_transfer_launcher(request)
+            host = Path(__file__).parent / "fixtures" / "photoshop_document_host.cjs"
+            completed = subprocess.run(
+                ["node", str(host), str(launcher)], capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            calls = json.loads(completed.stdout)
+            result = json.loads((request.parent / "photoshop_transfer_result.json").read_text())
+            self.assertIn("Expected a Painter-to-Photoshop", result["errors"][0]["message"])
+            self.assertEqual(calls["globalJson"], "undefined")
+            self.assertEqual(calls["dialogs"], "original")
+            self.assertEqual(calls["rulerUnits"], "original")
+
     def test_launcher_embeds_request_path_and_keeps_runtime_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             request = Path(directory) / "photoshop_transfer.json"

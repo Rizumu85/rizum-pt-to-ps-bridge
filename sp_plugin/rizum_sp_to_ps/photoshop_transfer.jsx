@@ -1,4 +1,5 @@
 (function () {
+    __RIZUM_JSON_RUNTIME__
     var requestPath = __RIZUM_TRANSFER_REQUEST_PATH__;
     var resultPath = File(requestPath).parent.fsName + "/photoshop_transfer_result.json";
     var result = { inserted: [], errors: [], warnings: [], saved: false };
@@ -294,29 +295,22 @@
 
     function readJson(path) {
         var file = File(path);
+        file.encoding = "UTF8";
         if (!file.exists || !file.open("r")) {
             throw new Error("Could not open JSON file: " + path);
         }
-        file.encoding = "UTF8";
         var text = file.read();
         file.close();
-        if (typeof JSON !== "undefined" && JSON.parse) {
-            return JSON.parse(text);
-        }
-        return eval("(" + text + ")");
+        return JSON.parse(text);
     }
 
     function writeResult(path, state) {
         var file = File(path);
+        file.encoding = "UTF8";
         if (!file.open("w")) {
             return;
         }
-        file.encoding = "UTF8";
-        if (typeof JSON !== "undefined" && JSON.stringify) {
-            file.write(JSON.stringify(state, null, 2));
-        } else {
-            file.write("{\"inserted\":[],\"errors\":[{\"message\":\"JSON.stringify unavailable\"}]}");
-        }
+        file.write(JSON.stringify(state, null, 2));
         file.close();
     }
 

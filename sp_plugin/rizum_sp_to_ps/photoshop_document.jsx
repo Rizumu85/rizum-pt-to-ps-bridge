@@ -1,7 +1,10 @@
 #target photoshop
 
 (function () {
+    __RIZUM_JSON_RUNTIME__
     var requestPath = __RIZUM_DOCUMENT_REQUEST_PATH__;
+    var resultPath = __RIZUM_DOCUMENT_RESULT_PATH__;
+    var progressPath = __RIZUM_DOCUMENT_PROGRESS_PATH__;
     var request = null;
     var source = null;
     var renderDocument = null;
@@ -18,12 +21,15 @@
 
     app.displayDialogs = DialogModes.NO;
     try {
+        publishProgress("reading_request", 0, 0, "");
         request = readJson(requestPath);
         validateRequest(request);
+        publishProgress("opening_document", 0, 0, File(request.psd_file).name);
         source = resolveDocument(String(request.psd_file));
         app.activeDocument = source;
 
         var records = collectDocumentLayers(source);
+        publishProgress("exporting_layers", 0, records.length, "");
         // One isolated duplicate keeps Photoshop's native renderer while avoiding
         // a full PSD clone for every layer in large production documents.
         renderDocument = source.duplicate("Rizum Document Export", false);
@@ -47,6 +53,7 @@
                     error: errorMessage(layerError)
                 });
             }
+            publishProgress("exporting_layers", index + 1, records.length, record.display_name);
         }
 
         if (exported.length === 0) {
@@ -88,9 +95,13 @@
         closeProgress(progress);
         result.elapsed_ms = new Date().getTime() - startedAt;
         app.displayDialogs = previousDialogs;
-        if (request && request.result_file) {
-            writeJsonAtomic(String(request.result_file), result);
-        }
+        writeJsonAtomic(resultPath, result);
+    }
+
+    function publishProgress(phase, completed, total, name) {
+        writeJsonAtomic(progressPath, {
+            phase: phase, completed: completed, total: total, layer: name
+        });
     }
 
     function validateRequest(value) {
@@ -378,10 +389,10 @@
 
     function readJson(path) {
         var file = File(path);
+        file.encoding = "UTF8";
         if (!file.exists || !file.open("r")) {
             throw new Error("Could not open JSON file: " + path);
         }
-        file.encoding = "UTF8";
         var text = file.read();
         file.close();
         return JSON.parse(text);
@@ -390,10 +401,10 @@
     function writeJsonAtomic(path, value) {
         var target = File(path);
         var temporary = File(path + ".tmp");
+        temporary.encoding = "UTF8";
         if (!temporary.open("w")) {
             throw new Error("Could not write JSON file: " + path);
         }
-        temporary.encoding = "UTF8";
         temporary.write(JSON.stringify(value, null, 2));
         temporary.close();
         if (target.exists && !target.remove()) {
@@ -408,6 +419,7 @@
         if (!error) {
             return "Unknown error";
         }
-        return error.message ? String(error.message) : String(error);
+        var message = error.message ? String(error.message) : String(error);
+        return error.line ? message + " (line " + error.line + ")" : message;
     }
 }());
