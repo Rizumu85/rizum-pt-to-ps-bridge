@@ -4,6 +4,7 @@ export const colors = {
   control: "#2B2B2B",
   controlHover: "#363636",
   controlActive: "#404040",
+  fieldHover: "#FFFFFF0D",
   groupHover: "#2A2A2A",
   mapped: "#303030",
   line: "#353535",
@@ -32,7 +33,7 @@ export const typography = {
 
 export const metrics = {
   windowWidth: 580,
-  windowHeight: 430,
+  windowHeight: 680,
   cardRadius: 8,
   rowRadius: 6,
   toolbarHeight: 43,

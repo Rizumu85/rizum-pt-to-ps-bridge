@@ -80,7 +80,7 @@ function Icon({
   color?: string
 }) {
   const source = icons[name].replace(/#[0-9a-f]{6}/gi, color)
-  return <svg source={source} style={{ width: size, height: size, flexShrink: 0, color }} />
+  return <svg source={source} style={{ width: size, height: size, flexShrink: 0, color, pointerEvents: "none" }} />
 }
 
 function DisclosureIcon({ open }: { open: boolean }) {
@@ -96,6 +96,8 @@ function DisclosureIcon({ open }: { open: boolean }) {
             transition={{ duration: 0.12, ease: motionEase }}
             style={{
               position: "absolute",
+              // GPUiX gives absolute decoration its own hitbox, even at opacity 0.
+              pointerEvents: "none",
               top: 0,
               left: 0,
               width: 12,
@@ -160,18 +162,20 @@ function ContextSelect({
   value,
   options,
   width,
+  busy = false,
   onValueChange,
 }: {
   label: string
   value: string
   options: ContextOption[]
   width: number
+  busy?: boolean
   onValueChange: (value: string) => void
 }) {
   const [present, setPresent] = useState(false)
   const [visuallyOpen, setVisuallyOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const disabled = options.length < 2
+  const disabled = busy || options.length < 2
   const selectedLabel = options.find((option) => option.value === value)?.label || value
 
   useEffect(
@@ -220,10 +224,10 @@ function ContextSelect({
           alignItems: "center",
           gap: 4,
           borderRadius: metrics.rowRadius,
-          backgroundColor: visuallyOpen ? colors.controlHover : colors.control,
+          backgroundColor: visuallyOpen ? colors.fieldHover : "transparent",
           opacity: disabled ? 0.72 : 1,
           cursor: disabled ? "default" : "pointer",
-          hover: disabled ? undefined : { backgroundColor: colors.controlHover },
+          hover: disabled ? undefined : { backgroundColor: colors.fieldHover },
         }}
       >
         <SecondaryText>{label}</SecondaryText>
@@ -241,6 +245,7 @@ function ContextSelect({
                 transition={{ duration: 0.18, ease: motionEase }}
                 style={{
                   position: "absolute",
+                  pointerEvents: "none",
                   top: 0,
                   left: 0,
                   width: 12,
@@ -261,7 +266,7 @@ function ContextSelect({
         sideOffset={4}
         align="start"
         collisionPadding={8}
-        style={{ width, backgroundColor: "transparent", pointerEvents: visuallyOpen ? "auto" : "none" }}
+        style={{ width, backgroundColor: "transparent", pointerEvents: visuallyOpen ? undefined : "none" }}
       >
         <motion.div
           initial={{ opacity: 0, top: -6 }}
@@ -275,7 +280,7 @@ function ContextSelect({
             borderRadius: metrics.rowRadius,
             borderWidth: 1,
             borderColor: colors.line,
-            backgroundColor: colors.control,
+            backgroundColor: colors.panel,
             boxShadow: {
               offsetX: 0,
               offsetY: 4,
@@ -331,8 +336,15 @@ function IconAction({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
-          testId={testId}
+          testId={testId ?? `action:${icon}`}
+          role="button"
+          aria-label={label}
+          aria-disabled={disabled}
+          tabIndex={disabled ? -1 : 0}
           onClick={disabled ? undefined : onClick}
+          onKeyDown={event => {
+            if (!disabled && (event.key === "enter" || event.key === "space")) onClick()
+          }}
           onMouseDown={disabled ? undefined : () => setPressed(true)}
           onMouseUp={disabled ? undefined : () => setPressed(false)}
           onMouseLeave={() => setPressed(false)}
@@ -392,13 +404,20 @@ function IconAction({
   )
 }
 
-function ConnectPhotoshopAction({ onClick }: { onClick: () => void }) {
+function ConnectPhotoshopAction({ onClick, busy = false }: { onClick: () => void; busy?: boolean }) {
   const [pressed, setPressed] = useState(false)
   return (
     <div
       testId="connect-photoshop"
-      onClick={onClick}
-      onMouseDown={() => setPressed(true)}
+      role="button"
+      aria-label="Connect Photoshop"
+      aria-disabled={busy}
+      tabIndex={busy ? -1 : 0}
+      onClick={busy ? undefined : onClick}
+      onKeyDown={event => {
+        if (!busy && (event.key === "enter" || event.key === "space")) onClick()
+      }}
+      onMouseDown={busy ? undefined : () => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       onMouseLeave={() => setPressed(false)}
       style={{
@@ -412,12 +431,13 @@ function ConnectPhotoshopAction({ onClick }: { onClick: () => void }) {
         gap: 7,
         borderRadius: metrics.rowRadius,
         backgroundColor: pressed ? colors.controlActive : colors.control,
-        cursor: "pointer",
-        hover: { backgroundColor: colors.controlHover },
+        cursor: busy ? "default" : "pointer",
+        opacity: busy ? 0.6 : 1,
+        hover: busy ? undefined : { backgroundColor: colors.controlHover },
       }}
     >
       <Icon name="folder" size={14} />
-      <PrimaryText>Connect Photoshop</PrimaryText>
+      <PrimaryText>{busy ? "Connecting..." : "Connect Photoshop"}</PrimaryText>
     </div>
   )
 }
@@ -527,7 +547,7 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
   const isGroup = node.kind === "group"
   // The corner tile is semantic mask state and only appears for nodes backed by a real mask.
   return (
-    <div style={{ width: 25, height: 22, flexShrink: 0, position: "relative" }}>
+    <div testId={`layer-thumbnail:${node.id}`} style={{ width: 25, height: 22, flexShrink: 0, position: "relative" }}>
       {isGroup ? (
         <div
           style={{
@@ -550,6 +570,7 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
             borderWidth: 1,
             borderColor: colors.thumbnailBorder,
             backgroundColor: colors.thumbnail,
+            pointerEvents: "none",
           }}
         >
           {node.thumbnailPath ? (
@@ -557,7 +578,7 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
               src={node.thumbnailPath}
               alt=""
               objectFit="cover"
-              style={{ width: 18, height: 18 }}
+              style={{ width: 18, height: 18, pointerEvents: "none" }}
             />
           ) : null}
         </div>
@@ -575,6 +596,7 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
             borderWidth: 1,
             borderColor: colors.thumbnailBorder,
             backgroundColor: colors.maskDark,
+            pointerEvents: "none",
           }}
         >
           <svg source={maskThumbnailSource} style={{ width: 8, height: 8 }} />
@@ -659,10 +681,12 @@ function LayerRow({
             left: 5,
             height: 2,
             backgroundColor: colors.drop,
+            pointerEvents: "none",
           }}
         />
       ) : null}
       <div
+        testId={`layer-row:${node.id}`}
         onMouseDown={() => {
           if (nativeNode) onDragStart(node.id)
         }}
@@ -684,6 +708,7 @@ function LayerRow({
         }}
       >
         <div
+          testId={`layer-toggle:${node.id}`}
           onClick={() => {
             if (node.kind === "group") onToggle(node.id)
           }}
@@ -707,6 +732,7 @@ function LayerRow({
         </div>
         {nativeNode && hovered ? (
           <div
+            testId={`layer-remove:${node.id}`}
             onClick={() => onRemove(node.id)}
             style={{
               width: 22,
@@ -737,7 +763,8 @@ function LayerRow({
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            pointerEvents: open ? "auto" : "none",
+            // Explicit "auto" also occludes the ancestor's native wheel handler.
+            pointerEvents: open ? undefined : "none",
           }}
         >
           {children.map((child) => (
@@ -769,7 +796,6 @@ function PanelTree({
   label,
   nodes,
   host,
-  footerHint,
   mappedIds,
   draggingId,
   draggingHost,
@@ -786,7 +812,6 @@ function PanelTree({
   label: string
   nodes: LayerNode[]
   host: HostId
-  footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
   draggingHost: HostId | null
@@ -879,7 +904,7 @@ function PanelTree({
         initial={false}
         animate={{
           height: open
-            ? panelTreeChildrenGap + visibleNodesHeight(nodes, expanded) + (footerHint ? 24 : 0)
+            ? panelTreeChildrenGap + visibleNodesHeight(nodes, expanded)
             : 0,
           opacity: open ? 1 : 0,
         }}
@@ -888,7 +913,7 @@ function PanelTree({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          pointerEvents: open ? "auto" : "none",
+          pointerEvents: open ? undefined : "none",
         }}
       >
         {/* The root identity needs group spacing before its child collection; rows inside stay compact. */}
@@ -911,19 +936,6 @@ function PanelTree({
             onRemove={onRemove}
           />
         ))}
-        {footerHint ? (
-          <div
-            style={{
-              height: 24,
-              marginLeft: 38,
-              display: "flex",
-              alignItems: "center",
-              minWidth: 0,
-            }}
-          >
-            <SecondaryText>{footerHint}</SecondaryText>
-          </div>
-        ) : null}
       </motion.div>
     </div>
   )
@@ -938,7 +950,6 @@ function HostPanel({
   host,
   headerAction,
   emptyContent,
-  footerHint,
   mappedIds,
   draggingId,
   draggingHost,
@@ -959,7 +970,6 @@ function HostPanel({
   host: HostId
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
-  footerHint?: string
   mappedIds: Set<string>
   draggingId: string | null
   draggingHost: HostId | null
@@ -1041,7 +1051,6 @@ function HostPanel({
             label={treeLabel}
             nodes={nodes}
             host={host}
-            footerHint={footerHint}
             mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
@@ -1081,6 +1090,9 @@ export function BridgeApp({
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const pending = useRef(false)
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
@@ -1111,11 +1123,13 @@ export function BridgeApp({
   )
 
   const mutate = (next: BridgeState, message: string) => {
+    if (pending.current) return
     if (next === bridge) return
     setHistory((current) => [...current, cloneState(bridge)])
     setRedoStack([])
     setBridge(next)
     setStatus(message)
+    setFailed(false)
   }
 
   const removeSource = (host: HostId, id: string) => {
@@ -1132,24 +1146,29 @@ export function BridgeApp({
   }
 
   const undo = () => {
+    if (pending.current) return
     const previous = history.at(-1)
     if (!previous) return
     setRedoStack((current) => [...current, cloneState(bridge)])
     setBridge(previous)
     setHistory((current) => current.slice(0, -1))
     setStatus("Last mapping undone")
+    setFailed(false)
   }
 
   const redo = () => {
+    if (pending.current) return
     const next = redoStack.at(-1)
     if (!next) return
     setHistory((current) => [...current, cloneState(bridge)])
     setBridge(next)
     setRedoStack((current) => current.slice(0, -1))
     setStatus("Last mapping restored")
+    setFailed(false)
   }
 
   const reset = () => {
+    if (pending.current) return
     const next = bridgeStateForContext(session, activePainterContext)
     setBridge(next)
     setHistory([])
@@ -1158,9 +1177,11 @@ export function BridgeApp({
     setDropTargetId(null)
     setExpanded(collectExpandedIds(next))
     setStatus("Mapping reset")
+    setFailed(false)
   }
 
   const switchPainterContext = (context: PainterContext | undefined) => {
+    if (pending.current) return
     if (!context || context.id === activePainterContextId) return
     const next = bridgeStateForContext(session, context)
     // Target references belong to one Painter context; carrying mappings across
@@ -1173,6 +1194,7 @@ export function BridgeApp({
     setDropTargetId(null)
     setExpanded(collectExpandedIds(next))
     setStatus(`Target changed · ${context.subtitle}`)
+    setFailed(false)
   }
 
   const changePainterStack = (stackId: string) => {
@@ -1186,6 +1208,10 @@ export function BridgeApp({
   }
 
   const apply = async () => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    setFailed(false)
     setStatus("Writing transfer manifest...")
     try {
       const output = await onApply(bridge, activePainterContextId)
@@ -1195,17 +1221,32 @@ export function BridgeApp({
       setStatus(`Transfer manifest written · ${filename}`)
       onApplied?.(output)
     } catch (error) {
+      setFailed(true)
       setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      pending.current = false
+      setBusy(false)
     }
   }
 
   const connectPhotoshop = async () => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    setFailed(false)
     setStatus("Opening Photoshop connection...")
+    console.info("[PT Bridge] connect_clicked")
     try {
       const output = await onConnectPhotoshop()
+      console.info("[PT Bridge] connect_request_written")
       onApplied?.(output)
     } catch (error) {
+      console.error("[PT Bridge] connect_failed", error)
+      setFailed(true)
       setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      pending.current = false
+      setBusy(false)
     }
   }
 
@@ -1258,6 +1299,7 @@ export function BridgeApp({
             value={activeStackId}
             options={painterStackOptions}
             width={176}
+            busy={busy}
             onValueChange={changePainterStack}
           />
           <ContextSelect
@@ -1265,6 +1307,7 @@ export function BridgeApp({
             value={activePainterContextId}
             options={channelOptions}
             width={152}
+            busy={busy}
             onValueChange={(contextId) =>
               switchPainterContext(
                 session.painterContexts.find((context) => context.id === contextId),
@@ -1272,15 +1315,15 @@ export function BridgeApp({
             }
           />
           <div style={{ flexGrow: 1 }} />
-          <IconAction icon="reset" label="Reset mapping" disabled={!hasChanges} onClick={reset} />
+          <IconAction icon="reset" label="Reset mapping" disabled={busy || !hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
-          <IconAction icon="undo" label="Undo" disabled={!hasChanges} onClick={undo} />
-          <IconAction icon="redo" label="Redo" disabled={!canRedo} onClick={redo} />
+          <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
+          <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction
             icon="check"
             label="Apply mapping"
-            disabled={!hasChanges || bridge.mappings.length === 0}
+            disabled={busy || !hasChanges || bridge.mappings.length === 0}
             onClick={apply}
           />
         </div>
@@ -1312,6 +1355,7 @@ export function BridgeApp({
                   icon="folder"
                   label="Change Photoshop document"
                   testId="change-photoshop"
+                  disabled={busy}
                   onClick={connectPhotoshop}
                 />
               ) : undefined
@@ -1327,7 +1371,7 @@ export function BridgeApp({
                     justifyContent: "center",
                   }}
                 >
-                  <ConnectPhotoshopAction onClick={connectPhotoshop} />
+                  <ConnectPhotoshopAction onClick={connectPhotoshop} busy={busy} />
                 </div>
               )
             }
@@ -1352,7 +1396,6 @@ export function BridgeApp({
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
-            footerHint={status === session.status ? undefined : status}
             mappedIds={mappedIds}
             draggingId={draggingId}
             draggingHost={draggingHost}
@@ -1366,6 +1409,16 @@ export function BridgeApp({
             onRemove={(id) => removeSource("substance_painter", id)}
           />
         </div>
+        {status !== session.status || !activePainterContext ? (
+          <div testId="bridge-status" role="status" style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}>
+            <text style={{
+              color: failed ? colors.danger : colors.secondary,
+              fontSize: typography.secondarySize,
+              fontFamily: typography.family,
+              whiteSpace: "normal",
+            }}>{status}</text>
+          </div>
+        ) : null}
         </motion.div>
       </div>
     </TooltipProvider>
@@ -1461,6 +1514,8 @@ if (isEntryPoint) {
       title: "PT Bridge",
       width: metrics.windowWidth,
       height: metrics.windowHeight,
+      minWidth: 560,
+      minHeight: 420,
       windowBackground: "opaque",
       focus: process.env.GPUIX_BACKGROUND !== "1",
     },
