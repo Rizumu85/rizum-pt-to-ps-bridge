@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process"
-import { mkdtemp } from "node:fs/promises"
+import { mkdtemp, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { connectStdio } from "@gpuix/react/automation"
 
 const directory = await mkdtemp(path.join(tmpdir(), "bridge-win-input-"))
-const output = path.join(directory, "request.json")
+// A temp drive does not exercise cloud/reparse-point directory semantics.
+const output = process.env.BRIDGE_TEST_OUTPUT_DIR
+  ? path.join(process.env.BRIDGE_TEST_OUTPUT_DIR, `_${path.basename(directory)}.json`)
+  : path.join(directory, "request.json")
 const compiled = process.env.BRIDGE_TEST_COMPILED === "1"
 const child = spawn(compiled ? path.resolve("dist/pt-bridge.exe") : process.execPath, [...(compiled ? [] : ["src/main.tsx"]), "--painter",
   process.argv[2] ?? "test-fixtures/painter_snapshot.json", "--output", output],
@@ -34,4 +37,9 @@ try {
   if (child.exitCode !== 0) throw new Error(`Connect did not exit cleanly: ${child.exitCode}`)
 } finally {
   await app.close()
+  for (const file of [output, `${output}.tmp-${child.pid}`]) {
+    await unlink(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error
+    })
+  }
 }

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import {
@@ -211,7 +211,16 @@ async function readPhotoshopSelection(manifestPath: string): Promise<JsonObject>
 }
 
 async function writeAtomicJson(filePath: string, payload: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true })
+  const directory = path.dirname(filePath)
+  try {
+    await mkdir(directory, { recursive: true })
+  } catch (error) {
+    // Bun can report EEXIST for existing OneDrive reparse directories. Verify
+    // the directory rather than ignoring real file conflicts or access failures.
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    const existing = await stat(directory).catch(() => null)
+    if (!existing?.isDirectory()) throw error
+  }
   const temporaryPath = `${filePath}.tmp-${process.pid}`
   await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8")
   await unlink(filePath).catch((error: NodeJS.ErrnoException) => {

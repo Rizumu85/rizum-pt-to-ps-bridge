@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { transferBetweenHosts } from "./model"
 import {
@@ -14,7 +14,55 @@ import {
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
+vi.mock("node:fs/promises", async importOriginal => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>()
+  return { ...actual, mkdir: vi.fn(actual.mkdir) }
+})
+
 describe("desktop file transport", () => {
+  it.each(["connect", "apply"])("writes %s when mkdir reports EEXIST for a verified directory", async action => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-existing-"))
+    const output = path.join(directory, "request.json")
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      output,
+    })
+    // Reproduce Bun's cloud-directory error, but verify against the real filesystem.
+    vi.mocked(mkdir).mockRejectedValueOnce(Object.assign(new Error("Directory already exists"), { code: "EEXIST" }))
+    if (action === "connect") {
+      await writeConnectPhotoshopRequest(session)
+    } else {
+      const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+      await writeTransferManifest(session, mapped, session.initialPainterContextId)
+    }
+    const request = JSON.parse(await readFile(output, "utf8"))
+    expect(request.request_type).toBe(action === "connect" ? "desktop_connect_photoshop" : "desktop_transfer")
+  })
+
+  it("rejects a real file blocking the output directory without modifying it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-conflict-"))
+    const conflict = path.join(directory, "not-a-directory")
+    await writeFile(conflict, "keep this file")
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(conflict, "request.json"),
+    })
+    await expect(writeConnectPhotoshopRequest(session)).rejects.toMatchObject({ code: "EEXIST" })
+    expect(await readFile(conflict, "utf8")).toBe("keep this file")
+  })
+
+  it("does not suppress access errors just because the directory exists", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-denied-"))
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(directory, "request.json"),
+    })
+    const denied = Object.assign(new Error("Access denied"), { code: "EACCES" })
+    vi.mocked(mkdir).mockRejectedValueOnce(denied)
+    await expect(writeConnectPhotoshopRequest(session)).rejects.toBe(denied)
+  })
+
   it("opens Painter's active texture set instead of the PSD's original texture set", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-active-"))
     const snapshot = JSON.parse(await readFile(path.join(fixtureDir, "painter_snapshot.json"), "utf8"))
