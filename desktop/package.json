@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@gpuix/react": "0.6.0",
+    "@gpuix/react": "0.9.0",
     "react": "19.2.8"
   },
   "devDependencies": {

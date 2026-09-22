@@ -2,6 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import (
     MANIFEST_PATH_KEY,
@@ -21,8 +23,8 @@ class _Button:
     def __init__(self):
         self.clicked = _Signal()
 
-    def setEnabled(self, _enabled):
-        pass
+    def setEnabled(self, enabled):
+        self.enabled = enabled
 
     def setToolTip(self, _tooltip):
         pass
@@ -62,6 +64,24 @@ class DesktopBridgeSessionTests(unittest.TestCase):
     def setUp(self):
         _Settings.values = {}
         self.controller = DesktopBridgeController(_Panel(), lambda *_args: None)
+
+    def test_window_close_without_transfer_releases_bridge_action(self):
+        process = SimpleNamespace(
+            readAllStandardError=lambda: b"",
+            deleteLater=Mock(),
+        )
+        self.controller.panel.status = SimpleNamespace(setText=Mock())
+        self.controller._process = process
+        self.controller.button.setEnabled(False)
+
+        self.controller._desktop_finished(0, None)
+
+        self.assertIsNone(self.controller._process)
+        self.assertTrue(self.controller.button.enabled)
+        process.deleteLater.assert_called_once()
+        self.controller.panel.status.setText.assert_called_once_with(
+            "Bridge mapping cancelled."
+        )
 
     def test_remembers_exact_manifest_until_it_becomes_stale(self):
         with tempfile.TemporaryDirectory() as directory:

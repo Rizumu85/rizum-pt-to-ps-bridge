@@ -1450,6 +1450,8 @@ if (isEntryPoint) {
     session = failedBridgeSession(error)
   }
 
+  // Painter releases the dock action on process exit, not window disappearance.
+  // Keep GPUiX's native last-window-close shutdown (requires 0.9.0 on Windows).
   render(
     <BridgeApp
       session={session}
