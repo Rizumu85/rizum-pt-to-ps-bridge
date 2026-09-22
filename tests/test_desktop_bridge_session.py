@@ -68,6 +68,7 @@ class DesktopBridgeSessionTests(unittest.TestCase):
     def test_window_close_without_transfer_releases_bridge_action(self):
         process = SimpleNamespace(
             readAllStandardError=lambda: b"",
+            readAllStandardOutput=lambda: b"",
             deleteLater=Mock(),
         )
         self.controller.panel.status = SimpleNamespace(setText=Mock())
@@ -103,6 +104,42 @@ class DesktopBridgeSessionTests(unittest.TestCase):
             manifest.unlink()
             self.assertIsNone(self.controller._recent_photoshop_manifest())
             self.assertNotIn(MANIFEST_PATH_KEY, _Settings.values)
+
+    def test_connect_handoff_releases_process_before_queuing_picker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            request = Path(directory) / "desktop_transfer.json"
+            request.write_text(json.dumps({"request_type": "desktop_connect_photoshop"}), encoding="utf-8")
+            process = SimpleNamespace(
+                readAllStandardError=lambda: b"",
+                readAllStandardOutput=lambda: b"[PT Bridge] connect_request_written",
+                deleteLater=Mock(),
+            )
+            schedule = Mock()
+            self.controller.QtCore = SimpleNamespace(QTimer=SimpleNamespace(singleShot=schedule))
+            self.controller._process = process
+            self.controller._transfer_path = request
+            self.controller._trace_path = Path(directory) / "desktop_session.log"
+            self.controller._desktop_finished(0, None)
+            self.assertIsNone(self.controller._process)
+            self.assertFalse(self.controller.button.enabled)
+            process.deleteLater.assert_called_once()
+            schedule.assert_called_once_with(0, self.controller._open_photoshop_picker)
+            self.assertIn("connect_request_written", self.controller._trace_path.read_text())
+
+    def test_exit_after_unload_does_not_touch_deleted_widgets(self):
+        self.controller._closing = True
+        self.controller.button = SimpleNamespace(setEnabled=Mock(side_effect=RuntimeError("deleted")))
+        self.controller._desktop_finished(0, None)
+        self.controller.button.setEnabled.assert_not_called()
+
+    def test_picker_exception_restores_bridge_action_and_reports_error(self):
+        self.controller.panel.status = SimpleNamespace(setText=Mock())
+        self.controller._connect_photoshop = Mock(side_effect=RuntimeError("Picker unavailable"))
+        self.controller._show_message_callback = Mock()
+        self.controller.button.setEnabled(False)
+        self.controller._open_photoshop_picker()
+        self.assertTrue(self.controller.button.enabled)
+        self.assertEqual(self.controller._show_message_callback.call_args.args[-1], "Picker unavailable")
 
     def test_reads_desktop_connect_request(self):
         with tempfile.TemporaryDirectory() as directory:

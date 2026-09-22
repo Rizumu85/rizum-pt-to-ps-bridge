@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import desktop_transfer, exporter, photoshop_automation
@@ -36,6 +37,7 @@ class DesktopBridgeController:
         self._photoshop_document_launch = None
         self._photoshop_export_started_at = 0.0
         self._source_dialog = None
+        self._trace_path = None
 
         self.button = panel.dock_bridge_button
         self.button.setEnabled(True)
@@ -44,6 +46,8 @@ class DesktopBridgeController:
 
     def close(self):
         """Detach the controller and stop an owned desktop session on unload."""
+        if self._closing:
+            return
         self._closing = True
         if self._source_dialog is not None:
             self._source_dialog.close()
@@ -62,6 +66,8 @@ class DesktopBridgeController:
             process.terminate()
             if not process.waitForFinished(800):
                 process.kill()
+        if process is not None:
+            process.deleteLater()
 
     def open(self):
         """Launch one mapping session with the last connected Photoshop document."""
@@ -85,6 +91,8 @@ class DesktopBridgeController:
                 self.panel.user_settings
             ) / "_desktop_bridge"
             session_dir.mkdir(parents=True, exist_ok=True)
+            self._trace_path = session_dir / "desktop_session.log"
+            self._trace("preparing_snapshot", reset=True)
             snapshot_path = session_dir / "painter_snapshot.json"
             transfer_path = session_dir / "desktop_transfer.json"
             transfer_path.unlink(missing_ok=True)
@@ -111,6 +119,8 @@ class DesktopBridgeController:
         process.setArguments(arguments)
         process.finished.connect(self._desktop_finished)
         process.errorOccurred.connect(self._desktop_error)
+        process.readyReadStandardOutput.connect(self._desktop_output)
+        process.started.connect(lambda: self._trace("desktop_started"))
         self._process = process
         self.button.setEnabled(False)
         self.button.setToolTip("PT Bridge desktop is open")
@@ -134,6 +144,7 @@ class DesktopBridgeController:
         return path
 
     def _connect_photoshop(self):
+        self._trace("opening_photoshop_picker")
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         start_dir = settings.value(MANIFEST_DIR_KEY, "", str) or ""
         dialog = self.QtWidgets.QFileDialog(
@@ -154,6 +165,7 @@ class DesktopBridgeController:
         dialog.open()
         dialog.raise_()
         dialog.activateWindow()
+        self._trace("photoshop_picker_visible", str(dialog.isVisible()))
 
     def _photoshop_source_chosen(self, result):
         dialog = self._source_dialog
@@ -166,10 +178,12 @@ class DesktopBridgeController:
             return
         self.button.setEnabled(True)
         if result != self.QtWidgets.QDialog.DialogCode.Accepted or not paths:
+            self._trace("photoshop_picker_cancelled")
             self.panel.status.setText("Photoshop connection cancelled.")
             self._launch_desktop(self._recent_photoshop_manifest())
             return
         source_path = Path(paths[0])
+        self._trace("photoshop_source_selected", source_path.suffix)
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue(MANIFEST_DIR_KEY, str(source_path.parent))
         settings.sync()
@@ -301,8 +315,14 @@ class DesktopBridgeController:
         self._show("Bridge", f"Could not start PT Bridge desktop.\n\n{detail}")
 
     def _desktop_finished(self, exit_code, _exit_status):
+        # Unload can deliver a final QProcess signal after the dock is disposed.
+        # close() owns that cleanup; an exiting child must not touch the old UI.
+        if self._closing:
+            return
+        self._desktop_output()
+        self._trace("desktop_finished", str(exit_code))
         process = self._take_process()
-        if self._closing or process is None:
+        if process is None:
             return
         stderr = bytes(process.readAllStandardError()).decode(
             "utf-8",
@@ -317,6 +337,7 @@ class DesktopBridgeController:
 
         transfer_path = self._transfer_path
         if transfer_path is None or not transfer_path.is_file():
+            self._trace("desktop_closed_without_request")
             process.deleteLater()
             self.panel.status.setText("Bridge mapping cancelled.")
             return
@@ -330,7 +351,9 @@ class DesktopBridgeController:
             return
         if request_type == "desktop_connect_photoshop":
             process.deleteLater()
-            self._connect_photoshop()
+            self.button.setEnabled(False)
+            # Leave the process-finished signal before opening a new modal owner.
+            self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
             return
         if request_type != "desktop_transfer":
             process.deleteLater()
@@ -383,12 +406,41 @@ class DesktopBridgeController:
         return process
 
     def _show(self, title, message):
+        self._trace(title, message)
         self._show_message_callback(
             self.QtWidgets,
             self.panel.widget,
             title,
             message,
         )
+
+    def _open_photoshop_picker(self):
+        if self._closing:
+            return
+        try:
+            self._connect_photoshop()
+        except Exception as exc:
+            self.button.setEnabled(True)
+            self.panel.status.setText("Photoshop connection could not open.")
+            self._show("Bridge", str(exc))
+
+    def _desktop_output(self):
+        if self._process is None:
+            return
+        output = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        if output.strip():
+            self._trace("desktop", output.strip())
+
+    def _trace(self, event, detail="", *, reset=False):
+        # Keep only lifecycle diagnostics, not snapshot data, so real host-only
+        # failures can be distinguished from a missed click without exporting art.
+        if self._trace_path is None:
+            return
+        try:
+            with self._trace_path.open("w" if reset else "a", encoding="utf-8") as stream:
+                stream.write(f"{datetime.now(timezone.utc).isoformat()} {event} {detail}\n")
+        except OSError:
+            pass
 
 
 def attach(panel, show_message):
