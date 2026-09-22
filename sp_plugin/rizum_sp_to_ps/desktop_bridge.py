@@ -19,6 +19,7 @@ SETTINGS_APP = "PTBridge"
 MANIFEST_DIR_KEY = "desktop_manifest_dir"
 MANIFEST_PATH_KEY = "desktop_manifest_path"
 PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
+PHOTOSHOP_START_TIMEOUT_SECONDS = 120
 
 
 class DesktopBridgeController:
@@ -36,6 +37,9 @@ class DesktopBridgeController:
         self._photoshop_export_timer = None
         self._photoshop_document_launch = None
         self._photoshop_export_started_at = 0.0
+        self._photoshop_progress_dialog = None
+        self._photoshop_script_started = False
+        self._photoshop_export_phase = None
         self._source_dialog = None
         self._trace_path = None
 
@@ -71,7 +75,10 @@ class DesktopBridgeController:
 
     def open(self):
         """Launch one mapping session with the last connected Photoshop document."""
-        if self._process is not None or self._source_dialog is not None:
+        if (
+            self._process is not None or self._source_dialog is not None
+            or self._photoshop_document_launch is not None
+        ):
             return
         if not self.panel._project_is_open():
             self._show("Bridge", "Open a Painter project before starting Bridge.")
@@ -202,8 +209,7 @@ class DesktopBridgeController:
         try:
             _validate_photoshop_manifest(manifest_path)
         except Exception as exc:
-            self.panel.status.setText("Photoshop selection could not be connected.")
-            self._show("Bridge", str(exc))
+            self._photoshop_connection_failed(str(exc))
             return
         self._remember_photoshop_manifest(manifest_path)
         self._launch_desktop(manifest_path)
@@ -221,21 +227,25 @@ class DesktopBridgeController:
                 output_dir,
             )
         except Exception as exc:
-            self.panel.status.setText("Photoshop document could not be prepared.")
-            self._show("Bridge", str(exc))
+            self._photoshop_connection_failed(str(exc))
             return
 
-        launched, message = self.panel.launch_photoshop(launch.launcher_path)
-        if not launched:
-            self.panel.status.setText("Photoshop document could not be opened.")
-            self._show("Bridge", message)
-            return
-
-        # Photoshop's JSX entry point is reliable before UXP panels are opened;
-        # the atomic result file keeps the Painter UI responsive while it runs.
         self._clear_photoshop_export()
         self._photoshop_document_launch = launch
         self._photoshop_export_started_at = time.monotonic()
+        self._show_photoshop_progress(source_path.name)
+        try:
+            launched, message = self.panel.launch_photoshop(launch.launcher_path)
+        except Exception as exc:
+            self._photoshop_connection_failed(str(exc))
+            return
+        if not launched:
+            self._photoshop_connection_failed(message)
+            return
+
+        # Process launch only acknowledges the OS handoff. Require a JSX receipt
+        # before treating Photoshop as connected, even if its window is visible.
+        self._trace("photoshop_launch_requested", str(launch.launcher_path))
         timer = self.QtCore.QTimer(self.panel.widget)
         timer.setInterval(400)
         timer.timeout.connect(self._poll_photoshop_document_export)
@@ -245,44 +255,104 @@ class DesktopBridgeController:
         self.panel.status.setText(f"Reading Photoshop layers from {source_path.name}...")
         timer.start()
 
+    def _show_photoshop_progress(self, name):
+        # The mapper exits to hand ownership to Painter's file picker. Keep that
+        # handoff visible until the manifest is ready; a hidden dock label is not
+        # sufficient feedback, and launching a second mapper would allow duplicates.
+        dialog = self.QtWidgets.QProgressDialog(self.panel.widget.window())
+        dialog.setWindowTitle("PT Bridge - Connect Photoshop")
+        dialog.setWindowModality(self.QtCore.Qt.WindowModality.NonModal)
+        dialog.setWindowFlag(self.QtCore.Qt.WindowType.WindowCloseButtonHint, False)
+        dialog.setCancelButton(None)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumDuration(0)
+        dialog.setMinimumWidth(360)
+        dialog.setRange(0, 0)
+        dialog.setLabelText(f"Opening Photoshop...\n{name}")
+        label = dialog.findChild(self.QtWidgets.QLabel)
+        label.setTextFormat(self.QtCore.Qt.TextFormat.PlainText)
+        label.setWordWrap(True)
+        self._photoshop_progress_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+
+    def _update_photoshop_progress(self, path):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(payload, dict):
+            return
+        phase = payload.get("phase")
+        if phase not in {"reading_request", "opening_document", "exporting_layers"}:
+            return
+        self._photoshop_script_started = True
+        if phase != self._photoshop_export_phase:
+            self._trace("photoshop_progress", phase)
+            self._photoshop_export_phase = phase
+        dialog = self._photoshop_progress_dialog
+        if dialog is None:
+            return
+        total = payload.get("total", 0)
+        completed = payload.get("completed", 0)
+        if not isinstance(total, int) or not isinstance(completed, int):
+            return
+        if phase == "exporting_layers" and total > 0:
+            dialog.setRange(0, total)
+            dialog.setValue(max(0, min(completed, total)))
+            message = f"Reading Photoshop layers: {completed} / {total}"
+        else:
+            message = "Opening Photoshop document..."
+        dialog.setLabelText(message)
+        self.panel.status.setText(message)
+
+    def _photoshop_connection_failed(self, message):
+        self._trace("photoshop_connection_failed", message)
+        self._clear_photoshop_export()
+        if self._closing:
+            return
+        self._launch_desktop(self._recent_photoshop_manifest())
+        self.panel.status.setText("Photoshop connection failed.")
+        self._show("Bridge", message)
+
     def _poll_photoshop_document_export(self):
         launch = self._photoshop_document_launch
         if launch is None:
             return
         elapsed = time.monotonic() - self._photoshop_export_started_at
-        if elapsed > PHOTOSHOP_EXPORT_TIMEOUT_SECONDS:
-            self._clear_photoshop_export()
-            self.panel.status.setText("Photoshop document export timed out.")
-            self._show(
-                "Bridge",
-                "Photoshop did not finish reading the document within 30 minutes.",
-            )
-            return
         if not launch.result_path.is_file():
+            self._update_photoshop_progress(launch.progress_path)
+            if not self._photoshop_script_started and elapsed > PHOTOSHOP_START_TIMEOUT_SECONDS:
+                self._photoshop_connection_failed(
+                    "Photoshop did not start the connection script within 2 minutes. "
+                    "Check Photoshop for a startup or script confirmation dialog."
+                )
+            elif elapsed > PHOTOSHOP_EXPORT_TIMEOUT_SECONDS:
+                self._photoshop_connection_failed(
+                    "Photoshop did not finish reading the document within 30 minutes."
+                )
             return
         try:
-            payload = json.loads(launch.result_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return
-        except OSError as exc:
-            self._clear_photoshop_export()
-            self.panel.status.setText("Photoshop result could not be read.")
-            self._show("Bridge", str(exc))
+            payload = json.loads(launch.result_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            # JSX publishes with rename; a malformed published receipt is a
+            # terminal failure, not a partially written file to wait on forever.
+            self._photoshop_connection_failed(f"Photoshop result could not be read: {exc}")
             return
 
-        self._clear_photoshop_export()
         if not isinstance(payload, dict) or payload.get("success") is not True:
-            self.panel.status.setText("Photoshop could not read the selected document.")
-            self._show("Bridge", _photoshop_export_error_summary(payload))
+            self._photoshop_connection_failed(_photoshop_export_error_summary(payload))
             return
         manifest_path = Path(payload.get("manifest") or launch.manifest_path)
         try:
             _validate_photoshop_manifest(manifest_path)
         except Exception as exc:
-            self.panel.status.setText("Photoshop selection could not be connected.")
-            self._show("Bridge", str(exc))
+            self._photoshop_connection_failed(str(exc))
             return
 
+        self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
+        self._clear_photoshop_export()
         self._remember_photoshop_manifest(manifest_path)
         exported_count = int(payload.get("exported_count") or 0)
         self.panel.status.setText(f"Loaded {exported_count} Photoshop layer(s).")
@@ -293,6 +363,13 @@ class DesktopBridgeController:
         self._photoshop_export_timer = None
         self._photoshop_document_launch = None
         self._photoshop_export_started_at = 0.0
+        self._photoshop_script_started = False
+        self._photoshop_export_phase = None
+        dialog = self._photoshop_progress_dialog
+        self._photoshop_progress_dialog = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
         if timer is not None:
             timer.stop()
             timer.deleteLater()
