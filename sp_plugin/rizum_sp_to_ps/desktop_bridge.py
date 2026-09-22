@@ -35,6 +35,7 @@ class DesktopBridgeController:
         self._photoshop_export_timer = None
         self._photoshop_document_launch = None
         self._photoshop_export_started_at = 0.0
+        self._source_dialog = None
 
         self.button = panel.dock_bridge_button
         self.button.setEnabled(True)
@@ -44,6 +45,8 @@ class DesktopBridgeController:
     def close(self):
         """Detach the controller and stop an owned desktop session on unload."""
         self._closing = True
+        if self._source_dialog is not None:
+            self._source_dialog.close()
         self._clear_photoshop_export()
         try:
             self.button.clicked.disconnect(self.open)
@@ -62,7 +65,7 @@ class DesktopBridgeController:
 
     def open(self):
         """Launch one mapping session with the last connected Photoshop document."""
-        if self._process is not None:
+        if self._process is not None or self._source_dialog is not None:
             return
         if not self.panel._project_is_open():
             self._show("Bridge", "Open a Painter project before starting Bridge.")
@@ -130,39 +133,56 @@ class DesktopBridgeController:
             return None
         return path
 
-    def _choose_photoshop_source(self):
+    def _connect_photoshop(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         start_dir = settings.value(MANIFEST_DIR_KEY, "", str) or ""
-        selected, _filter = self.QtWidgets.QFileDialog.getOpenFileName(
-            self.panel.widget,
-            "Connect Photoshop Document",
-            start_dir,
-            "Photoshop Document (*.psd *.psb);;"
-            "Photoshop Selection (photoshop_selection.json);;"
-            "JSON Files (*.json)",
+        dialog = self.QtWidgets.QFileDialog(
+            self.panel.widget.window(), "Connect Photoshop Document", start_dir,
         )
-        if not selected:
-            return None
-        path = Path(selected)
-        settings.setValue(MANIFEST_DIR_KEY, str(path.parent))
+        # Desktop has just relinquished focus. An owned, non-blocking Qt dialog
+        # can be raised explicitly and disposed on unload; a static OS dialog cannot.
+        dialog.setOption(self.QtWidgets.QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.setFileMode(self.QtWidgets.QFileDialog.FileMode.ExistingFile)
+        dialog.setNameFilters([
+            "Photoshop Document (*.psd *.psb)",
+            "Photoshop Selection (photoshop_selection.json)",
+            "JSON Files (*.json)",
+        ])
+        self._source_dialog = dialog
+        self.button.setEnabled(False)
+        dialog.finished.connect(self._photoshop_source_chosen)
+        dialog.open()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _photoshop_source_chosen(self, result):
+        dialog = self._source_dialog
+        if dialog is None:
+            return
+        self._source_dialog = None
+        paths = dialog.selectedFiles()
+        dialog.deleteLater()
+        if self._closing:
+            return
+        self.button.setEnabled(True)
+        if result != self.QtWidgets.QDialog.DialogCode.Accepted or not paths:
+            self.panel.status.setText("Photoshop connection cancelled.")
+            self._launch_desktop(self._recent_photoshop_manifest())
+            return
+        source_path = Path(paths[0])
+        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        settings.setValue(MANIFEST_DIR_KEY, str(source_path.parent))
         settings.sync()
-        return path
+        if source_path.suffix.lower() in {".psd", ".psb"}:
+            self._start_photoshop_document_export(source_path)
+        else:
+            self._connect_photoshop_manifest(source_path)
 
     def _remember_photoshop_manifest(self, path):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue(MANIFEST_PATH_KEY, str(path))
         settings.setValue(MANIFEST_DIR_KEY, str(path.parent))
         settings.sync()
-
-    def _connect_photoshop(self):
-        source_path = self._choose_photoshop_source()
-        if source_path is None:
-            self.panel.status.setText("Photoshop connection cancelled.")
-            return
-        if source_path.suffix.lower() in {".psd", ".psb"}:
-            self._start_photoshop_document_export(source_path)
-            return
-        self._connect_photoshop_manifest(source_path)
 
     def _connect_photoshop_manifest(self, manifest_path):
         try:
