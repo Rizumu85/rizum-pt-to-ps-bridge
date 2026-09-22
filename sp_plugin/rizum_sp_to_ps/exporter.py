@@ -700,7 +700,8 @@ def _iter_stack_records(modules, settings):
     layerstack = modules["layerstack"]
 
     for texture_set in _call_or_attr(textureset, "all_texture_sets", []):
-        texture_set_name = _call_or_attr(texture_set, "name")
+        # Painter keeps name callable only for deprecated getter compatibility.
+        texture_set_name = texture_set.name
         if not _matches_filter(texture_set_name, settings.get("texture_sets")):
             continue
 

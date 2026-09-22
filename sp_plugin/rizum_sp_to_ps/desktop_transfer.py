@@ -412,7 +412,7 @@ def _resolve_target(item, plan, layerstack):
 
     stack = _call_or_attr(node, "get_stack")
     material = _call_or_attr(stack, "material")
-    texture_set_name = _optional_text(_call_or_attr(material, "name"))
+    texture_set_name = _optional_text(material.name)
     stack_name = _optional_text(_call_or_attr(stack, "name"))
     if texture_set_name != plan.texture_set or stack_name != plan.stack:
         raise DesktopTransferError(

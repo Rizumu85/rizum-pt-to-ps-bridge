@@ -21,7 +21,7 @@ class _Stack:
         self._channel = channel
 
     def material(self):
-        return SimpleNamespace(name=lambda: "M_body")
+        return SimpleNamespace(name="M_body")
 
     def name(self):
         return ""

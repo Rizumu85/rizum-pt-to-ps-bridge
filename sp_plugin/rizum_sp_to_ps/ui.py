@@ -2545,7 +2545,7 @@ class SmokeTestPanel:
 
         stack = _call_or_attr(substance_painter.textureset, "get_active_stack")
         texture_set = _call_or_attr(stack, "material")
-        return (_call_or_attr(texture_set, "name"), _call_or_attr(stack, "name") or "")
+        return (texture_set.name, _call_or_attr(stack, "name") or "")
 
     def open_settings_dialog(self):
         dialog = SettingsDialog(self)

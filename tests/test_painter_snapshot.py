@@ -60,8 +60,13 @@ class _Stack:
         }
 
 
+class _CallableName(str):
+    def __call__(self):
+        raise AssertionError("TextureSet.name must be read as a property")
+
+
 class _TextureSet:
-    name = "M_body"
+    name = _CallableName("M_body")
     original_name = "M_body"
     has_uv_tiles = True
 
