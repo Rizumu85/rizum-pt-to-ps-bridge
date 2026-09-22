@@ -736,6 +736,11 @@ def _iter_stack_records(modules, settings):
 
 
 def _build_painter_snapshot(modules, settings, stack_records=None):
+    active_stack = modules["textureset"].get_active_stack()
+    active_context = {
+        "texture_set": _call_or_attr(active_stack, "material").name,
+        "stack": _call_or_attr(active_stack, "name") or "",
+    }
     contexts = []
     records = stack_records
     if records is None:
@@ -783,6 +788,7 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
     return {
         "schema_version": SCHEMA_VERSION,
         "request_type": "painter_snapshot",
+        "active_context": active_context,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": _project_info(modules["project"]),
         "contexts": contexts,

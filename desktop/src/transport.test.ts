@@ -15,6 +15,20 @@ import {
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("desktop file transport", () => {
+  it("opens Painter's active texture set instead of the PSD's original texture set", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-active-"))
+    const snapshot = JSON.parse(await readFile(path.join(fixtureDir, "painter_snapshot.json"), "utf8"))
+    snapshot.active_context = { texture_set: "M_clothes", stack: "" }
+    const snapshotPath = path.join(directory, "painter_snapshot.json")
+    await writeFile(snapshotPath, JSON.stringify(snapshot))
+    const session = await loadBridgeSession({
+      painterSnapshot: snapshotPath,
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+    })
+    const selected = session.painterContexts.find(context => context.id === session.initialPainterContextId)
+    expect(selected?.textureSet).toBe("M_clothes")
+    expect(session.state.painter).toEqual(selected?.nodes)
+  })
   it("loads every Painter snapshot context into the domain model", async () => {
     const session = await loadBridgeSession({
       photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),

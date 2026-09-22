@@ -88,7 +88,14 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
   const sourceContext = sourceManifestPath
     ? await photoshopDocumentContext(source, sourceManifestPath)
     : {}
-  const initialContext = matchingPainterContext(contexts, sourceContext) ?? contexts[0]
+  const active = objectValue(target.active_context)
+  const activeContexts = contexts.filter(context =>
+    context.textureSet === textValue(active.texture_set) && context.stack === textValue(active.stack))
+  // Painter's current working stack takes priority over the connected PSD's origin.
+  // Older snapshots have no active context and keep their document-based selection.
+  const initialContext = activeContexts.length
+    ? matchingPainterContext(activeContexts, sourceContext) ?? activeContexts[0]
+    : matchingPainterContext(contexts, sourceContext) ?? contexts[0]
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
   const sourceDocument = objectValue(source.document)

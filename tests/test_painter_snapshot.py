@@ -53,6 +53,9 @@ class _Layer:
 class _Stack:
     name = ""
 
+    def material(self):
+        return _TextureSet()
+
     def __init__(self):
         self.all_channels = {
             _Named("BaseColor"): _Channel(True),
@@ -77,6 +80,10 @@ class _TextureSet:
 
 class _TextureSets:
     all_texture_sets = [_TextureSet()]
+
+    @staticmethod
+    def get_active_stack():
+        return _Stack()
 
 
 class _LayerStack:
@@ -111,6 +118,7 @@ class PainterSnapshotTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot["request_type"], "painter_snapshot")
+        self.assertEqual(snapshot["active_context"], {"texture_set": "M_body", "stack": ""})
         self.assertEqual(snapshot["project"]["uuid"], "project-uuid")
         self.assertEqual(
             [context["channel"] for context in snapshot["contexts"]],
