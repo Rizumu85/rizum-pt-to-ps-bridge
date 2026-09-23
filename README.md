@@ -1,10 +1,14 @@
 # Rizum PT-to-PS Bridge
 
-Rizum PT-to-PS Bridge is a two-plugin workflow between Substance 3D Painter and
-Photoshop. The Painter plugin exports layer-aware PNG payloads and JSON build
-requests. The Photoshop UXP plugin reads those requests, builds editable PSDs,
-and can export user-selected Photoshop layers or layer/mask PNG pairs for
-manual import back into Painter.
+Rizum PT-to-PS Bridge moves layered work between Substance 3D Painter and
+Photoshop. It has three parts:
+
+- **Painter plugin** (`sp_plugin/`): exports layer-aware PNG payloads and
+  `build_request.json` bundles, and applies desktop transfers.
+- **Photoshop UXP plugin** (`ps_plugin/`): builds editable PSDs from those
+  bundles and exports selected Photoshop layers.
+- **Desktop mapper** (`desktop/`): a native GPUiX window that shows both layer
+  trees so you can map layers between the hosts and press Apply.
 
 This checkout can live in Painter's Python plugin directory, but Photoshop will
 not discover a UXP plugin from that location. Load each host side separately.
@@ -20,8 +24,24 @@ E:\Documents\Adobe\Adobe Substance 3D Painter\python\plugins\rizum-pt-to-ps-brid
 Substance Painter loads the root `__init__.py` / `rizum_pt_to_ps_bridge.py`
 shim, which delegates to `sp_plugin/rizum_sp_to_ps/`.
 
-After enabling the plugin in Painter, open the `Rizum PT-to-PS` dock panel and
-use `Run M1 Smoke Test` to write a `build_request.json` bundle.
+After enabling the plugin in Painter, open the `Rizum PT-to-PS` dock panel:
+
+- **Export** writes build bundles for the chosen stacks and channels.
+- **Bridge** opens the desktop mapper. Build it once first (see below).
+- **Settings** sets the Photoshop path, padding, bit depth, and auto-open.
+
+## Build the Desktop Mapper
+
+The Bridge action launches `desktop/dist/pt-bridge.exe`. Build it with
+[Bun](https://bun.sh) after cloning or after desktop changes:
+
+```text
+cd desktop
+bun install
+bun run build
+```
+
+See `desktop/README.md` for development runs and checks.
 
 ## Load in Photoshop for Local Testing
 
@@ -40,9 +60,8 @@ Use Adobe UXP Developer Tool:
 6. In Photoshop, open `Plugins` -> `Rizum PT Bridge`.
 
 The Photoshop panel can build a PSD from a Painter `build_request.json`. For
-Photoshop-to-Painter return data, select layers in Photoshop and use either
-`Export Selected (Applied Mask)` or `Export Selected + Masks`, then manually
-import the written PNG files into Painter.
+Photoshop-to-Painter transfers, open **Bridge** in Painter, choose
+**Connect Photoshop**, map layers, and press Apply.
 
 ## Windows Offline Install
 

@@ -41,6 +41,12 @@ that Photoshop can consume to build an editable PSD.
 - [x] Add a read-only Painter Mask Probe that writes `_mask_probe.json` with
       masked layer/folder structure, mask effect kinds, source summaries, and
       rebuild hints for true-mask exporter design.
+- [x] Replace the alpha-derived mask fallback with lossless per-node layer and
+      mask export through Painter 12.1's native stack-node texture export
+      (`stack_node_export.py`), which also renders per-UV-tile payloads; remove
+      the obsolete Mask Probe workflow.
+- [x] Rasterize Painter geometry masks for Photoshop, respecting UV tiles,
+      export padding, and PSD resolution (`geometry_mask.py`).
 - [x] Emit one bundle per texture set / stack / channel / UV tile containing
       `build_request.json`, layer PNGs, mask PNGs, and baked PNGs.
 - [x] Omit the user-facing `1001` suffix for non-UDIM projects while retaining
@@ -98,25 +104,20 @@ that Photoshop can consume to build an editable PSD.
       writing build bundles.
 - [x] Add a Painter Settings dialog for machine-level Photoshop path, infinite
       padding, and optional bit-depth override stored with Qt `QSettings`.
+- [x] Make Current Stack selection explicit: preselect its exportable channels,
+      show selected/total counts, disable Export at zero selections, and avoid
+      silently falling back to the first stack.
+- [x] Add a conditional export-complete handoff: launch Photoshop when
+      Auto-open is enabled; otherwise offer Open Folder and Copy List actions.
+- [x] Keep the unfinished Bridge entry disabled and remove Mask Probe from the
+      normal Export footer.
 - [x] Host-confirm single-channel and selected-stack export on the current
       Wings reference-map case.
-- [ ] Design and host-test an opt-in Python solo-export fallback for UDIM
-      per-tile per-layer PNGs using visibility isolation, `ScopedModification`,
-      `application.disable_engine_computations()`, and
-      `export_project_textures(... uvTiles ...)`.
-- [ ] Research and host-test a true Python layerstack mask export path for
-      layer/folder masks so the alpha-derived fallback can be replaced with
-      original Painter mask pixels.
-- [ ] Use Mask Probe results from representative projects to choose the next
-      true-mask strategy: structural rebuild for simple Fill masks, controlled
-      render/solo export for references/paint strokes, or explicit unsupported
-      reporting where Python cannot access the required pixel data.
 - [ ] Store project workflow metadata in build requests if UDIM export behavior
       needs to distinguish `UVTile` from `TextureSetPerUVTile`.
 - [ ] Host-test Painter export on representative projects: non-UDIM,
       multi-UDIM, grouped layers, masks, anchor references, and at least one
-      unsupported blend/effect that must bake. Multi-UDIM per-layer fidelity
-      depends on the solo-export fallback before claiming full support.
+      unsupported blend/effect that must bake.
 - [ ] Decide how to populate `normal_map_format` for already-open Painter
       projects: try direct JS settings if available, infer from
       `SourceBitmap.get_color_space()` on normal sources, then fall back to a
@@ -263,8 +264,8 @@ without turning them into noisy line-by-line logs.
 
 ## Direction 6: Desktop Transfer Queue
 
-Goal: Explore a future desktop bridge app that lets users manually map selected
-Photoshop and Painter layer exports into chosen target layer positions.
+Goal: A native desktop bridge app (`desktop/`, GPUiX) that lets users manually
+map selected Photoshop and Painter layers into chosen target layer positions.
 
 - [x] Add a local HTML UI mockup that reflects the revised dock/export/settings
       direction and the hover-only bridge row/card behavior.
@@ -272,16 +273,20 @@ Photoshop and Painter layer exports into chosen target layer positions.
       group disclosure, clean export-dialog background, rounded no-outline
       footer buttons, masked layer indicators, independent Photoshop/Painter
       host cards, and Painter insertion-line feedback.
-- [ ] Define the desktop app interchange manifest: source host, target host,
-      exported PNG/mask files, source layer metadata, target tree snapshot, and
-      requested insertion position.
-- [ ] Add a host-plugin command to export selected layers plus a lightweight
-      layer-tree snapshot for the desktop app.
-- [ ] Add a host-plugin apply command that reads a desktop transfer manifest
-      and inserts selected files at explicit target positions after user
-      confirmation.
-- [ ] Prototype the desktop UI with side-by-side Photoshop and Painter layer
-      trees, drag placement, group hover highlights, insertion-line feedback,
-      and an Apply button.
-- [ ] Keep the desktop bridge manual and inspectable; do not reintroduce
+- [x] Define the interchange contracts: `photoshop_selection.json`,
+      `painter_snapshot.json`, and `desktop_transfer.json` with explicit
+      `inside` / `after` insertion relations (see `analysis.md §10.1`).
+- [x] Export Photoshop selected layers plus a Painter layer-tree snapshot for
+      the desktop app, including connecting an external PSD through a
+      launched ExtendScript document export.
+- [x] Apply desktop transfer manifests in Painter (`desktop_transfer.py`) and
+      insert Painter-to-Photoshop transfers through a confirmed Photoshop job.
+- [x] Build the GPUiX desktop UI with side-by-side trees, drag placement,
+      insertion-line feedback, selectable/retargetable/undoable staged
+      transfers, and Apply.
+- [x] Launch the desktop runtime from the Painter dock **Bridge** action and
+      trace the handoff to `_desktop_bridge/desktop_session.log`.
+- [x] Keep the desktop bridge manual and inspectable; do not reintroduce
       background sync, watchers, or automatic Painter resource import.
+- [ ] Host-test the full round trip on a representative project: Painter to
+      Photoshop, Photoshop to Painter, retargeting, undo, and failure recovery.

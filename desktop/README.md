@@ -31,6 +31,15 @@ snapshot and `--output <path>` to choose the transfer-manifest destination.
 The equivalent environment variables are `PT_BRIDGE_PHOTOSHOP_MANIFEST`,
 `PT_BRIDGE_PAINTER_SNAPSHOT`, and `PT_BRIDGE_TRANSFER_OUTPUT`.
 
+Under Painter, the mapper talks to its parent over stdio. **Connect Photoshop**
+writes one `@ptbridge {"type":"connect_photoshop"}` line to stdout, and Painter
+replies on stdin with one JSON line: `photoshop_connected` (with `manifest`),
+`photoshop_connect_cancelled`, or `photoshop_connect_failed` (with `message`).
+GPUiX serves its automation protocol on the same pipes, so replies must stay
+single-line JSON. `bun tools/check-windows-input.ts` checks that both protocols
+work together with a real Win32 click (`BRIDGE_TEST_COMPILED=1` runs the built
+exe).
+
 Use `bun run typecheck` for the TypeScript boundary and `bun run test` for the
 renderer-independent transfer model. `bun run screenshot` performs a native
 GPU paint check without taking keyboard focus.
