@@ -121,5 +121,21 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertIn("removeFileIfPresent(File($.fileName))", cleanup)
 
 
+    def test_saved_psd_gets_the_context_sidecar_the_mapper_reads(self):
+        save_loop = self.source[
+            self.source.index("progress.beginSavePhase") :
+            self.source.index("result.timings.save_ms")
+        ]
+        writer = self.source[
+            self.source.index("function writeSidecar") :
+            self.source.index("function resolvePsdBitDepth")
+        ]
+
+        self.assertLess(save_loop.index("savePsd("), save_loop.index("writeSidecar("))
+        self.assertIn('".rizum.json"', writer)
+        for key in ("texture_set", "stack", "channel"):
+            self.assertIn(f'\\"{key}\\": " + jsonQuote(request.{key}', writer)
+
+
 if __name__ == "__main__":
     unittest.main()

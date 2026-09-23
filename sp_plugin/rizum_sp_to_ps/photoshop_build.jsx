@@ -61,6 +61,7 @@
                     pending.request.psd_file,
                     pending.request.color_management
                 );
+                writeSidecar(pending.request);
                 result.built.push(pending.request.psd_file);
                 progress.finishSave(
                     saveIndex,
@@ -666,6 +667,27 @@
         options.layers = true;
         options.embedColorProfile = policy.embed_profile === true;
         document.saveAs(File(path), options, false, Extension.LOWERCASE);
+    }
+
+    function writeSidecar(request) {
+        // The desktop mapper reads this to open a connected PSD on the Painter
+        // texture set, stack and channel it was built from.
+        var file = File(String(request.psd_file).replace(/\.[^.\\/]*$/, "") + ".rizum.json");
+        if (!file.open("w")) {
+            throw new Error("Could not write " + file.fsName);
+        }
+        file.encoding = "UTF8";
+        file.write(
+            "{\n" +
+            "  \"schema_version\": 1,\n" +
+            "  \"psd_file\": " + jsonQuote(request.psd_file) + ",\n" +
+            "  \"texture_set\": " + jsonQuote(request.texture_set || "") + ",\n" +
+            "  \"stack\": " + jsonQuote(request.stack || "") + ",\n" +
+            "  \"channel\": " + jsonQuote(request.channel || "") + ",\n" +
+            "  \"channel_label\": " + jsonQuote(request.channel_label || request.channel || "") + "\n" +
+            "}\n"
+        );
+        file.close();
     }
 
     function resolvePsdBitDepth(request) {
