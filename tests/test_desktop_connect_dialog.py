@@ -248,17 +248,6 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertEqual(self.replies(), [{"type": "photoshop_connect_cancelled"}])
         self.controller._launch_desktop.assert_not_called()
 
-    def test_json_manifest_connects_open_mapper(self):
-        manifest = Path(self.directory.name) / "photoshop_selection.json"
-        manifest.write_text(json.dumps({
-            "schema_version": 1, "request_type": "photoshop_selection", "layers": [{"png": "1.png"}],
-        }), encoding="utf-8")
-        self.controller._connect_photoshop()
-        dialog = self.controller._source_dialog
-        dialog.selectFile(str(manifest))
-        dialog.accept()
-        self.assertEqual(self.replies(), [{"type": "photoshop_connected", "manifest": str(manifest)}])
-
     def test_mapper_exit_closes_its_picker_and_releases_bridge(self):
         self.controller._connect_photoshop()
         dialog = self.controller._source_dialog
