@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, SmokeTestPanel
+from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, BridgePanel
 
 
 class _Panel:
@@ -98,7 +98,7 @@ class FeedbackDialogTests(unittest.TestCase):
             self.assertIsInstance(button, ui.SecondaryActionButton)
 
     def test_export_progress_uses_the_compact_dialog_contract(self):
-        panel = SmokeTestPanel.__new__(SmokeTestPanel)
+        panel = BridgePanel.__new__(BridgePanel)
         panel.QtCore = QtCore
         panel.QtWidgets = QtWidgets
         panel.widget = self.panel.widget

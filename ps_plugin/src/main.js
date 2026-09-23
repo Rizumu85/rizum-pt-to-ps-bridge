@@ -555,7 +555,6 @@ function formatRequestSummary(result) {
     `UV Map asset: ${summary.uvMapPath ? "yes" : "no"}`,
     `Empty layer PNGs removed: ${summary.emptyLayerAssetsRemoved || 0}`,
     `Unplaced request nodes: ${formatUnplacedCounts(summary)}`,
-    `PNG files exported: ${result.request.assets_exported === false ? "no (JSON-only bundle)" : "yes/unknown"}`,
     "",
     `Output PSD: ${summary.psdFile}`,
     ""
@@ -567,7 +566,6 @@ function formatRequestSummary(result) {
       `Document: ${result.build.documentName}`,
       `Size: ${result.build.width}x${result.build.height}`,
       `Resolution: ${result.build.resolution} ppi`,
-      `PNG files exported: ${result.build.assetsExported ? "yes/unknown" : "no (JSON-only bundle)"}`,
       `Groups created: ${result.build.placedGroups ? result.build.placedGroups.length : 0} of ${result.build.groupCount || 0}`,
       `PNG layers placed: ${result.build.placedLayerCount || 0} of ${result.build.topLevelAssetCount || 0}`,
       `Layer masks applied: ${result.build.appliedMaskCount || 0} of ${result.build.topLevelMaskAssetCount || 0}`,

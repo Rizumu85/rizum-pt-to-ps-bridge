@@ -132,7 +132,6 @@ class DesktopBridgeController:
         process.started.connect(lambda: self._trace("desktop_started"))
         self._process = process
         self._sync_button()
-        self.panel.status.setText("Mapping Painter and Photoshop layers...")
         process.start()
 
     def _busy_reason(self):
@@ -211,7 +210,6 @@ class DesktopBridgeController:
             return
         if result != self.QtWidgets.QDialog.DialogCode.Accepted or not paths:
             self._trace("photoshop_picker_cancelled")
-            self.panel.status.setText("Photoshop connection cancelled.")
             self._reply_to_desktop({"type": "photoshop_connect_cancelled"})
             return
         source_path = Path(paths[0])
@@ -294,7 +292,6 @@ class DesktopBridgeController:
         timer.timeout.connect(self._poll_photoshop_job)
         self._photoshop_export_timer = timer
         self._sync_button()
-        self.panel.status.setText(f"Waiting for Photoshop: {label}")
         timer.start()
 
     def _show_photoshop_progress(self, name):
@@ -349,7 +346,6 @@ class DesktopBridgeController:
         else:
             message = "Opening Photoshop document..."
         dialog.setLabelText(message)
-        self.panel.status.setText(message)
 
     def _photoshop_job_failed(self, message):
         self._trace("photoshop_job_failed", message)
@@ -360,12 +356,10 @@ class DesktopBridgeController:
         if transfer is not None:
             # A cross-host operation is not atomic. Never retry Painter edits
             # because Photoshop failed, or claim both hosts rolled back together.
-            self.panel.status.setText("Photoshop transfer was not confirmed.")
             if transfer.imported_count:
                 message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
             self._show("Bridge transfer incomplete", message)
             return
-        self.panel.status.setText("Photoshop connection failed.")
         if self._process is not None:
             self._reply_to_desktop({"type": "photoshop_connect_failed", "message": message})
         else:
@@ -412,7 +406,6 @@ class DesktopBridgeController:
         self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
         self._clear_photoshop_export()
         exported_count = int(payload.get("exported_count") or 0)
-        self.panel.status.setText(f"Loaded {exported_count} Photoshop layer(s).")
         self._photoshop_connected(manifest_path)
 
     def _finish_photoshop_transfer(self, payload):
@@ -442,7 +435,6 @@ class DesktopBridgeController:
         if exported_count:
             parts.append(f"inserted {exported_count} Painter layer(s) into Photoshop")
         message = "; ".join(parts) + "."
-        self.panel.status.setText(message)
         if warnings:
             message += "\n\n" + "\n".join(warnings)
         self._show("Bridge complete", message)
@@ -476,7 +468,6 @@ class DesktopBridgeController:
         detail = process.errorString() if process is not None else "Unknown process error"
         if process is not None:
             process.deleteLater()
-        self.panel.status.setText("PT Bridge desktop could not start.")
         self._show("Bridge", f"Could not start PT Bridge desktop.\n\n{detail}")
 
     def _desktop_finished(self, exit_code, _exit_status):
@@ -496,7 +487,6 @@ class DesktopBridgeController:
         if int(exit_code) != 0:
             detail = stderr or f"Desktop process exited with code {exit_code}."
             process.deleteLater()
-            self.panel.status.setText("PT Bridge desktop failed.")
             self._show("Bridge", detail)
             return
 
@@ -504,25 +494,21 @@ class DesktopBridgeController:
         if transfer_path is None or not transfer_path.is_file():
             self._trace("desktop_closed_without_request")
             process.deleteLater()
-            self.panel.status.setText("Bridge mapping cancelled.")
             return
 
         try:
             request_type = _desktop_request_type(transfer_path)
         except Exception as exc:
             process.deleteLater()
-            self.panel.status.setText("Bridge response could not be read.")
             self._show("Bridge", str(exc))
             return
         if request_type != "desktop_transfer":
             process.deleteLater()
-            self.panel.status.setText("Bridge response is unsupported.")
             self._show("Bridge", f"Unsupported desktop request: {request_type or '(missing)'}")
             return
 
         self._applying_transfer = True
         self._sync_button()
-        self.panel.status.setText("Applying mapped layers...")
         try:
             result = desktop_transfer.apply_transfer_manifest(
                 transfer_path,
@@ -530,7 +516,6 @@ class DesktopBridgeController:
             )
         except Exception as exc:
             process.deleteLater()
-            self.panel.status.setText("Bridge transfer failed.")
             self._show("Bridge", str(exc))
             return
         finally:
@@ -571,7 +556,6 @@ class DesktopBridgeController:
         except Exception as exc:
             self._source_dialog = None
             self._sync_button()
-            self.panel.status.setText("Photoshop connection could not open.")
             self._reply_to_desktop({"type": "photoshop_connect_failed", "message": str(exc)})
 
     def _desktop_output(self):

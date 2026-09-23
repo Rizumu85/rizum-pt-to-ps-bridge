@@ -217,17 +217,17 @@ def _apply_bridge_dock_surface(widget):
 
     compact_stylesheet = build_compact_dock_stylesheet().replace(
         "QWidget#RizumCompactDockSurface",
-        "QWidget#RizumPtToPsSmokeTestPanel",
+        "QWidget#RizumPtToPsBridgePanel",
     )
     widget.setStyleSheet(
         widget.styleSheet()
         + compact_stylesheet
         + f"""
-QWidget#RizumPtToPsSmokeTestPanel {{
+QWidget#RizumPtToPsBridgePanel {{
     background: {BRIDGE_DOCK_BG};
     border: 0;
 }}
-QWidget#RizumPtToPsSmokeTestPanel QLabel#RizumDimLabel {{
+QWidget#RizumPtToPsBridgePanel QLabel#RizumDimLabel {{
     background: transparent;
     border: 0;
     color: #9e9e9e;
@@ -1693,9 +1693,6 @@ class ExportDialog:
         )
         surface_layout.addWidget(self.tree_container, 1)
 
-        self.export_pngs = self.QtWidgets.QCheckBox("Export PNGs")
-        self.export_pngs.setChecked(True)
-        self.export_pngs.setVisible(False)
 
         self.footer_separator = make_inset_separator(
             PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
@@ -2635,7 +2632,6 @@ QLabel#RizumSvgLabel:hover {{
         result = self.panel._run_export_selections(
             "export dialog selection",
             selections,
-            export_pngs=self.export_pngs.isChecked(),
         )
         if not result["ok"]:
             _show_modal_message(
@@ -2754,7 +2750,7 @@ QLineEdit#RizumExportHandoffPath:focus {{
         dialog._rizum_done_button = done_button
         return dialog
 
-class SmokeTestPanel:
+class BridgePanel:
     """Painter dock panel for the PT Bridge workflow."""
 
     def __init__(self):
@@ -2763,15 +2759,12 @@ class SmokeTestPanel:
         self.QtCore = QtCore
         self.QtGui = QtGui
         self.QtWidgets = QtWidgets
-        self._running = False
         self._closing = False
-        self.targets = []
-        self.last_paths = []
         self.last_export_list_path = None
         self.last_output_dir = None
         self.user_settings = self._load_user_settings()
         self.widget = QtWidgets.QWidget()
-        self.widget.setObjectName("RizumPtToPsSmokeTestPanel")
+        self.widget.setObjectName("RizumPtToPsBridgePanel")
         self.widget.setWindowTitle("PT Bridge")
         self.widget.setMinimumSize(BRIDGE_DOCK_MIN_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
         self.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
@@ -2782,50 +2775,6 @@ class SmokeTestPanel:
         outer_layout = QtWidgets.QVBoxLayout(self.widget)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
-
-        self.export_pngs = QtWidgets.QCheckBox("Export PNGs")
-        self.export_pngs.setChecked(True)
-
-        self.refresh_targets_button = QtWidgets.QPushButton("Refresh Targets")
-        self.refresh_targets_button.clicked.connect(self.refresh_targets)
-
-        self.target_combo = QtWidgets.QComboBox()
-        self.target_combo.setEnabled(False)
-        self.target_combo.currentIndexChanged.connect(self.refresh_channel_combo)
-
-        self.channel_combo = QtWidgets.QComboBox()
-        self.channel_combo.setEnabled(False)
-
-        self.run_selected_button = QtWidgets.QPushButton("Export Selected Target")
-        self.run_selected_button.clicked.connect(self.export_selected_target)
-
-        self.run_stack_button = QtWidgets.QPushButton("Export Selected Stack")
-        self.run_stack_button.clicked.connect(self.export_selected_stack)
-
-        self.run_channel_button = QtWidgets.QPushButton("Export Selected Channel")
-        self.run_channel_button.clicked.connect(self.export_selected_channel)
-
-        self.run_all_button = QtWidgets.QPushButton("Export All Targets")
-        self.run_all_button.clicked.connect(self.export_all_targets)
-
-        self.copy_request_button = QtWidgets.QPushButton("Copy Last Request Path")
-        self.copy_request_button.setEnabled(False)
-        self.copy_request_button.clicked.connect(self.copy_last_request_path)
-
-        self.copy_export_list_button = QtWidgets.QPushButton("Copy Last Export List Path")
-        self.copy_export_list_button.setEnabled(False)
-        self.copy_export_list_button.clicked.connect(self.copy_last_export_list_path)
-
-        self.open_output_button = QtWidgets.QPushButton("Open Output Folder")
-        self.open_output_button.setEnabled(False)
-        self.open_output_button.clicked.connect(self.open_output_folder)
-
-        self.status = QtWidgets.QLabel("Ready")
-        self.status.setWordWrap(True)
-
-        self.output = QtWidgets.QPlainTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setMinimumHeight(120)
 
         dock_actions = _make_bridge_dock_toolbar(QtCore, QtWidgets)
         self._dock_toolbar = dock_actions
@@ -2912,14 +2861,6 @@ class SmokeTestPanel:
         dialog = SettingsDialog(self)
         dialog.open()
 
-    def open_bridge_dialog(self):
-        _show_modal_message(
-            self.QtWidgets,
-            self.widget,
-            "Bridge",
-            "Bridge mapping will be implemented later.",
-        )
-
     def _load_user_settings(self):
         store = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         bit_depth = _optional_int(store.value("bit_depth", None))
@@ -2951,188 +2892,7 @@ class SmokeTestPanel:
         dialog = ExportDialog(self)
         dialog.open()
 
-    def refresh_targets(self):
-        if not self._project_is_open():
-            _show_modal_message(
-                self.QtWidgets,
-                self.widget,
-                "Export",
-                "Open a Painter project to refresh export targets.",
-            )
-            return
-
-        self.status.setText("Refreshing export targets...")
-        self.QtWidgets.QApplication.processEvents()
-
-        try:
-            self.targets = list_export_targets()
-        except Exception as exc:  # noqa: BLE001 - show host errors to the user.
-            self.targets = []
-            self.target_combo.clear()
-            self.channel_combo.clear()
-            self.target_combo.setEnabled(False)
-            self.channel_combo.setEnabled(False)
-            self.status.setText("Target refresh failed.")
-            self.output.setPlainText(f"{type(exc).__name__}: {exc}")
-            return
-
-        self.target_combo.clear()
-        for target in self.targets:
-            stack_label = target["stack"] or "(default)"
-            tile_label = f"{target['uv_tile_count']} tile(s)"
-            self.target_combo.addItem(
-                f"{target['texture_set']} / {stack_label} / {tile_label}",
-                target,
-            )
-
-        enabled = bool(self.targets)
-        self.target_combo.setEnabled(enabled)
-        self.channel_combo.setEnabled(enabled)
-        self.refresh_channel_combo()
-        self.status.setText(f"Found {len(self.targets)} export target(s).")
-        self.output.setPlainText(self._format_targets(self.targets))
-
-    def refresh_channel_combo(self):
-        self.channel_combo.clear()
-        target = self._selected_target()
-        if not target:
-            return
-
-        channels = target.get("channels", [])
-        channel_labels = target.get("channel_labels", {})
-        preferred = "BaseColor" if "BaseColor" in channels else None
-        for channel in channels:
-            label = channel_labels.get(channel) or channel
-            display = label if label == channel else f"{label} ({channel})"
-            self.channel_combo.addItem(display, channel)
-        if preferred:
-            index = self.channel_combo.findData(preferred)
-            if index >= 0:
-                self.channel_combo.setCurrentIndex(index)
-
-    def export_selected_target(self):
-        target = self._selected_target()
-        channel = self._selected_channel()
-        if not target or not channel:
-            self.status.setText("Click Refresh Targets, then choose a target/channel.")
-            return
-
-        settings = {
-            **self._base_export_settings(),
-            "texture_sets": [target["texture_set"]],
-            "stacks": [target["stack"]],
-            "channels": [channel],
-        }
-        self._run_export("selected target", settings)
-
-    def export_selected_stack(self):
-        target = self._selected_target()
-        if not target:
-            self.status.setText("Click Refresh Targets, then choose a target.")
-            return
-
-        channels = list(target.get("channels") or [])
-        if not channels:
-            self.status.setText("The selected stack has no exportable channels.")
-            return
-
-        stack_label = target["stack"] or "(default)"
-        settings = {
-            **self._base_export_settings(),
-            "texture_sets": [target["texture_set"]],
-            "stacks": [target["stack"]],
-            "channels": channels,
-        }
-        self._run_export(
-            f"{target['texture_set']} / {stack_label} stack",
-            settings,
-        )
-
-    def export_selected_channel(self):
-        channel = self._selected_channel()
-        if not channel:
-            self.status.setText("Click Refresh Targets, then choose a channel.")
-            return
-
-        settings = {
-            **self._base_export_settings(),
-            "channels": [channel],
-        }
-        self._run_export(f"{channel} channel", settings)
-
-    def export_all_targets(self):
-        self._run_export("all targets", self._base_export_settings())
-
-    def _run_export(self, label, settings):
-        if not self._project_is_open():
-            _show_modal_message(
-                self.QtWidgets,
-                self.widget,
-                "Export",
-                "Open a Painter project before exporting.",
-            )
-            return
-        if not self._project_is_ready():
-            _show_modal_message(
-                self.QtWidgets,
-                self.widget,
-                "Export",
-                "Painter project is still loading or not editable.",
-            )
-            return
-
-        export_pngs = self.export_pngs.isChecked()
-        self._running = True
-        self._set_action_buttons_enabled(False)
-        self.status.setText(f"Exporting {label}...")
-        self.QtWidgets.QApplication.processEvents()
-        progress = self._create_export_progress(label)
-
-        try:
-            output_dir = default_output_dir(settings)
-            paths = write_build_bundles(
-                output_dir,
-                settings=settings,
-                export_pngs=export_pngs,
-                progress_callback=lambda event: self._update_export_progress(
-                    progress,
-                    event,
-                ),
-            )
-        except ExportCancelled:
-            self.status.setText("Export cancelled.")
-            self.output.setPlainText("Export was cancelled before completion.")
-        except Exception as exc:  # noqa: BLE001 - show host errors to the user.
-            self.status.setText("Export failed.")
-            self.output.setPlainText(f"{type(exc).__name__}: {exc}")
-        else:
-            self.last_paths = paths
-            self.last_output_dir = Path(output_dir)
-            self.last_export_list_path = self._write_last_export_list(
-                label,
-                paths,
-                self.last_output_dir,
-                settings,
-                export_pngs,
-            )
-            self.copy_request_button.setEnabled(bool(paths))
-            self.copy_export_list_button.setEnabled(self.last_export_list_path is not None)
-            self.open_output_button.setEnabled(True)
-            mode = "JSON + PNG" if export_pngs else "JSON-only"
-            self.status.setText(f"Export completed ({mode}).")
-            lines = [
-                f"Wrote {len(paths)} build request(s):",
-                f"Output folder: {self.last_output_dir}",
-                f"Last export list: {self.last_export_list_path}",
-            ]
-            lines.extend(str(path) for path in paths)
-            self.output.setPlainText("\n".join(lines))
-        finally:
-            progress.close()
-            self._running = False
-            self._set_action_buttons_enabled(True)
-
-    def _run_export_selections(self, label, selections, export_pngs):
+    def _run_export_selections(self, label, selections):
         if not self._project_is_open():
             return {"ok": False, "message": "Open a Painter project before exporting."}
         if not self._project_is_ready():
@@ -3150,17 +2910,13 @@ class SmokeTestPanel:
         stacks = []
         channels = []
 
-        self._running = True
         self._set_action_buttons_enabled(False)
-        self.status.setText(f"Exporting {label}...")
-        self.QtWidgets.QApplication.processEvents()
         progress = self._create_export_progress(label)
 
         try:
             for target, selected_channels in selections:
                 texture_set = target["texture_set"]
                 stack = target["stack"]
-                stack_label = stack or "(default)"
                 settings = {
                     **base_settings,
                     "texture_sets": [texture_set],
@@ -3170,12 +2926,10 @@ class SmokeTestPanel:
                 texture_sets.append(texture_set)
                 stacks.append(stack)
                 channels.extend(selected_channels)
-                self.status.setText(f"Exporting {texture_set} / {stack_label}...")
                 all_paths.extend(
                     write_build_bundles(
                         output_dir,
                         settings=settings,
-                        export_pngs=export_pngs,
                         progress_callback=lambda event: self._update_export_progress(
                             progress,
                             event,
@@ -3191,7 +2945,6 @@ class SmokeTestPanel:
             return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
         finally:
             progress.close()
-            self._running = False
             self._set_action_buttons_enabled(True)
 
         combined_settings = {
@@ -3200,21 +2953,13 @@ class SmokeTestPanel:
             "stacks": _unique_preserving_order(stacks),
             "channels": sorted(set(channels)),
         }
-        self.last_paths = all_paths
         self.last_output_dir = Path(output_dir)
         self.last_export_list_path = self._write_last_export_list(
             label,
             all_paths,
             self.last_output_dir,
             combined_settings,
-            export_pngs,
         )
-        self.copy_request_button.setEnabled(bool(all_paths))
-        self.copy_export_list_button.setEnabled(self.last_export_list_path is not None)
-        self.open_output_button.setEnabled(True)
-
-        mode = "JSON + PNG" if export_pngs else "JSON-only"
-        self.status.setText(f"Export completed ({mode}).")
         return {
             "ok": True,
             "message": f"Exported {len(all_paths)} build request(s).",
@@ -3224,33 +2969,14 @@ class SmokeTestPanel:
             "paths": list(all_paths),
         }
 
-    def copy_last_request_path(self):
-        if not self.last_paths:
-            self.status.setText("No exported build request path to copy yet.")
-            return
-
-        self.QtWidgets.QApplication.clipboard().setText(str(self.last_paths[-1]))
-        self.status.setText("Copied last build_request.json path.")
-
     def copy_last_export_list_path(self):
-        if self.last_export_list_path is None:
-            self.status.setText("No last export list path to copy yet.")
-            return
-
-        self.QtWidgets.QApplication.clipboard().setText(str(self.last_export_list_path))
-        self.status.setText("Copied last export list path.")
+        if self.last_export_list_path is not None:
+            self.QtWidgets.QApplication.clipboard().setText(str(self.last_export_list_path))
 
     def open_output_folder(self):
-        if self.last_output_dir is None:
-            self.status.setText("No output folder to open yet.")
-            return
-
-        path = str(self.last_output_dir)
-        url = self.QtCore.QUrl.fromLocalFile(path)
-        if self.QtGui.QDesktopServices.openUrl(url):
-            self.status.setText("Opened output folder.")
-        else:
-            self.status.setText(f"Could not open output folder: {path}")
+        if self.last_output_dir is not None:
+            url = self.QtCore.QUrl.fromLocalFile(str(self.last_output_dir))
+            self.QtGui.QDesktopServices.openUrl(url)
 
     def launch_photoshop(self, launcher_path):
         executable = Path(self.user_settings.get("photoshop_path") or "")
@@ -3268,21 +2994,7 @@ class SmokeTestPanel:
             started = started[0]
         if not started:
             return False, f"Could not launch Photoshop: {executable}"
-
-        self.status.setText("Export complete. Opening Photoshop...")
         return True, ""
-
-    def _selected_target(self):
-        index = self.target_combo.currentIndex()
-        if index < 0:
-            return None
-        return self.target_combo.itemData(index)
-
-    def _selected_channel(self):
-        index = self.channel_combo.currentIndex()
-        if index < 0:
-            return None
-        return self.channel_combo.itemData(index) or self.channel_combo.currentText()
 
     def _base_export_settings(self):
         settings = {
@@ -3297,14 +3009,13 @@ class SmokeTestPanel:
             settings["bit_depth"] = int(bit_depth)
         return settings
 
-    def _write_last_export_list(self, label, paths, output_dir, settings, export_pngs):
+    def _write_last_export_list(self, label, paths, output_dir, settings):
         list_path = output_dir / LAST_EXPORT_FILENAME
         payload = {
             "schema_version": 1,
             "request_type": "build_list",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "label": label,
-            "export_pngs": bool(export_pngs),
             "output_dir": str(output_dir),
             "settings": {
                 "texture_sets": settings.get("texture_sets"),
@@ -3328,19 +3039,6 @@ class SmokeTestPanel:
     def _set_action_buttons_enabled(self, enabled):
         self.dock_export_button.setEnabled(enabled)
         self.dock_settings_button.setEnabled(enabled)
-        self.refresh_targets_button.setEnabled(enabled)
-        self.run_selected_button.setEnabled(enabled)
-        self.run_stack_button.setEnabled(enabled)
-        self.run_channel_button.setEnabled(enabled)
-        self.run_all_button.setEnabled(enabled)
-        if enabled:
-            self.copy_request_button.setEnabled(bool(self.last_paths))
-            self.copy_export_list_button.setEnabled(self.last_export_list_path is not None)
-            self.open_output_button.setEnabled(self.last_output_dir is not None)
-        else:
-            self.copy_request_button.setEnabled(False)
-            self.copy_export_list_button.setEnabled(False)
-            self.open_output_button.setEnabled(False)
 
     def _create_export_progress(self, label):
         progress = _ExportProgressDialog(self, label)
@@ -3366,30 +3064,9 @@ class SmokeTestPanel:
         else:
             progress.setRange(0, 0)
         progress.setLabelText(text)
-        self.status.setText(text)
         progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()
-
-    def _format_targets(self, targets):
-        lines = ["Available export targets.", ""]
-        if not targets:
-            lines.append("No texture set targets were found.")
-            return "\n".join(lines)
-
-        for index, target in enumerate(targets, start=1):
-            stack = target["stack"] or "(default)"
-            channel_labels = target.get("channel_labels", {})
-            channels = ", ".join(
-                channel_labels.get(channel) or channel for channel in target["channels"]
-            ) or "(none)"
-            lines.append(
-                f"[{index}] {target['texture_set']} / {stack} / "
-                f"{target['uv_tile_count']} tile(s)"
-            )
-            lines.append(f"    Channels: {channels}")
-        return "\n".join(lines)
-
 
 def _is_relative_to(path, parent):
     try:
@@ -3438,7 +3115,7 @@ def register():
     import substance_painter as sp
 
     global _ACTIVE_DOCK, _ACTIVE_PANEL
-    panel = SmokeTestPanel()
+    panel = BridgePanel()
     _ACTIVE_PANEL = panel
     dock = sp.ui.add_dock_widget(panel.widget)
     _ACTIVE_DOCK = dock

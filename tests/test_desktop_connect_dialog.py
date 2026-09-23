@@ -27,7 +27,6 @@ class DesktopConnectDialogTests(unittest.TestCase):
             QtCore=SimpleNamespace(QSettings=lambda *_: self.settings, QTimer=QtCore.QTimer, Qt=QtCore.Qt, QProcess=QtCore.QProcess),
             QtWidgets=QtWidgets, widget=self.widget,
             dock_bridge_button=QtWidgets.QPushButton(self.widget),
-            status=QtWidgets.QLabel(self.widget),
             user_settings={}, launch_photoshop=Mock(return_value=(True, "")),
         )
         self.controller = DesktopBridgeController(self.panel, Mock())

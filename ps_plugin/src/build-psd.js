@@ -371,7 +371,6 @@ async function createPsdSkeletonFromRequest(request, options = {}) {
   const build = {
     documentName,
     channel: request.channel,
-    assetsExported: request.assets_exported !== false,
     width: size.width,
     height: size.height,
     resolution: getDocumentPpi(request),

@@ -175,7 +175,6 @@ def write_request_previews(output_dir, settings=None):
 def write_build_bundles(
     output_dir,
     settings=None,
-    export_pngs=True,
     progress_callback=None,
 ):
     """Write one build bundle per generated request and return JSON paths."""
@@ -231,23 +230,21 @@ def write_build_bundles(
             asset_path.mkdir(parents=True, exist_ok=True)
 
             build_request = build_request_from_preview(request, bundle_path, settings)
-            build_request["assets_exported"] = bool(export_pngs)
-            if export_pngs:
-                request_progress = _scope_request_progress(
-                    progress_callback,
-                    index,
-                    total,
-                )
-                export_request_assets(
-                    build_request,
-                    progress_callback=request_progress,
-                    progress_prefix=f"{index} of {total}",
-                    geometry_baker=geometry_baker,
-                    node_exporter=node_exporter,
-                )
-                if _count_layer_assets(build_request["layers"]) == 0:
-                    shutil.rmtree(bundle_path, ignore_errors=True)
-                    continue
+            request_progress = _scope_request_progress(
+                progress_callback,
+                index,
+                total,
+            )
+            export_request_assets(
+                build_request,
+                progress_callback=request_progress,
+                progress_prefix=f"{index} of {total}",
+                geometry_baker=geometry_baker,
+                node_exporter=node_exporter,
+            )
+            if _count_layer_assets(build_request["layers"]) == 0:
+                shutil.rmtree(bundle_path, ignore_errors=True)
+                continue
 
             request_path = bundle_path / BUILD_REQUEST_FILENAME
             build_request["build_request_file"] = str(request_path)

@@ -71,7 +71,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
             readAllStandardOutput=lambda: b"",
             deleteLater=Mock(),
         )
-        self.controller.panel.status = SimpleNamespace(setText=Mock())
         self.controller._process = process
         self.controller.button.setEnabled(False)
 
@@ -80,9 +79,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         self.assertIsNone(self.controller._process)
         self.assertTrue(self.controller.button.enabled)
         process.deleteLater.assert_called_once()
-        self.controller.panel.status.setText.assert_called_once_with(
-            "Bridge mapping cancelled."
-        )
 
     def test_remembers_exact_manifest_until_it_becomes_stale(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,7 +127,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         self.controller.button.setEnabled.assert_not_called()
 
     def test_picker_exception_is_reported_to_the_open_mapper(self):
-        self.controller.panel.status = SimpleNamespace(setText=Mock())
         self.controller._connect_photoshop = Mock(side_effect=RuntimeError("Picker unavailable"))
         process = SimpleNamespace(write=Mock())
         self.controller._process = process

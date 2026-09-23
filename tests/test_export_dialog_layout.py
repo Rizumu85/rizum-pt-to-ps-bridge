@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
 from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, SmokeTestPanel
+from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, BridgePanel
 
 
 class _Panel:
@@ -222,7 +222,7 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.assertFalse(self.export.run_button.isEnabled())
 
     def test_export_button_opens_the_new_dialog_without_a_project(self):
-        panel = SmokeTestPanel.__new__(SmokeTestPanel)
+        panel = BridgePanel.__new__(BridgePanel)
         panel.widget = QtWidgets.QWidget()
         panel.QtWidgets = QtWidgets
         panel._project_is_open = lambda: False

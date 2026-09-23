@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
 from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import SettingsDialog, SmokeTestPanel
+from sp_plugin.rizum_sp_to_ps.ui import SettingsDialog, BridgePanel
 
 
 class _Panel:
@@ -89,7 +89,7 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         )
 
     def test_panel_persistence_has_no_secondary_confirmation_dialog(self):
-        panel = SmokeTestPanel.__new__(SmokeTestPanel)
+        panel = BridgePanel.__new__(BridgePanel)
         panel.QtCore = QtCore
         panel.QtWidgets = QtWidgets
         panel.widget = QtWidgets.QWidget()
