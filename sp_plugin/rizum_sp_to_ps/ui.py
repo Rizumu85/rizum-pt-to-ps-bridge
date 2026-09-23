@@ -884,18 +884,12 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         QtWidgets.QSizePolicy.Policy.Fixed,
     )
 
-    bridge_button = make_icon_button(
-        "action-bridge.svg",
-        "Layer mapping is not available yet. Export, then build in Photoshop.",
-    )
+    # desktop_bridge.DesktopBridgeController owns this button's state.
+    bridge_button = make_icon_button("action-bridge.svg", "Bridge")
     bridge_button.setObjectName("RizumBridgeDockBridge")
-    bridge_button.setEnabled(False)
     bridge_button.setAttribute(
         QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips,
         True,
-    )
-    bridge_button.setToolTip(
-        "Layer mapping is not available yet. Export, then build in Photoshop."
     )
 
     settings_button = make_icon_button("settings.svg", "Settings")
@@ -3333,7 +3327,6 @@ class SmokeTestPanel:
 
     def _set_action_buttons_enabled(self, enabled):
         self.dock_export_button.setEnabled(enabled)
-        self.dock_bridge_button.setEnabled(False)
         self.dock_settings_button.setEnabled(enabled)
         self.refresh_targets_button.setEnabled(enabled)
         self.run_selected_button.setEnabled(enabled)
