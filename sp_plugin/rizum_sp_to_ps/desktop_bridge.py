@@ -405,7 +405,6 @@ class DesktopBridgeController:
 
         self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
         self._clear_photoshop_export()
-        exported_count = int(payload.get("exported_count") or 0)
         self._photoshop_connected(manifest_path)
 
     def _finish_photoshop_transfer(self, payload):

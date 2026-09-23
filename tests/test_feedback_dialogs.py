@@ -8,8 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, BridgePanel
+from sp_plugin.rizum_sp_to_ps import ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog
+from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
 
 class _Panel:
@@ -49,14 +50,14 @@ class FeedbackDialogTests(unittest.TestCase):
         self.app.processEvents()
 
     def test_message_dialog_uses_the_shared_native_chrome_shell(self):
-        dialog = ui._build_modal_message(
+        dialog = ui_dialogs.build_modal_message(
             QtWidgets,
             self.panel.widget,
             "Export failed",
             "Painter could not export this project.",
         )
 
-        self.assertIsInstance(dialog, ui.PainterSettingsDialog)
+        self.assertIsInstance(dialog, ui_kit.PainterSettingsDialog)
         self.assertEqual(dialog.windowTitle(), "Export failed")
         self.assertEqual(
             dialog.findChildren(QtWidgets.QLabel, "RizumDialogTitle"),
@@ -64,7 +65,7 @@ class FeedbackDialogTests(unittest.TestCase):
         )
         self.assertIsInstance(
             dialog._rizum_ok_button,
-            ui.SecondaryActionButton,
+            ui_kit.SecondaryActionButton,
         )
         self.assertEqual(
             dialog._rizum_message_label.text(),
@@ -80,7 +81,7 @@ class FeedbackDialogTests(unittest.TestCase):
             }
         )
 
-        self.assertIsInstance(dialog, ui.PainterSettingsDialog)
+        self.assertIsInstance(dialog, ui_kit.PainterSettingsDialog)
         self.assertEqual(dialog.windowTitle(), "Export complete")
         self.assertEqual(
             dialog.findChildren(QtWidgets.QLabel, "RizumDialogTitle"),
@@ -95,7 +96,7 @@ class FeedbackDialogTests(unittest.TestCase):
             dialog._rizum_copy_button,
             dialog._rizum_done_button,
         ):
-            self.assertIsInstance(button, ui.SecondaryActionButton)
+            self.assertIsInstance(button, ui_kit.SecondaryActionButton)
 
     def test_export_progress_uses_the_compact_dialog_contract(self):
         panel = BridgePanel.__new__(BridgePanel)
@@ -109,7 +110,7 @@ class FeedbackDialogTests(unittest.TestCase):
         progress.setLabelText("Exporting Base Color...")
         self.app.processEvents()
 
-        self.assertIsInstance(progress.dialog, ui.PainterSettingsDialog)
+        self.assertIsInstance(progress.dialog, ui_kit.PainterSettingsDialog)
         self.assertNotIsInstance(progress.dialog, QtWidgets.QProgressDialog)
         self.assertEqual(progress.percent_label.text(), "25%")
         self.assertEqual(progress.status_label.text(), "Exporting Base Color...")

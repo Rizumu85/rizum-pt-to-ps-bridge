@@ -1,6 +1,6 @@
 """Substance 3D Painter entry point for Rizum PT-to-PS Bridge."""
 
-from . import desktop_bridge, ui
+from . import desktop_bridge, ui, ui_dialogs
 
 _registered_ui = None
 _registered_bridge = None
@@ -14,7 +14,7 @@ def start_plugin():
         try:
             _registered_bridge = desktop_bridge.attach(
                 ui._ACTIVE_PANEL,
-                ui._show_modal_message,
+                ui_dialogs.show_modal_message,
             )
         except Exception:
             ui.unregister(_registered_ui)

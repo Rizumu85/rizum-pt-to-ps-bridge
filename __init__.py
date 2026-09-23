@@ -29,8 +29,12 @@ def reload_plugin():
     from sp_plugin.rizum_sp_to_ps import (
         desktop_bridge,
         desktop_transfer,
+        export_ui,
         exporter,
         photoshop_automation,
+        settings_ui,
+        ui_dialogs,
+        ui_kit,
     )
 
     global _close_plugin, _start_plugin
@@ -38,7 +42,9 @@ def reload_plugin():
     importlib.reload(photoshop_automation)
     importlib.reload(desktop_transfer)
     importlib.reload(desktop_bridge)
-    importlib.reload(bridge_package.ui)
+    # Dependency order: each UI module binds names from the ones above it.
+    for module in (ui_kit, ui_dialogs, settings_ui, export_ui, bridge_package.ui):
+        importlib.reload(module)
     bridge_package = importlib.reload(bridge_package)
     _close_plugin = bridge_package.close_plugin
     _start_plugin = bridge_package.start_plugin

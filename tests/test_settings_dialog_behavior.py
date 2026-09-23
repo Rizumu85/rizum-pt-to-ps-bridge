@@ -8,8 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import SettingsDialog, BridgePanel
+from sp_plugin.rizum_sp_to_ps import ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps.settings_ui import SettingsDialog
+from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
 
 class _Panel:
@@ -76,7 +77,7 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         self.settings.dialog.show()
         self.app.processEvents()
 
-        with mock.patch.object(ui, "_show_modal_message") as modal:
+        with mock.patch.object(ui_kit.PainterSettingsDialog, "exec") as modal:
             QtTest.QTest.mouseClick(
                 self.settings.done_button,
                 QtCore.Qt.MouseButton.LeftButton,
@@ -99,7 +100,7 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
 
         with (
             mock.patch.object(QtCore, "QSettings", return_value=store),
-            mock.patch.object(ui, "_show_modal_message") as modal,
+            mock.patch.object(ui_kit.PainterSettingsDialog, "exec") as modal,
         ):
             panel.save_user_settings(
                 {

@@ -8,8 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import ui
-from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, BridgePanel
+from sp_plugin.rizum_sp_to_ps import ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog
+from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
 
 class _Panel:
@@ -210,7 +211,7 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.export.panel._project_is_open = lambda: False
         self.export.panel._project_is_ready = lambda: False
 
-        with mock.patch.object(ui, "_show_modal_message") as modal:
+        with mock.patch.object(ui_kit.PainterSettingsDialog, "exec") as modal:
             self.export.refresh_targets()
 
         modal.assert_not_called()
@@ -230,7 +231,7 @@ class ExportDialogLayoutTests(unittest.TestCase):
 
         with (
             mock.patch.object(ui, "ExportDialog") as dialog_type,
-            mock.patch.object(ui, "_show_modal_message") as modal,
+            mock.patch.object(ui_kit.PainterSettingsDialog, "exec") as modal,
         ):
             panel.open_export_dialog()
 
