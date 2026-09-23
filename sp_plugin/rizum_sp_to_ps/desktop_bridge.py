@@ -16,7 +16,7 @@ from . import desktop_transfer, exporter, photoshop_automation
 
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
-MANIFEST_DIR_KEY = "desktop_manifest_dir"
+PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
 MANIFEST_PATH_KEY = "desktop_manifest_path"
 PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
 PHOTOSHOP_START_TIMEOUT_SECONDS = 120
@@ -173,7 +173,7 @@ class DesktopBridgeController:
     def _connect_photoshop(self):
         self._trace("opening_photoshop_picker")
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
-        start_dir = settings.value(MANIFEST_DIR_KEY, "", str) or ""
+        start_dir = settings.value(PHOTOSHOP_DIR_KEY, "", str) or ""
         dialog = self.QtWidgets.QFileDialog(
             self.panel.widget.window(), "Connect Photoshop Document", start_dir,
         )
@@ -181,11 +181,7 @@ class DesktopBridgeController:
         # can be raised explicitly and disposed on unload; a static OS dialog cannot.
         dialog.setOption(self.QtWidgets.QFileDialog.Option.DontUseNativeDialog, True)
         dialog.setFileMode(self.QtWidgets.QFileDialog.FileMode.ExistingFile)
-        dialog.setNameFilters([
-            "Photoshop Document (*.psd *.psb)",
-            "Photoshop Selection (photoshop_selection.json)",
-            "JSON Files (*.json)",
-        ])
+        dialog.setNameFilters(["Photoshop Document (*.psd *.psb)"])
         self._source_dialog = dialog
         self._sync_button()
         dialog.finished.connect(self._photoshop_source_chosen)
@@ -215,26 +211,16 @@ class DesktopBridgeController:
         source_path = Path(paths[0])
         self._trace("photoshop_source_selected", source_path.suffix)
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
-        settings.setValue(MANIFEST_DIR_KEY, str(source_path.parent))
+        settings.setValue(PHOTOSHOP_DIR_KEY, str(source_path.parent))
         settings.sync()
-        if source_path.suffix.lower() in {".psd", ".psb"}:
-            self._start_photoshop_document_export(source_path)
-        else:
-            self._connect_photoshop_manifest(source_path)
+        self._start_photoshop_document_export(source_path)
 
     def _remember_photoshop_manifest(self, path):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        # The picker's start folder stays where the user's PSD lives; the
+        # manifest itself sits in an internal session folder.
         settings.setValue(MANIFEST_PATH_KEY, str(path))
-        settings.setValue(MANIFEST_DIR_KEY, str(path.parent))
         settings.sync()
-
-    def _connect_photoshop_manifest(self, manifest_path):
-        try:
-            _validate_photoshop_manifest(manifest_path)
-        except Exception as exc:
-            self._photoshop_job_failed(str(exc))
-            return
-        self._photoshop_connected(manifest_path)
 
     def _photoshop_connected(self, manifest_path):
         self._remember_photoshop_manifest(manifest_path)
