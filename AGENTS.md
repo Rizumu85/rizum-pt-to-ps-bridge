@@ -234,5 +234,5 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 # Current Project Notes
 
 - Work on `main`. Do not create or switch branches unless the user asks for it.
-- The project is a Substance Painter to Photoshop bridge with a Painter Python plugin, a Photoshop UXP plugin, a native GPUiX desktop mapper (`desktop/`), and file-based PNG/JSON transport.
+- The project is a Substance Painter to Photoshop bridge with a Painter Python plugin, Painter-launched ExtendScript for every Photoshop step (no Photoshop plugin), a native GPUiX desktop mapper (`desktop/`), and file-based PNG/JSON transport.
 - Photoshop-to-Painter return data goes through the desktop mapper: the user maps layers explicitly and presses Apply. There is no background sync.

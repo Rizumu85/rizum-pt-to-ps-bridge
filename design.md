@@ -18,7 +18,7 @@ design tradeoffs. Low-level API findings belong in `analysis.md`; implementation
 directions and concrete steps belong in `plan.md`.
 
 API-doc status: revised against the local SP Python docs, legacy SP JS docs,
-and Photoshop UXP docs listed in `analysis.md §0`. The remaining uncertainties
+and Photoshop docs listed in `analysis.md §0`. The remaining uncertainties
 are host-recorded `batchPlay` descriptors and live host validation, not missing
 documentation in the repo.
 
@@ -107,48 +107,21 @@ machine. Most UI text should use 13px/600, Painter dock action labels should
 use 10px/500, secondary metadata should use 11px/400, and the mockup may expose
 a small live font-size control while the final type scale is being tuned.
 
-Painter build bundles should no longer default to the repository-local smoke
-test directory during normal use. The panel resolves Painter's project export
-path through the JS `alg.mapexport.exportPath()` fallback and writes bundles to
-`<exportPath>/<project>_photoshop_export/`. After export, the panel should let
-the user copy the last `build_request.json` path, copy the last export-list
-path, and open the output folder. The export-complete handoff is conditional:
-when Auto-open Photoshop is off, show the output folder plus **Open Folder** and
-**Copy List** actions; when Auto-open is on, launch the configured Photoshop
-executable and do not show those manual handoff actions. An invalid executable
-path reports a focused error instead of pretending the handoff succeeded.
-
-The Photoshop panel should support both the file picker and a direct
-`build_request.json` path. The direct-path flow pairs with Painter's **Copy
-Last Request Path** button: the user can click **Paste Request Path** in
-Photoshop when UXP clipboard reading is available, or paste into the path field
-manually, then click **Build Request Path**.
-
-For larger Painter exports, the Photoshop panel should also provide **Build
-Request Folder**. The user chooses a folder such as `<project>_photoshop_export`;
-the panel recursively finds `build_request.json` files, builds them one by one,
-and closes each PSD only after it has saved successfully. Failures are reported
-per request and do not stop the remaining builds.
-
-For scoped Painter exports, the safer Photoshop batch path is **Build Export
-List**. Painter writes `_last_export.json` into the export root after each run;
-Photoshop reads that list and builds only the exact requests from the most
-recent export, avoiding stale bundle folders left from earlier broader exports.
-
-Workflow A can also offer a one-action **Export and Build in Photoshop** path
-after the user sets the Photoshop executable path in Painter. This should follow
-the old plugin's user-facing pattern but use the current UXP builder: Painter
-writes the build bundles and `_last_export.json`, writes a tiny generated
-`.psjs` launcher that builds that export list, then launches Photoshop with the
-launcher path if host validation confirms Photoshop accepts that command-line
-flow. If `.psjs` command-line launch is not reliable, keep **Build Export List**
-as the supported fallback rather than reintroducing a second JSX builder.
+Painter writes build bundles to `<exportPath>/<project>_photoshop_export/`,
+resolving Painter's project export path through the JS
+`alg.mapexport.exportPath()` fallback, plus `_last_export.json` listing the
+exact requests of that run. The plugin is an automation bridge, so every
+successful export continues straight into Photoshop: Painter writes a JSX
+launcher for the export list and starts the configured Photoshop executable
+with it. There is no auto-open setting and no manual handoff dialog. An invalid
+executable path reports a focused error instead of pretending the build
+started.
 
 Painter build requests should include channel semantics in addition to the raw
 channel enum: a display label, a role (`color`, `data`, `opacity`, `normal`, or
 `user`), format, bit depth, and color/data flag. Photoshop should show those
-fields in build summaries and sidecars before any channel-specific pixel
-behavior is introduced.
+fields in its sidecar before any channel-specific pixel behavior is
+introduced.
 
 The Painter target picker should show user channel labels when Painter exposes
 them, while keeping the raw enum channel as the internal export key. Layer PNGs
@@ -173,22 +146,11 @@ external maps, `active_channels` from Python traversal is also treated as a
 positive target-discovery signal. JS used-channel data can hide clearly unused
 channels, but it should not suppress a channel that a layer explicitly marks
 active.
-The selected-stack export button should reuse the same refreshed channel list
-shown in the UI, rather than doing an unfiltered second scan. This keeps
-"Export Selected Target" and "Export Selected Stack" consistent when host
-channel discovery is imperfect.
-Host testing confirmed this target-discovery design for both single-channel
-and selected-stack export on the current Wings reference-map case.
 For per-layer user-channel PNG export, the request-level engine identifier is
 the primary export string, and documented fallbacks such as `user1`, `user 1`,
 and the custom channel label are tried only if the primary string produces an
 empty result or fails. This keeps old-plugin-compatible strings first without
 making the exporter depend on one user-channel spelling.
-
-Photoshop should leave PSDs open when building from `_last_export.json`, so the
-user can inspect the small scoped batch immediately after creation. Large
-recursive folder builds may still close after save to avoid opening too many
-documents.
 
 The desktop mapper (`desktop/`) is the transfer queue between the hosts. It
 shows Photoshop and Painter layer trees side by side and lets the user drag
@@ -209,11 +171,6 @@ but the Python object still owns timers, slots, and child-widget references; if
 that object is garbage-collected, the dock can remain while its contents or
 handlers disappear.
 
-Photoshop local development is separate from Painter loading. Photoshop will
-not scan this Painter plugin directory for UXP panels. For local testing, load
-`ps_plugin/manifest.json` through Adobe UXP Developer Tool, then open the panel
-from Photoshop's Plugins menu as `Rizum PT Bridge`.
-
 ---
 
 ## 1. Architecture split
@@ -221,8 +178,9 @@ from Photoshop's Plugins menu as `Rizum PT Bridge`.
 | Side | Language | Framework |
 |---|---|---|
 | Substance Painter plugin | **Python** (SP Python API) | PySide6 for UI |
-| Photoshop plugin | **UXP plugin** (`.ccx`/unpacked folder) | UXP JS + Spectrum Web Components |
-| Transport | **File-based** (SP-to-PS uses PNG + JSON build request; PS-to-Painter manual return uses selected PNG exports) | — |
+| Photoshop automation | **ExtendScript** launched by Painter (`photoshop_*.jsx`) | Photoshop DOM + Action Manager |
+| Desktop mapper | **TypeScript** on Bun (`desktop/`) | React 19 + GPUiX |
+| Transport | **File-based** PNG + JSON contracts, plus the mapper's stdio link to Painter | — |
 
 **Rule**: Python first on SP side. Fall back to the legacy SP JS API (`alg.*`)
 only if a specific capability is genuinely absent from Python. JS fallback will
@@ -241,20 +199,14 @@ Export actions should only start when Painter reports the project is in edition
 state, not merely open. If the project is still loading or non-editable, the
 panel should report that state and wait for a later user retry.
 
-UDIM per-layer PNG export has a known API gap: the fast JS
-`alg.mapexport.save` path has no per-tile filter. Non-UDIM projects should keep
-that fast non-mutating path. If true per-tile per-layer UDIM output is needed,
-use a future opt-in Python solo-export fallback that temporarily isolates one
-node's visibility and calls Painter's normal texture export with a `uvTiles`
-filter. That fallback must wrap visibility changes and export work with both
-`ScopedModification` and `application.disable_engine_computations()` so Painter
-does not recompute thumbnails or viewport textures after each temporary
-visibility change.
+Per-layer and per-mask PNGs, including per-UV-tile payloads, come from
+Painter 12.1's native stack-node texture export. It does not mutate the layer
+stack, so no visibility isolation or temporary modification is needed.
 
 Project-level bridge choices should be stored in Painter `project.Metadata`
 when they belong to the current `.spp`, for example normal-map-format override,
-last export preset, and last scoped target. Machine-level choices, such as a
-Photoshop executable path for a future one-click build action, remain global.
+last export preset, and last scoped target. Machine-level choices, such as the
+Photoshop executable path, remain global.
 
 `TextureStateEvent.cache_key` is a future integrity signal, not an active sync
 requirement. If the bridge later needs to warn that a Painter stack changed
@@ -268,51 +220,22 @@ available, then a user choice persisted in `project.Metadata`.
 
 ---
 
-## 2. Photoshop plugin distribution
+## 2. Photoshop automation
 
-Must install on **any Photoshop ≥ 23.3 regardless of Creative Cloud status,
-Adobe ID, or license legitimacy.**
+No Photoshop plugin is installed. Painter drives every Photoshop step by
+starting the configured Photoshop executable with a generated JSX launcher:
+building PSDs after export (`photoshop_build.jsx`), connecting an existing PSD
+to the desktop mapper (`photoshop_document.jsx`), and inserting mapped Painter
+layers (`photoshop_transfer.jsx`). This keeps the plugin zero-install and fully
+automatic; a UXP panel was removed because UXP panels cannot receive a reliable
+external launch event and duplicated the ExtendScript builder.
 
-Method: unpacked UXP plugin folder written directly into
-`%APPDATA%\Adobe\UXP\Plugins\External\` (Windows) or
-`~/Library/Application Support/Adobe/UXP/Plugins/External/` (macOS). The
-current Windows offline path also upserts
-`%APPDATA%\Adobe\UXP\PluginsInfo\v1\PS.json`, based on the user's existing
-installed external plugins.
+Each launched job publishes progress and a result receipt atomically, and
+Painter treats the job as started only after the script's first receipt.
 
-API-doc caveat: the local UXP docs emphasize loading development plugins via
-the UXP Developer Tool and packaging/distribution workflows. They do not
-document the offline `Plugins/External` + `PluginsInfo\v1\PS.json`
-registration path. Keep this installer approach as a Phase 1 requirement, but
-validate it on target Photoshop versions before treating it as guaranteed.
-
-Current local test path: use UXP Developer Tool's "Add Plugin" flow and select
-`ps_plugin/manifest.json`. This is the documented development workflow and is
-independent from the Painter plugin's root loader.
-
-Offline local test path on this Windows machine: copy `ps_plugin/` into
-`%APPDATA%\Adobe\UXP\Plugins\External\com.rizum.pt-to-ps-bridge` and upsert an
-enabled UXP entry into `%APPDATA%\Adobe\UXP\PluginsInfo\v1\PS.json`. This was
-derived from existing installed plugins on the user's machine and must still be
-validated by restarting Photoshop and checking the Plugins menu.
-
-Ship a `.zip` release containing:
-
-```
-rizum-pt-to-ps-bridge-vX.Y.Z.zip
-├── __init__.py                        # local root Painter loader shim
-├── rizum_pt_to_ps_bridge.py           # importable Painter loader shim
-├── plugin.json                        # Painter plugin metadata at root
-├── sp_plugin/rizum_sp_to_ps/          # Painter implementation package
-├── ps_plugin/                         # unpacked UXP plugin
-├── install-ps-plugin-windows.bat
-├── install-ps-plugin-mac.sh
-├── uninstall-ps-plugin-windows.bat
-├── uninstall-ps-plugin-mac.sh
-└── README.md
-```
-
-Optional later: add `.ccx` packaging for CC-enabled users (not Phase 1).
+The release is the repository folder itself: the root Painter loader shims,
+`sp_plugin/`, the vendored `rizum_ui/` and `icons/`, and the built desktop
+mapper in `desktop/dist/`.
 
 ---
 
@@ -404,7 +327,7 @@ compositing exactly. All PS-representable linear-friendly blend modes
 produce SP-identical output with **zero per-layer pre-compensation**. See
 `analysis.md §6.3` for details.
 
-**Fallback** if UXP cannot toggle this setting (to be verified at M3):
+**Fallback** if Photoshop scripting cannot toggle this setting:
 empirical per-mode pre-compensation LUT. Some blend modes in the
 Overlay/SoftLight/HardLight family will have residual drift.
 
@@ -455,7 +378,7 @@ textures. Impossible to rewrite from a plugin.
 | Layer mask (SP) | PS layer mask on the generated PS layer/group |
 
 Painter layer opacity is stored in the request as the normalized host value
-(`1.0` is fully opaque, `0.55` is 55%). Photoshop UXP layer opacity is a
+(`1.0` is fully opaque, `0.55` is 55%). Photoshop layer opacity is a
 percentage, so the Photoshop builder normalizes `0..1` values to `0..100`
 right before assigning layer opacity. Values greater than `1` are preserved as
 already-percent values for compatibility.
@@ -477,22 +400,12 @@ per-channel blend mode are applied after child placement. This keeps nested
 Painter folder hierarchy visible in Photoshop when descendants have exported
 PNG payloads.
 
-Photoshop can keep a newly-created group as the active insertion context, so
-top-level raster layers are placed before groups. Completed groups are then
-moved back to their Painter top-level position. This prevents unrelated
-top-level layers from being inserted inside the most recently created group.
-PNG children of groups are first duplicated into the target Photoshop document
-and then moved into their parent group from inside the same document, because
-this UXP runtime rejects direct cross-document duplication into a group. Nested
-groups use the same pattern: create the group, move it into its parent group,
-then place its children.
-
-The PSD builder removes Photoshop's default empty `Layer 1` immediately after
-creating the Photoshop document and before placing requested layers/groups. It
-also performs a final top-level cleanup after placement, deleting a residual
-default `Layer 1` only when the Painter request did not contain a real
-top-level item with that name. Placement diagnostics include source PNG paths
-so suspicious thumbnails can be traced back to Painter-exported payload files.
+The Photoshop build places each PNG with Place Embedded and moves the placed
+layer directly into its parent group, which avoids temporary anchor layers whose
+stale DOM handles trigger unavailable Select commands. Placed PNGs stay smart
+objects during assembly and are rasterized in one pass at the end. The new
+document's initial layer is renamed to a unique placeholder and removed once
+real content exists, so a Painter layer named `Layer 1` is never deleted.
 
 The current mask slice attaches `mask_asset` PNGs to placed raster layers
 through Photoshop's Imaging API: open mask PNG, read it as grayscale image
@@ -544,23 +457,17 @@ effects is intentionally abandoned for Phase 1; dedicated wrapper groups,
 nested content-effect chains, and any future supported per-effect export remain
 later fidelity work.
 
-The Photoshop panel groups non-placed request nodes by severity. Expected baked
-mask/effect metadata is reported separately from unsupported editable content
-effects, and both are kept separate from true unplaced assets that need
-attention.
-
 ### 5.3 Sub-effects inside a mask
 
-**Approximate in Phase 1** through the parent layer alpha-derived mask PNG. PS
-has no native concept of stacked mask effects. Loss of editable stack and
-lossless original mask pixels is declared in the export metadata/report.
+Baked through the native stack-node mask export: Photoshop receives the
+lossless rendered mask pixels, but not the editable mask-effect stack, which PS
+has no concept of.
 
 ### 5.4 Anchor point references
 
 Each anchor reference is **baked in place** as a regular Normal-mode raster
 layer. No special locking, no hidden metadata beyond the standard
-`rizum_sp_uid`. In the active Phase 1 return workflow it is simply another
-Photoshop layer the user may choose to export manually.
+`rizum_sp_uid`. For return transfers it is simply another Photoshop layer.
 
 ---
 
@@ -574,38 +481,13 @@ background; host testing showed thumbnail stalls, unusable viewport slowdown,
 and crashes, so return transfers must stay explicit (see
 `docs/archive/deprecated-sync-inbox-design.md`).
 
-### 6.1 Photoshop export controls
+### 6.1 Connecting a Photoshop document
 
-The Photoshop panel exposes two explicit export actions:
-
-- **Export Selected (Applied Mask)**: writes one PNG per selected Photoshop
-  layer. The current layer pixels are exported with the layer mask applied.
-- **Export Selected + Masks**: writes a layer PNG and, when the layer has a
-  user mask, a separate grayscale mask PNG. The layer PNG is intended to be the
-  unmasked layer content; the mask PNG is intended for manual mask handling in
-  Painter.
-
-The user chooses the output folder through UXP local file storage. Filenames are
-simple, human-readable, and prefixed with the selection order, for example
-`01_Layer_Name.png`, `01_Layer_Name_layer.png`, and
-`01_Layer_Name_mask.png`.
-
-### 6.2 API contract
-
-The manual export path uses documented Photoshop/UXP APIs already present in
-the local docs:
-
-- `Document.activeLayers` to read the selected Photoshop layers.
-- `core.executeAsModal` for document-mutating or document-reading operations
-  that the Photoshop host requires to run in modal scope.
-- `imaging.getPixels` to read rendered layer pixels.
-- `imaging.getLayerMask` to read user-mask pixels when present.
-- `Layer.layerMaskDensity` as the best available way to temporarily disable a
-  mask while exporting separate layer content, then restore it.
-- `storage.localFileSystem.getFolder()` and `Folder.createFile()` for the
-  user-selected destination.
-- A temporary transparent document plus `Document.saveAs.png()` to write PNG
-  files from Photoshop image data.
+**Connect Photoshop** in the desktop mapper asks Painter to pick a PSD/PSB.
+Painter runs `photoshop_document.jsx`, which duplicates the document once and
+renders each layer and group in isolation to a full-canvas PNG, so Photoshop's
+own renderer bakes masks, effects, and clipping. The script writes a
+`photoshop_selection.json` manifest that the open mapper loads in place.
 
 ### 6.3 Non-goals for return data
 
@@ -620,72 +502,28 @@ The return path deliberately does not:
 
 ## 7. Metadata schema
 
-UXP has no reliable per-layer XMP metadata API (see `analysis.md §3.10`), so
-Phase 1 keeps durable metadata in the sidecar JSON instead of visible Photoshop
-layer names.
-
 ### 7.1 Photoshop layer names
 
-Plugin-created Photoshop layers and groups should use clean user-facing names,
-without visible ` [rz:<uid>]` suffixes. The earlier automatic sync-back
-prototype used layer-name suffixes for matching, but the active Phase 1 return
-workflow is manual PNG export and no longer needs that visible key.
-
-The sidecar remains the provenance record for `sp_uid`, source asset path,
-mask path, blend mode, clipping state, and other build metadata.
+Plugin-created Photoshop layers and groups use clean user-facing names, without
+visible ` [rz:<uid>]` suffixes. Provenance lives in the build request and the
+PSD sidecar instead.
 
 ### 7.2 Sidecar JSON
 
-Next to the PSD, one file per PSD: `<psdname>.rizum.json`.
+The Photoshop build writes `<psdname>.rizum.json` next to each saved PSD. It
+carries only what the desktop mapper reads to open a connected PSD on its
+source Painter context:
 
 ```json
 {
-  "rizum_version": "2.0.0",
-  "sp_project_path": "C:/.../project.spp",
-  "sp_project_uuid": "<str(sp.project.get_uuid())>",
-  "baseline_timestamp": "ISO-8601",
+  "schema_version": 1,
+  "psd_file": "C:/.../Body_basecolor.psd",
   "texture_set": "Body",
   "stack": "",
   "channel": "BaseColor",
-  "udim": 1001,
-  "normal_map_format": "OpenGL",
-  "baseline_cache_key": 123456789,
-  "layers": [
-    {
-      "sp_uid": "a3f7",
-      "sp_kind": "layer",
-      "sync_direction": "both",
-      "ps_name": "DiffuseBase ‡a3f7",
-      "baseline_hash": "sha1:..."
-    },
-    {
-      "sp_uid": "b912",
-      "sp_kind": "baked_effect",
-      "sync_direction": "sp_to_ps_only",
-      "ps_name": "[baked] Tint_Layer ‡b912",
-      "baseline_hash": "sha1:..."
-    }
-  ]
+  "channel_label": "Base Color"
 }
 ```
-
-`sp_kind` values: `layer`, `fill_effect`, `paint_effect`, `baked_effect`,
-`flattened_mask`. ("anchor_ref" merged into `baked_effect` per `design.md §5.4`.)
-
-`baked_effect` entries get `sync_direction: "sp_to_ps_only"` — UXP panel
-renders them as "cannot sync" entries.
-
-`baseline_hash` is the SHA1 of the PNG exported from SP when the PSD was
-originally built. It was used by the deprecated automatic push preview to detect
-changed Photoshop pixels. The active manual return export does not require it.
-
-The sidecar also has `unplaced_nodes` for request nodes that were not created
-as Photoshop layers. The current use is mask-stack/content-effect metadata that
-has already been baked into a parent raster or mask PNG.
-
-`texture_set`, `stack`, `channel`, `udim`, and `normal_map_format` remain in
-the PSD sidecar for provenance and future automation. There is no active push
-manifest in the Phase 1 manual return workflow.
 
 ### 7.3 Build request preview
 
@@ -722,142 +560,8 @@ validation during implementation:
   grayscale layer into a target layer mask. The old ExtendScript descriptor
   sequence in `ps-export_Rizum v1.1.8/ps-export-Rizum/footer.jsx` is the
   starting point.
-- Verify `fullAccess` file handling in the user's Photoshop UXP runtime,
-  especially `localFileSystem.getEntryWithUrl("file:...")` for sidecar paths.
-  The local docs do not document Node-style `require('fs')` as a Photoshop
-  plugin API, so the primary path is UXP File/Folder entries.
 - Decide how the exporter records `normal_map_format`: no direct getter for
   an already-open Painter project's normal orientation was found in the local
   API docs. Prefer storing it when known or asking once in the export UI.
-- Validate the direct unpacked-plugin installer path (`Plugins/External` plus
-  `PluginsInfo\v1\PS.json` on Windows) because the included UXP docs cover UXP
-  Developer Tool and packaging workflows, not that offline registration
-  mechanism.
 - Warn and defer full fidelity support for OCIO/ACE Painter projects. Phase 1
   assumes legacy color management with a linear sRGB working space.
-
-## 9. M2 UXP request intake slice
-
-M2 starts with a deliberately small Photoshop-side validation slice before PSD
-construction. The UXP panel's **Build from Painter** button opens a
-`build_request.json` file picker, reads the selected file through UXP local file
-storage, validates the M1 build request shape, and displays a summary:
-
-- texture set, stack, channel, UDIM
-- output PSD path
-- top-level layer count
-- referenced PNG asset count
-
-This validates Photoshop plugin loading, `fullAccess` file picker behavior, and
-JSON contract compatibility before adding document mutation, PNG placement,
-layer grouping, masks, and sidecar writing.
-
-The panel shell must render its minimal controls from static HTML first, then
-bind behavior from JS. This prevents a blank panel when the offline host fails
-early during `entrypoints.setup` or local module loading; failures should show
-inside the panel status/details area instead. `entrypoints.setup` itself must
-still be called immediately at plugin startup because the local UXP docs flag
-delayed setup as unreliable.
-
-For the user's offline Photoshop validation path, the panel can use a Manifest
-v4 compatibility build with `main: "src/main.js"` and `host.minVersion:
-"22.0.0"`. The JS entrypoint renders the entire minimal UI into the panel root
-node. This keeps the test panel compatible with Photoshop 2021-style UXP while
-the v5 lifecycle behavior remains unverified on the offline host.
-
-The official Photoshop starter plugin uses `main: "index.html"` and static
-panel body markup before JS behavior is layered on. For diagnosing the user's
-offline Photoshop host, prefer that pattern first: a static, no-script panel
-should render before any UXP lifecycle or module-loading code is reintroduced.
-If Photoshop 2025 registers the plugin but leaves that static body blank, keep
-`main: "index.html"` but load one small startup script that immediately calls
-`entrypoints.setup` and renders into the provided panel root node. That keeps
-the boot path official-doc shaped while testing the explicit panel lifecycle.
-If logs prove `panel.create/show` are firing but the panel remains visually
-blank, avoid `innerHTML` for the diagnostic shell and build the panel with
-direct DOM APIs plus Spectrum UXP elements. This keeps the UI path closer to
-Adobe's supported component set and removes HTML parser/style injection as a
-variable.
-
-The `0.1.6` command diagnostic confirmed that Photoshop executes the plugin
-JavaScript and can show alerts when `featureFlags.enableAlerts` is enabled.
-Because the panel still appears blank, the next diagnostic should stop relying
-on only Spectrum elements or only the panel lifecycle. Version `0.1.7` renders
-the same plain, high-contrast HTML controls from plugin startup, panel
-`create/show`, and the command handler. If the command can force visible
-content into `document.body` but the docked panel stays blank, the issue is
-specific to Photoshop's panel root/lifecycle surface rather than plugin
-registration or JavaScript execution.
-
-The `0.1.7` panel was confirmed visible in Photoshop 2025. Continue M2 from the
-plain HTML panel shell, with direct DOM updates and explicit inline or local
-CSS. Defer Spectrum components until after the request-validation and PSD-build
-paths are stable.
-
-The `0.1.8` request-intake panel keeps that shell and makes **Build from
-Painter** validate a selected `build_request.json`. This is the last
-Photoshop-side validation step before document mutation: file picker access,
-JSON parsing, schema checks, recursive asset counting, and user-visible
-summary must work before PSD creation is reintroduced.
-
-The panel does not include a restart control. UXP does not provide a reliable
-safe host-restart API for this workflow, and a non-executable helper button
-adds clutter without advancing the bridge.
-
-Photoshop 2025 resolves CommonJS modules loaded from the HTML panel relative
-to the plugin document/root in this setup, so panel code should require local
-modules with root-relative plugin paths such as `./src/build-psd.js`. The panel
-also needs explicit vertical scrolling because docked panel height can be
-smaller than the request summary.
-
-Version `0.1.9` follows that rule and keeps a fallback require path for any
-runtime that resolves relative to `src/main.js`.
-
-If Photoshop locks the panel to manifest dimensions, size changes should be
-made in `manifest.json` first. The panel should request a taller minimum and
-preferred height, while the HTML shell remains scrollable so the UI still works
-when Photoshop clamps the docked panel smaller than requested.
-
-Version `0.1.10` sets the UXP panel minimum height to `560`, preferred docked
-height to `720`, and preferred floating height to `760`.
-
-The first PSD-building slice creates a transparent RGB document using the
-validated request resolution and request-derived document name. It runs inside
-Photoshop `executeAsModal` and intentionally stops before PNG placement, layer
-groups, masks, blend modes, suffix metadata, or sidecar writing. This isolates
-the Photoshop document-mutation path from the larger layer-construction work.
-
-Do not automatically run Photoshop's `rgbColorBlendGamma = 1.0` `Set`
-descriptor during normal PSD construction. Host validation showed this can
-surface a modal "Set is not currently available" error even when JS does not
-report a normal exception. Color-gamma handling should remain an explicit
-diagnostic/calibration task until a host-safe descriptor is validated.
-
-When the request includes an absolute `psd_file`, the plugin may attempt to
-resolve it through UXP filesystem URL access and call `document.saveAs.psd`.
-Because that absolute-path behavior is not fully documented in the local UXP
-reference and may fail when the file does not yet exist, a failed save is not a
-build failure for this slice. The panel should report "document created,
-unsaved" with the exact save error so the next filesystem slice can fix the
-path-entry strategy without blocking document-creation validation.
-
-For Photoshop-host diagnostics, the details area should be copy-friendly. Use a
-readonly selectable text area instead of a plain `<pre>` block, and provide a
-small `Copy Details` action backed by UXP clipboard access. This keeps host
-error reporting lightweight and avoids forcing screenshots for long filesystem
-or API errors.
-
-Saving a new PSD at the request path should use UXP's file-entry creation API,
-not lookup. `localFileSystem.getEntryWithUrl` is suitable for existing files
-only; for a new output PSD, resolve the request path to a `file:` URL and call
-`localFileSystem.createEntryWithUrl(url, { overwrite: true })`, then pass the
-returned File entry to `document.saveAs.psd`.
-
-The first PNG placement slice stays deliberately narrow. After creating the
-transparent document, Photoshop opens each top-level request node that has a
-direct `asset.path`, duplicates the opened PNG's first layer into the target
-PSD, applies the request layer name, visibility, and opacity, closes the
-temporary PNG document without saving, and then saves the PSD. It does not yet
-build Photoshop groups, masks, clipping sub-effects, blend modes, layer-name
-metadata suffixes, or sidecar JSON. Those remain part of the broader M2 layer
-construction step after this top-level raster path is validated in-host.
