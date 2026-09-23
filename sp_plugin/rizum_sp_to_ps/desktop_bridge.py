@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import desktop_transfer, exporter, photoshop_automation
+from . import desktop_transfer, exporter
 
 
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
 PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
-MANIFEST_PATH_KEY = "desktop_manifest_path"
+PHOTOSHOP_DOCUMENT_KEY = "photoshop_document_path"
+PHOTOSHOP_SUFFIXES = {".psd", ".psb"}
 PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
 PHOTOSHOP_START_TIMEOUT_SECONDS = 120
 DESKTOP_REQUEST_MARKER = "@ptbridge "
@@ -88,12 +87,10 @@ class DesktopBridgeController:
             self._show("Bridge", "Painter project is still loading or not editable.")
             return
 
-        self._launch_desktop(self._recent_photoshop_manifest())
+        self._launch_desktop(self._recent_photoshop_document())
 
-    def _launch_desktop(self, manifest_path):
+    def _launch_desktop(self, psd_path):
         try:
-            if manifest_path is not None:
-                _validate_photoshop_manifest(manifest_path)
             executable = _desktop_executable()
             session_dir = exporter.default_output_dir(
                 self.panel.user_settings
@@ -123,8 +120,8 @@ class DesktopBridgeController:
             "--output",
             str(transfer_path),
         ]
-        if manifest_path is not None:
-            arguments[0:0] = ["--session", str(manifest_path)]
+        if psd_path is not None:
+            arguments[0:0] = ["--psd", str(psd_path)]
         process.setArguments(arguments)
         process.finished.connect(self._desktop_finished)
         process.errorOccurred.connect(self._desktop_error)
@@ -154,18 +151,13 @@ class DesktopBridgeController:
         self.button.setEnabled(reason is None)
         self.button.setToolTip(reason or IDLE_TOOLTIP)
 
-    def _recent_photoshop_manifest(self):
+    def _recent_photoshop_document(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
-        saved = settings.value(MANIFEST_PATH_KEY, "", str) or ""
-        if not saved:
-            return None
-        path = Path(saved)
-        try:
-            _validate_photoshop_manifest(path)
-        except RuntimeError:
-            # A stale document must become an explicit disconnected state instead
-            # of blocking every future Bridge launch before the mapper is visible.
-            settings.remove(MANIFEST_PATH_KEY)
+        saved = settings.value(PHOTOSHOP_DOCUMENT_KEY, "", str) or ""
+        path = Path(saved) if saved else None
+        if path is not None and not path.is_file():
+            # A moved or deleted PSD opens Bridge disconnected instead of failing.
+            settings.remove(PHOTOSHOP_DOCUMENT_KEY)
             settings.sync()
             return None
         return path
@@ -211,22 +203,17 @@ class DesktopBridgeController:
         source_path = Path(paths[0])
         self._trace("photoshop_source_selected", source_path.suffix)
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        if source_path.suffix.lower() not in PHOTOSHOP_SUFFIXES:
+            self._reply_to_desktop({
+                "type": "photoshop_connect_failed",
+                "message": f"{source_path.name} is not a Photoshop document.",
+            })
+            return
         settings.setValue(PHOTOSHOP_DIR_KEY, str(source_path.parent))
+        # The mapper reads the PSD itself, so connecting never starts Photoshop.
+        settings.setValue(PHOTOSHOP_DOCUMENT_KEY, str(source_path))
         settings.sync()
-        self._start_photoshop_document_export(source_path)
-
-    def _remember_photoshop_manifest(self, path):
-        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
-        # The picker's start folder stays where the user's PSD lives; the
-        # manifest itself sits in an internal session folder.
-        settings.setValue(MANIFEST_PATH_KEY, str(path))
-        settings.sync()
-
-    def _photoshop_connected(self, manifest_path):
-        self._remember_photoshop_manifest(manifest_path)
-        self._reply_to_desktop(
-            {"type": "photoshop_connected", "manifest": str(manifest_path)}
-        )
+        self._reply_to_desktop({"type": "photoshop_connected", "psd": str(source_path)})
 
     def _reply_to_desktop(self, payload):
         # The mapper stays open while Painter connects Photoshop, so replies go
@@ -237,25 +224,7 @@ class DesktopBridgeController:
         self._trace("desktop_reply", payload.get("type", ""))
         process.write((json.dumps(payload) + "\n").encode("utf-8"))
 
-    def _start_photoshop_document_export(self, source_path):
-        try:
-            session_root = (
-                exporter.default_output_dir(self.panel.user_settings)
-                / "_desktop_bridge"
-                / "photoshop_documents"
-            )
-            output_dir = _photoshop_document_session_dir(session_root, source_path)
-            launch = photoshop_automation.write_photoshop_document_launcher(
-                source_path,
-                output_dir,
-            )
-        except Exception as exc:
-            self._photoshop_job_failed(str(exc))
-            return
-
-        self._start_photoshop_job(launch, source_path.name)
-
-    def _start_photoshop_job(self, launch, label, transfer_result=None):
+    def _start_photoshop_job(self, launch, label, transfer_result):
         self._clear_photoshop_export()
         self._photoshop_launch = launch
         self._pending_transfer_result = transfer_result
@@ -309,7 +278,7 @@ class DesktopBridgeController:
         if not isinstance(payload, dict):
             return
         phase = payload.get("phase")
-        if phase not in {"reading_request", "opening_document", "exporting_layers", "transferring_layers", "saving_document"}:
+        if phase not in {"reading_request", "opening_document", "transferring_layers", "saving_document"}:
             return
         self._photoshop_script_started = True
         if phase != self._photoshop_export_phase:
@@ -322,11 +291,10 @@ class DesktopBridgeController:
         completed = payload.get("completed", 0)
         if not isinstance(total, int) or not isinstance(completed, int):
             return
-        if phase in {"exporting_layers", "transferring_layers"} and total > 0:
+        if phase == "transferring_layers" and total > 0:
             dialog.setRange(0, total)
             dialog.setValue(max(0, min(completed, total)))
-            action = "Reading" if phase == "exporting_layers" else "Inserting"
-            message = f"{action} Photoshop layers: {completed} / {total}"
+            message = f"Inserting Photoshop layers: {completed} / {total}"
         elif phase == "saving_document":
             message = "Saving Photoshop document..."
         else:
@@ -339,17 +307,11 @@ class DesktopBridgeController:
         self._clear_photoshop_export()
         if self._closing:
             return
-        if transfer is not None:
-            # A cross-host operation is not atomic. Never retry Painter edits
-            # because Photoshop failed, or claim both hosts rolled back together.
-            if transfer.imported_count:
-                message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
-            self._show("Bridge transfer incomplete", message)
-            return
-        if self._process is not None:
-            self._reply_to_desktop({"type": "photoshop_connect_failed", "message": message})
-        else:
-            self._show("Bridge", message)
+        # A cross-host operation is not atomic. Never retry Painter edits
+        # because Photoshop failed, or claim both hosts rolled back together.
+        if transfer.imported_count:
+            message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
+        self._show("Bridge transfer incomplete", message)
 
     def _poll_photoshop_job(self):
         launch = self._photoshop_launch
@@ -376,22 +338,7 @@ class DesktopBridgeController:
             self._photoshop_job_failed(f"Photoshop result could not be read: {exc}")
             return
 
-        if self._pending_transfer_result is not None:
-            self._finish_photoshop_transfer(payload)
-            return
-        if not isinstance(payload, dict) or payload.get("success") is not True:
-            self._photoshop_job_failed(_photoshop_export_error_summary(payload))
-            return
-        manifest_path = Path(payload.get("manifest") or launch.manifest_path)
-        try:
-            _validate_photoshop_manifest(manifest_path)
-        except Exception as exc:
-            self._photoshop_job_failed(str(exc))
-            return
-
-        self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
-        self._clear_photoshop_export()
-        self._photoshop_connected(manifest_path)
+        self._finish_photoshop_transfer(payload)
 
     def _finish_photoshop_transfer(self, payload):
         transfer = self._pending_transfer_result
@@ -609,23 +556,6 @@ def _desktop_executable():
     return path
 
 
-def _validate_photoshop_manifest(path):
-    try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise RuntimeError(f"Could not read Photoshop selection: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Photoshop selection is not valid JSON: {path}") from exc
-    if not isinstance(payload, dict):
-        raise RuntimeError("Photoshop selection manifest must be a JSON object.")
-    if payload.get("schema_version") != 1:
-        raise RuntimeError("Photoshop selection uses an unsupported schema_version.")
-    if payload.get("request_type") != "photoshop_selection":
-        raise RuntimeError("Selected JSON file is not a Photoshop selection manifest.")
-    if not isinstance(payload.get("layers"), list) or not payload["layers"]:
-        raise RuntimeError("Photoshop selection manifest contains no exported layers.")
-
-
 def _desktop_request_type(path):
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -638,21 +568,12 @@ def _desktop_request_type(path):
     return payload.get("request_type")
 
 
-def _photoshop_document_session_dir(root, source_path):
-    source = Path(source_path).resolve()
-    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source.stem).strip("._")
-    if not safe_stem:
-        safe_stem = "photoshop_document"
-    identity = hashlib.sha256(str(source).casefold().encode("utf-8")).hexdigest()[:10]
-    return Path(root) / f"{safe_stem}-{identity}"
-
-
 def _photoshop_export_error_summary(payload):
     if not isinstance(payload, dict):
-        return "Photoshop returned an invalid document export result."
+        return "Photoshop returned an invalid transfer result."
     errors = payload.get("errors")
     if not isinstance(errors, list) or not errors:
-        return "Photoshop did not create a usable layer manifest."
+        return "Photoshop did not report what failed."
     lines = []
     for entry in errors[:8]:
         if isinstance(entry, dict):

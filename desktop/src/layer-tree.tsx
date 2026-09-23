@@ -147,9 +147,11 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           paddingLeft: 8, paddingRight: 8,
           display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
           borderRadius: metrics.rowRadius,
-          backgroundColor: selected ? colors.controlActive : hovered ? colors.controlHover : mapped ? colors.mapped : undefined,
-          opacity: draggingId === node.id ? 0.65 : 1,
-          cursor: "move",
+          backgroundColor: selected ? colors.controlActive : hovered && !node.locked ? colors.controlHover : mapped ? colors.mapped : undefined,
+          // Locked rows stay in the tree so the Photoshop hierarchy reads true,
+          // while their detail line explains why they cannot be dragged.
+          opacity: node.locked ? 0.5 : draggingId === node.id ? 0.65 : 1,
+          cursor: node.locked ? "default" : "move",
         }}
       >
         <div

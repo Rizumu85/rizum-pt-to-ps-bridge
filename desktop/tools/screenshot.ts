@@ -11,8 +11,8 @@ const app = await launch({
   command: process.execPath,
   args: [
     "src/main.tsx",
-    "--photoshop",
-    path.join(fixtureDir, "photoshop_selection.json"),
+    "--psd",
+    path.join(fixtureDir, "photoshop_document.psd"),
     "--painter",
     path.join(fixtureDir, "painter_snapshot.json"),
     "--output",

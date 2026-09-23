@@ -5,7 +5,10 @@ import { PassThrough } from "node:stream"
 
 import { describe, expect, it, vi } from "vitest"
 
-import { transferBetweenHosts } from "./model"
+import { writePsdBuffer } from "ag-psd"
+import { inflateSync } from "node:zlib"
+
+import { findNode, transferBetweenHosts } from "./model"
 import {
   PAINTER_REQUEST_MARKER,
   connectPhotoshop,
@@ -28,12 +31,12 @@ describe("desktop file transport", () => {
     const output = path.join(directory, "request.json")
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       output,
     })
     // Reproduce Bun's cloud-directory error, but verify against the real filesystem.
     vi.mocked(mkdir).mockRejectedValueOnce(Object.assign(new Error("Directory already exists"), { code: "EEXIST" }))
-    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
     await writeTransferManifest(session, mapped, session.initialPainterContextId)
     const request = JSON.parse(await readFile(output, "utf8"))
     expect(request.request_type).toBe("desktop_transfer")
@@ -45,10 +48,10 @@ describe("desktop file transport", () => {
     await writeFile(conflict, "keep this file")
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       output: path.join(conflict, "request.json"),
     })
-    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
     await expect(writeTransferManifest(session, mapped, session.initialPainterContextId))
       .rejects.toMatchObject({ code: "EEXIST" })
     expect(await readFile(conflict, "utf8")).toBe("keep this file")
@@ -58,12 +61,12 @@ describe("desktop file transport", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-denied-"))
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       output: path.join(directory, "request.json"),
     })
     const denied = Object.assign(new Error("Access denied"), { code: "EACCES" })
     vi.mocked(mkdir).mockRejectedValueOnce(denied)
-    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
     await expect(writeTransferManifest(session, mapped, session.initialPainterContextId)).rejects.toBe(denied)
   })
 
@@ -75,7 +78,7 @@ describe("desktop file transport", () => {
     await writeFile(snapshotPath, JSON.stringify(snapshot))
     const session = await loadBridgeSession({
       painterSnapshot: snapshotPath,
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const selected = session.painterContexts.find(context => context.id === session.initialPainterContextId)
     expect(selected?.textureSet).toBe("M_clothes")
@@ -83,11 +86,11 @@ describe("desktop file transport", () => {
   })
   it("loads every Painter snapshot context into the domain model", async () => {
     const session = await loadBridgeSession({
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
 
-    expect(session.photoshopSubtitle).toBe("basecolor.psd")
+    expect(session.photoshopSubtitle).toBe("photoshop_document.psd")
     expect(session.painterContexts.map((context) => context.subtitle)).toEqual([
       "M_body · Base Color",
       "M_body · Normal",
@@ -109,24 +112,26 @@ describe("desktop file transport", () => {
   it("writes an atomic transfer manifest with explicit insertion intent", async () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
     const session = await loadBridgeSession({
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
       output: path.join(outputDir, "desktop_transfer.json"),
     })
     const mapped = transferBetweenHosts(
       session.state,
-      "photoshop:ps:42:101",
+      "photoshop:ps:101",
       "substance_painter:sp-working",
     )
 
     const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
     const manifest = JSON.parse(await readFile(output, "utf8"))
 
-    expect(manifest.schema_version).toBe(2)
+    expect(manifest.schema_version).toBe(3)
     expect(manifest.request_type).toBe("desktop_transfer")
     expect(manifest.transfers[0].insertion).toBe("inside")
     expect(manifest.transfers[0].direction).toBe("photoshop_to_painter")
-    expect(manifest.transfers[0].source.mask_png).toMatch(/color_pass_mask\.png$/)
+    expect(manifest.transfers[0].source.png).toMatch(/Color_pass_ps_101\.png$/)
+    expect(manifest.transfers[0].source.mask_png).toMatch(/Color_pass_ps_101_mask\.png$/)
+    expect(manifest.photoshop.document.path).toBe(path.join(fixtureDir, "photoshop_document.psd"))
     expect(manifest.transfers[0].source).toMatchObject({
       blend_mode: "overlay",
       opacity: 65,
@@ -140,59 +145,53 @@ describe("desktop file transport", () => {
     })
   })
 
-  it("rebuilds a Photoshop document hierarchy from manifest paths", async () => {
-    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-photoshop-tree-"))
-    const manifestPath = path.join(outputDir, "photoshop_selection.json")
-    await writeFile(
-      manifestPath,
-      JSON.stringify({
-        schema_version: 1,
-        request_type: "photoshop_selection",
-        document: { name: "external.psd", path: "C:/art/external.psd" },
-        layers: [
-          {
-            source_id: "ps:1:10",
-            ps_layer_id: 10,
-            display_name: "Paint",
-            ps_kind: "group",
-            path: "Paint",
-            png: "paint.png",
-          },
-          {
-            source_id: "ps:1:11",
-            ps_layer_id: 11,
-            parent_id: 10,
-            display_name: "Details",
-            ps_kind: "pixel",
-            group: "Paint",
-            path: "Paint/Details",
-            png: "details.png",
-          },
-        ],
-      }),
-      "utf8",
-    )
-
+  it("reads a PSD directly, locking what Painter cannot represent", async () => {
     const session = await loadBridgeSession({
-      photoshopManifest: manifestPath,
+      photoshopDocument: await writeFeaturePsd(),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
+    const [folder, levels] = session.state.photoshop
+    expect(folder.name).toBe("Paint")
+    const [clipped, base] = folder.children ?? []
+    expect(clipped.locked).toBe("Clipped · merges into Base")
+    expect(base.detail).toBe("Normal · 100% · merges 1 clipped · styles not transferred")
+    expect(levels.locked).toBe("Adjustment layer · not supported")
+    expect(transferBetweenHosts(session.state, clipped.id, "substance_painter:sp-working")).toBe(session.state)
+  })
 
-    expect(session.state.photoshop.map((node) => node.name)).toEqual(["Paint"])
-    expect(session.state.photoshop[0].children?.map((node) => node.name)).toEqual(["Details"])
+  it("renders a mapped folder as its layers with clipping merged into the base", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-psd-"))
+    const session = await loadBridgeSession({
+      photoshopDocument: await writeFeaturePsd(),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const folder = session.state.photoshop[0]
+    const mapped = transferBetweenHosts(session.state, folder.id, "substance_painter:sp-working")
+    expect(findNode(mapped.painter, folder.id)?.children).toHaveLength(2)
+
+    const manifest = JSON.parse(await readFile(
+      await writeTransferManifest(session, mapped, session.initialPainterContextId), "utf8",
+    ))
+    const source = manifest.transfers[0].source
+    expect(source).toMatchObject({ kind: "group", png: null, blend_mode: "pass through" })
+    expect(source.children.map((child: { path: string }) => child.path)).toEqual(["Paint/Base"])
+    const base = new Uint8Array(await readFile(source.children[0].png))
+    // Multiply of red (255,0,0) by gray (128) keeps red at 128 inside the base.
+    expect(Array.from(decodeRgba8(base, 1, 1))).toEqual([128, 0, 0, 255])
   })
 
   it("writes Painter-to-Photoshop intent with the native Photoshop layer id", async () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
     const session = await loadBridgeSession({
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
       output: path.join(outputDir, "desktop_transfer.json"),
     })
     const mapped = transferBetweenHosts(
       session.state,
       "substance_painter:sp-lighten",
-      "photoshop:ps:42:103",
+      "photoshop:ps:103",
     )
 
     const output = await writeTransferManifest(session, mapped, session.initialPainterContextId)
@@ -210,6 +209,7 @@ describe("desktop file transport", () => {
         host: "photoshop",
         id: "103",
         kind: "group",
+        index_path: [3],
       },
     })
   })
@@ -217,11 +217,11 @@ describe("desktop file transport", () => {
   it("accepts environment paths without hidden discovery", () => {
     expect(
       parseSessionOptions([], {
-        PT_BRIDGE_PHOTOSHOP_MANIFEST: "selection.json",
+        PT_BRIDGE_PHOTOSHOP_DOCUMENT: "document.psd",
         PT_BRIDGE_PAINTER_SNAPSHOT: "target.json",
       }),
     ).toEqual({
-      photoshopManifest: "selection.json",
+      photoshopDocument: "document.psd",
       painterSnapshot: "target.json",
       output: undefined,
     })
@@ -238,8 +238,8 @@ describe("desktop file transport", () => {
     ])
     const session = await loadBridgeSession(options)
 
-    expect(session.photoshopConnected).toBe(false)
-    expect(session.photoshopSubtitle).toBe("No selection loaded")
+    expect(session.photoshop).toBeNull()
+    expect(session.photoshopSubtitle).toBe("No document connected")
     expect(session.state.photoshop).toEqual([])
     expect(session.state.painter.length).toBeGreaterThan(0)
     expect(session.outputPath).toBe(output)
@@ -276,17 +276,16 @@ describe("Painter link", () => {
     await expect(link.request("connect_photoshop")).rejects.toThrow("Painter closed the Bridge connection")
   })
 
-  it("reloads the session from the connected manifest and keeps Painter paths", async () => {
+  it("reloads the session from the connected PSD and keeps Painter paths", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
       output: path.join(os.tmpdir(), "pt-bridge-link.json"),
     })
-    const manifest = path.join(fixtureDir, "photoshop_selection.json")
+    const psd = path.join(fixtureDir, "photoshop_document.psd")
     const connected = await connectPhotoshop(session, {
-      request: async () => ({ type: "photoshop_connected", manifest }),
+      request: async () => ({ type: "photoshop_connected", psd }),
     })
-    expect(connected?.photoshopConnected).toBe(true)
-    expect(connected?.sourceManifestPath).toBe(manifest)
+    expect(connected?.photoshop?.path).toBe(psd)
     expect(connected?.targetSnapshotPath).toBe(session.targetSnapshotPath)
     expect(connected?.outputPath).toBe(session.outputPath)
     await expect(connectPhotoshop(session, {
@@ -294,3 +293,46 @@ describe("Painter link", () => {
     })).resolves.toBeNull()
   })
 })
+
+async function writeFeaturePsd(): Promise<string> {
+  const size = 4
+  const fill = (rgba: number[]) => {
+    const data = new Uint8ClampedArray(size * size * 4)
+    for (let index = 0; index < data.length; index += 4) data.set(rgba, index)
+    return { width: size, height: size, data }
+  }
+  const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-feature-psd-"))
+  const file = path.join(directory, "features.psd")
+  await writeFile(file, writePsdBuffer({
+    width: size,
+    height: size,
+    children: [
+      {
+        id: 10, name: "Paint", blendMode: "pass through", children: [
+          { id: 12, name: "Shade", blendMode: "multiply", clipping: true, top: 0, left: 0, imageData: fill([128, 128, 128, 255]) },
+          {
+            id: 11, name: "Base", blendMode: "normal", top: 0, left: 0, imageData: fill([255, 0, 0, 255]),
+            effects: { dropShadow: [{ enabled: true }] },
+          },
+        ],
+      },
+      { id: 20, name: "Levels", adjustment: { type: "levels" } },
+    ],
+  }, { generateThumbnail: false, noBackground: true }))
+  return file
+}
+
+function decodeRgba8(png: Uint8Array, x: number, y: number): Uint8Array {
+  const view = new DataView(png.buffer, png.byteOffset)
+  const width = view.getUint32(16)
+  const chunks: Uint8Array[] = []
+  for (let offset = 8; offset < png.length;) {
+    const length = view.getUint32(offset)
+    const type = String.fromCharCode(...png.subarray(offset + 4, offset + 8))
+    if (type === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length))
+    offset += length + 12
+  }
+  const raw = inflateSync(Buffer.concat(chunks))
+  const start = y * (width * 4 + 1) + 1 + x * 4
+  return raw.subarray(start, start + 4)
+}

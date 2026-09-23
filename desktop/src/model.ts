@@ -15,6 +15,8 @@ export type HostLayerRef = {
   opacity?: number | null // Percent in both directions; never a Painter API fraction.
   visible?: boolean | null
   hasMask?: boolean
+  /** Sibling indices from the document root, top first, as Photoshop's DOM counts them. */
+  indexPath?: number[]
 }
 
 export type LayerNode = {
@@ -24,6 +26,8 @@ export type LayerNode = {
   detail: string
   masked?: boolean
   thumbnailPath?: string | null
+  /** Why this node cannot be transferred; locked rows stay visible but inert. */
+  locked?: string
   ref: HostLayerRef
   children?: LayerNode[]
 }
@@ -120,7 +124,7 @@ export function transferBetweenHosts(
   targetId: string,
 ): BridgeState {
   const source = findNode(state.photoshop, sourceId) ?? findNode(state.painter, sourceId)
-  if (!source) return state
+  if (!source || source.locked) return state
   const sourceHost = source.ref.host
   const targetHost = sourceHost === "photoshop" ? "substance_painter" : "photoshop"
   const sourceNodes = state[hostCollection(sourceHost)]
@@ -134,9 +138,10 @@ export function transferBetweenHosts(
 
   const [remaining, removed] = removeNode(remapping ? targetNodes : sourceNodes, sourceId)
   if (!removed) return state
-  // Host transfer renders a group as one visual bitmap. Showing its editable
-  // descendants here would promise a hierarchy the Apply operation never creates.
-  const preview = removed.kind === "group"
+  // A Photoshop group arrives in Painter as a folder of its layers, while a
+  // Painter group is rendered into Photoshop as one bitmap. The preview must
+  // promise exactly the hierarchy Apply creates.
+  const preview = removed.kind === "group" && sourceHost === "substance_painter"
     ? { ...removed, kind: "layer" as const, children: undefined }
     : removed
   const nextTarget = insertAtTarget(remapping ? remaining : targetNodes, targetId, preview)

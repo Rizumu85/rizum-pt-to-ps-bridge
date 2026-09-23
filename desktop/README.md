@@ -22,18 +22,24 @@ and presses Apply. It does not poll folders or mutate Painter in the background.
 
 ```powershell
 bun install
-bun run dev -- --session "C:\path\to\photoshop_selection.json"
+bun run dev -- --painter "C:\path\to\painter_snapshot.json" --psd "C:\path\to\document.psd"
 ```
 
-The selection manifest's Photoshop document path resolves its adjacent
-`.rizum.json` Painter snapshot. Pass `--painter <path>` to choose a different
-snapshot and `--output <path>` to choose the transfer-manifest destination.
-The equivalent environment variables are `PT_BRIDGE_PHOTOSHOP_MANIFEST`,
-`PT_BRIDGE_PAINTER_SNAPSHOT`, and `PT_BRIDGE_TRANSFER_OUTPUT`.
+`--painter` is required; `--psd` connects a Photoshop document at start and
+`--output` chooses the transfer-manifest destination. The equivalent
+environment variables are `PT_BRIDGE_PAINTER_SNAPSHOT`,
+`PT_BRIDGE_PHOTOSHOP_DOCUMENT`, and `PT_BRIDGE_TRANSFER_OUTPUT`.
+
+The mapper reads PSD/PSB files itself with ag-psd, so connecting a document
+never opens Photoshop. Photoshop-rendered content does not come along: layer
+styles are dropped, adjustment and fill layers are locked, and clipped layers
+are merged into their base when transferred. A Photoshop folder arrives in
+Painter as a folder of its layers. Only mapped layers are rendered to PNG, at
+Apply. `bun tools/make-psd-fixture.ts` regenerates the test PSD.
 
 Under Painter, the mapper talks to its parent over stdio. **Connect Photoshop**
 writes one `@ptbridge {"type":"connect_photoshop"}` line to stdout, and Painter
-replies on stdin with one JSON line: `photoshop_connected` (with `manifest`),
+replies on stdin with one JSON line: `photoshop_connected` (with `psd`),
 `photoshop_connect_cancelled`, or `photoshop_connect_failed` (with `message`).
 GPUiX serves its automation protocol on the same pipes, so replies must stay
 single-line JSON. `bun tools/check-windows-input.ts` checks that both protocols

@@ -14,7 +14,7 @@ describe("Painter context selectors", () => {
   it("selects and transfers a batch with visible pending state, then undoes Reset", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
@@ -78,7 +78,7 @@ describe("Painter context selectors", () => {
   it("collapses groups, removes a row, resets, and maps in the reverse direction", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
@@ -109,7 +109,7 @@ describe("Painter context selectors", () => {
       await app.getByTestId("action:check").click()
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({
-        direction: "painter_to_photoshop", placement: "inside", targetId: "photoshop:ps:42:103",
+        direction: "painter_to_photoshop", placement: "inside", targetId: "photoshop:ps:103",
       })
     } finally { root.unmount(); await app.close() }
   })
@@ -117,7 +117,7 @@ describe("Painter context selectors", () => {
   it("drops onto a nested layer without its parent replacing the target", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
@@ -167,7 +167,7 @@ describe("Painter context selectors", () => {
   it("maps a layer, undoes, redoes and applies using pointer input", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
@@ -258,7 +258,7 @@ describe("Painter context selectors", () => {
   })
   it("switches the rendered Painter tree with the texture set selector", async () => {
     const session = await loadBridgeSession({
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
     const testRoot = createTestRoot({ width: 652, height: 484 })
@@ -291,7 +291,7 @@ describe("Painter context selectors", () => {
 
   it("keeps mapping instructions behind the help popover", async () => {
     const session = await loadBridgeSession({
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
     })
     const testRoot = createTestRoot({ width: 652, height: 484 })
@@ -325,7 +325,7 @@ describe("Painter context selectors", () => {
     })
     const connected = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
     })
     const testRoot = createTestRoot({ width: 652, height: 484 })
     const app = await connectTest(testRoot.renderer)
@@ -343,11 +343,11 @@ describe("Painter context selectors", () => {
       )
       testRoot.renderer.flush()
 
-      expect(await app.getByText("No selection loaded").count()).toBeGreaterThan(0)
+      expect(await app.getByText("No document connected").count()).toBeGreaterThan(0)
       expect(await app.getByText("Locator").count()).toBeGreaterThan(0)
       await app.getByTestId("connect-photoshop").click()
       await vi.waitFor(async () => expect(await app.getByText("Paint edit").count()).toBe(1))
-      expect(await app.getByText("No selection loaded").count()).toBe(0)
+      expect(await app.getByText("No document connected").count()).toBe(0)
       expect(await app.getByText("Locator").count()).toBeGreaterThan(0)
       expect(connect).toHaveBeenCalledWith(session)
       expect(applied).not.toHaveBeenCalled()

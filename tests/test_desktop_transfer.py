@@ -84,6 +84,7 @@ class _LayerStack:
     def __init__(self, target):
         self.target = target
         self.fills = []
+        self.groups = []
         self.ScopedModification = _ScopedModification
         self.InsertPosition = SimpleNamespace(
             below_node=lambda node: ("below", node),
@@ -91,7 +92,7 @@ class _LayerStack:
         )
         self.NodeStack = SimpleNamespace(Content="content", Mask="mask", Substack="substack")
         self.MaskBackground = SimpleNamespace(Black="black")
-        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay")
+        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", PassThrough="passthrough")
 
     def get_node_by_uid(self, uid):
         if uid != 0x1A:
@@ -103,6 +104,12 @@ class _LayerStack:
         fill.position = position
         self.fills.append(fill)
         return fill
+
+    def insert_group(self, position):
+        group = _FillNode()
+        group.position = position
+        self.groups.append(group)
+        return group
 
 
 class _Resource:
@@ -129,7 +136,7 @@ class DesktopTransferTests(unittest.TestCase):
         self.manifest.write_text(
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "request_type": "desktop_transfer",
                     "photoshop": {
                         "document": {
@@ -187,10 +194,11 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertEqual(plan.texture_set, "M_body")
         self.assertEqual(plan.channel, "BaseColor")
         self.assertEqual(plan.painter_imports[0].target_uid, 0x1A)
-        self.assertEqual(plan.painter_imports[0].name, "Paint edit")
-        self.assertEqual(plan.painter_imports[0].blend_mode, "overlay")
-        self.assertEqual(plan.painter_imports[0].opacity, 65)
-        self.assertFalse(plan.painter_imports[0].visible)
+        layer = plan.painter_imports[0].layer
+        self.assertEqual(layer.name, "Paint edit")
+        self.assertEqual(layer.blend_mode, "overlay")
+        self.assertEqual(layer.opacity, 65)
+        self.assertFalse(layer.visible)
         self.assertEqual(plan.photoshop_exports, ())
 
     def test_apply_creates_one_channel_fill_and_a_bitmap_mask(self):
@@ -283,6 +291,67 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertEqual(plan.photoshop_exports[0].source_uid, 0x2B)
         self.assertEqual(plan.photoshop_exports[0].target_layer_id, 101)
         self.assertEqual(plan.photoshop_exports[0].name, "Recolor")
+
+    def test_photoshop_target_without_layer_id_is_addressed_by_position(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"] = [{
+            "order": 0, "direction": "painter_to_photoshop", "insertion": "after",
+            "source": {"host": "substance_painter", "id": "2b", "kind": "FillLayer", "path": "Recolor"},
+            "target": {"host": "photoshop", "id": None, "kind": "layer", "path": "Paint/Base", "index_path": [0, 1]},
+        }]
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        item = load_transfer_plan(self.manifest).photoshop_exports[0]
+
+        self.assertIsNone(item.target_layer_id)
+        self.assertEqual(item.target_index_path, (0, 1))
+        self.assertEqual(item.target_name, "Base")
+
+    def painter(self, layerstack):
+        return SimpleNamespace(
+            project=SimpleNamespace(
+                is_open=lambda: True,
+                is_in_edition_state=lambda: True,
+                get_uuid=lambda: "project-1",
+            ),
+            layerstack=layerstack,
+            resource=_Resource(),
+        )
+
+    def test_photoshop_folder_becomes_a_painter_folder_of_its_layers(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        source = payload["transfers"][0]["source"]
+        payload["transfers"][0]["source"] = {
+            "host": "photoshop", "kind": "group", "path": "Retouch", "png": None,
+            "mask_png": str(self.mask_png), "blend_mode": "pass through", "opacity": 80,
+            "visible": True,
+            "children": [
+                {**source, "path": "Retouch/Top", "mask_png": None},
+                {**source, "path": "Retouch/Bottom", "mask_png": None},
+            ],
+        }
+        payload["warnings"] = ["Levels: Adjustment layer · not supported, skipped."]
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        channel = _NamedValue("BaseColor")
+        target = _TargetNode(_Stack(channel))
+        layerstack = _LayerStack(target)
+
+        plan = load_transfer_plan(self.manifest)
+        apply_transfer_plan(plan, self.painter(layerstack))
+
+        folder = layerstack.groups[0]
+        self.assertEqual(folder.name, "Retouch")
+        self.assertEqual(folder.position, ("below", target))
+        self.assertEqual(folder.blending_mode, ("passthrough", channel))
+        self.assertEqual(folder.opacity, (0.8, channel))
+        self.assertEqual(folder.mask_background, "black")
+        mask, top, bottom = layerstack.fills
+        self.assertEqual(mask.sources, [(None, "resource:paint_mask.png")])
+        self.assertEqual(top.name, "Top")
+        self.assertEqual(top.position, ("inside", folder, "substack"))
+        self.assertEqual(bottom.name, "Bottom")
+        self.assertEqual(bottom.position, ("below", top))
+        self.assertEqual(plan.warnings, ("Levels: Adjustment layer · not supported, skipped.",))
 
     def test_missing_source_png_is_rejected_before_painter_import(self):
         self.layer_png.unlink()

@@ -8,7 +8,7 @@ import { PAINTER_REQUEST_MARKER } from "../src/transport"
 
 const directory = await mkdtemp(path.join(tmpdir(), "bridge-win-input-"))
 const compiled = process.env.BRIDGE_TEST_COMPILED === "1"
-const manifest = path.resolve("test-fixtures/photoshop_selection.json")
+const psd = path.resolve("test-fixtures/photoshop_document.psd")
 const child = spawn(compiled ? path.resolve("dist/pt-bridge.exe") : process.execPath, [...(compiled ? [] : ["src/main.tsx"]), "--painter",
   process.argv[2] ?? "test-fixtures/painter_snapshot.json", "--output", path.join(directory, "desktop_transfer.json")],
   { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, GPUIX_BACKGROUND: "1" } })
@@ -36,7 +36,7 @@ try {
     await app.screenshot({ path: path.join(directory, "failed-click.png") })
     throw new Error(`Win32 Connect click did not request Painter (${directory})`)
   }
-  child.stdin.write(`${JSON.stringify({ type: "photoshop_connected", manifest })}\n`)
+  child.stdin.write(`${JSON.stringify({ type: "photoshop_connected", psd })}\n`)
   await app.getByText("Paint edit").waitFor({ timeoutMs: 5000 })
   if (child.exitCode !== null) throw new Error(`Connect closed the mapper: ${child.exitCode}`)
   console.log({ connected: true, directory })

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@gpuix/react": "0.9.0",
+    "ag-psd": "31.0.2",
     "react": "19.2.8"
   },
   "devDependencies": {

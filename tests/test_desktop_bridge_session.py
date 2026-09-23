@@ -6,10 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import (
-    MANIFEST_PATH_KEY,
     DesktopBridgeController,
     _desktop_request_type,
-    _photoshop_document_session_dir,
     _photoshop_export_error_summary,
 )
 
@@ -80,27 +78,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         self.assertTrue(self.controller.button.enabled)
         process.deleteLater.assert_called_once()
 
-    def test_remembers_exact_manifest_until_it_becomes_stale(self):
-        with tempfile.TemporaryDirectory() as directory:
-            manifest = Path(directory) / "photoshop_selection.json"
-            manifest.write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "request_type": "photoshop_selection",
-                        "layers": [{"png": "layer.png"}],
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            self.controller._remember_photoshop_manifest(manifest)
-            self.assertEqual(self.controller._recent_photoshop_manifest(), manifest)
-
-            manifest.unlink()
-            self.assertIsNone(self.controller._recent_photoshop_manifest())
-            self.assertNotIn(MANIFEST_PATH_KEY, _Settings.values)
-
     def test_marked_stdout_request_queues_picker_and_traces_other_output(self):
         with tempfile.TemporaryDirectory() as directory:
             chunks = [
@@ -143,16 +120,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(_desktop_request_type(request), "desktop_transfer")
-
-    def test_photoshop_document_session_is_stable_and_path_specific(self):
-        root = Path("C:/bridge")
-        first = _photoshop_document_session_dir(root, Path("C:/art/Hero Dress.psd"))
-        same = _photoshop_document_session_dir(root, Path("C:/art/Hero Dress.psd"))
-        other = _photoshop_document_session_dir(root, Path("D:/art/Hero Dress.psd"))
-
-        self.assertEqual(first, same)
-        self.assertNotEqual(first, other)
-        self.assertTrue(first.name.startswith("Hero_Dress-"))
 
     def test_photoshop_export_errors_are_bounded_for_the_dialog(self):
         payload = {

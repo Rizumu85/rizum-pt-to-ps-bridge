@@ -11,7 +11,7 @@ from . import exporter, photoshop_automation
 from .blend_map import DIRECT_BLEND_MODES
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 REQUEST_TYPE = "desktop_transfer"
 
 
@@ -20,19 +20,37 @@ class DesktopTransferError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class PainterImportItem:
-    """One Photoshop bitmap insertion requested by the desktop mapper."""
+class PhotoshopLayer:
+    """A Photoshop layer rendered by the mapper, or a folder of them."""
 
-    order: int
     name: str
-    png: Path
+    kind: str
+    png: Path | None
     mask_png: Path | None
-    target_uid: int
-    target_kind: str
-    insertion: str
     blend_mode: str
     opacity: float
     visible: bool
+    children: tuple["PhotoshopLayer", ...] = ()
+
+    def assets(self):
+        yield from (path for path in (self.png, self.mask_png) if path is not None)
+        for child in self.children:
+            yield from child.assets()
+
+
+@dataclass(frozen=True)
+class PainterImportItem:
+    """One mapped Photoshop layer or folder and its Painter destination."""
+
+    order: int
+    layer: PhotoshopLayer
+    target_uid: int
+    target_kind: str
+    insertion: str
+
+    @property
+    def name(self):
+        return self.layer.name
 
 
 @dataclass(frozen=True)
@@ -43,7 +61,9 @@ class PhotoshopExportItem:
     name: str
     source_uid: int
     source_kind: str
-    target_layer_id: int
+    target_layer_id: int | None
+    target_index_path: tuple[int, ...]
+    target_name: str
     target_kind: str
     insertion: str
     blend_mode: str
@@ -65,6 +85,7 @@ class TransferPlan:
     photoshop_context: dict
     painter_imports: tuple[PainterImportItem, ...]
     photoshop_exports: tuple[PhotoshopExportItem, ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +158,7 @@ def load_transfer_plan(manifest_path):
         photoshop_context=dict(photoshop_context),
         painter_imports=tuple(painter_imports),
         photoshop_exports=tuple(photoshop_exports),
+        warnings=tuple(str(value) for value in root.get("warnings") or ()),
     )
 
 
@@ -160,7 +182,7 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None):
             [item.name for item in plan.painter_imports]
             + [item.name for item in plan.photoshop_exports]
         ),
-        warnings=result.warnings,
+        warnings=plan.warnings + result.warnings,
         photoshop_launch=launcher,
     )
 
@@ -175,10 +197,9 @@ def apply_transfer_plan(plan, painter):
 
     resources = {}
     for item in plan.painter_imports:
-        if item.png not in resources:
-            resources[item.png] = _import_texture(item.png, painter.resource)
-        if item.mask_png is not None and item.mask_png not in resources:
-            resources[item.mask_png] = _import_texture(item.mask_png, painter.resource)
+        for path in item.layer.assets():
+            if path not in resources:
+                resources[path] = _import_texture(path, painter.resource)
 
     warnings = []
     # The desktop Apply action is one user intent; grouping every layerstack edit
@@ -192,34 +213,9 @@ def apply_transfer_plan(plan, painter):
     with modification:
         for item, target_node, channel_type in resolved:
             position = _insertion_position(item, target_node, painter.layerstack)
-            fill = painter.layerstack.insert_fill(position)
-            fill.set_name(item.name)
-            fill.active_channels = {channel_type}
-            fill.set_source(channel_type, resources[item.png].identifier())
-            fill.set_visible(item.visible)
-            fill.set_opacity(max(0.0, min(100.0, item.opacity)) / 100.0, channel_type)
-
-            blending_mode = _resolve_blending_mode(
-                painter.layerstack,
-                item.blend_mode,
+            _insert_photoshop_layer(
+                item.layer, position, channel_type, resources, painter.layerstack, warnings
             )
-            if blending_mode is None:
-                warnings.append(
-                    f"{item.name}: Photoshop blend mode {item.blend_mode!r} "
-                    "has no direct Painter equivalent; Normal was kept."
-                )
-            else:
-                fill.set_blending_mode(blending_mode, channel_type)
-
-            if item.mask_png is not None:
-                fill.add_mask(painter.layerstack.MaskBackground.Black)
-                mask_position = painter.layerstack.InsertPosition.inside_node(
-                    fill,
-                    painter.layerstack.NodeStack.Mask,
-                )
-                mask_fill = painter.layerstack.insert_fill(mask_position)
-                mask_fill.set_name("Photoshop Mask")
-                mask_fill.set_source(None, resources[item.mask_png].identifier())
 
     return TransferResult(
         imported_count=len(plan.painter_imports),
@@ -227,6 +223,50 @@ def apply_transfer_plan(plan, painter):
         names=tuple(item.name for item in plan.painter_imports),
         warnings=tuple(warnings),
     )
+
+
+def _insert_photoshop_layer(layer, position, channel_type, resources, layerstack, warnings):
+    if layer.kind == "group":
+        # A Photoshop folder stays a folder so its layers remain editable in Painter.
+        node = layerstack.insert_group(position)
+    else:
+        node = layerstack.insert_fill(position)
+        node.active_channels = {channel_type}
+        node.set_source(channel_type, resources[layer.png].identifier())
+    node.set_name(layer.name)
+    node.set_visible(layer.visible)
+    node.set_opacity(max(0.0, min(100.0, layer.opacity)) / 100.0, channel_type)
+
+    blending_mode = _resolve_blending_mode(layerstack, layer.blend_mode)
+    if blending_mode is None:
+        warnings.append(
+            f"{layer.name}: Photoshop blend mode {layer.blend_mode!r} "
+            "has no direct Painter equivalent; Normal was kept."
+        )
+    else:
+        node.set_blending_mode(blending_mode, channel_type)
+
+    if layer.mask_png is not None:
+        node.add_mask(layerstack.MaskBackground.Black)
+        mask_position = layerstack.InsertPosition.inside_node(
+            node,
+            layerstack.NodeStack.Mask,
+        )
+        mask_fill = layerstack.insert_fill(mask_position)
+        mask_fill.set_name("Photoshop Mask")
+        mask_fill.set_source(None, resources[layer.mask_png].identifier())
+
+    previous = None
+    for child in layer.children:
+        child_position = (
+            layerstack.InsertPosition.inside_node(node, layerstack.NodeStack.Substack)
+            if previous is None
+            else layerstack.InsertPosition.below_node(previous)
+        )
+        previous = _insert_photoshop_layer(
+            child, child_position, channel_type, resources, layerstack, warnings
+        )
+    return node
 
 
 class _NullContext:
@@ -273,6 +313,8 @@ def _prepare_photoshop_transfer(plan, settings):
                 "png": asset["png"],
                 "mask_png": asset.get("mask_png"),
                 "target_layer_id": item.target_layer_id,
+                "target_index_path": list(item.target_index_path),
+                "target_name": item.target_name,
                 "target_kind": item.target_kind,
                 "insertion": item.insertion,
                 "blend_mode": item.blend_mode,
@@ -334,6 +376,16 @@ def _transfer_item(value, fallback_order, manifest_dir):
         )
 
     if direction == "painter_to_photoshop":
+        target_layer_id = (
+            _decimal_id(target.get("id"), fallback_order)
+            if _optional_text(target.get("id"))
+            else None
+        )
+        target_index_path = _index_path(target.get("index_path"), fallback_order)
+        if target_layer_id is None and not target_index_path:
+            raise DesktopTransferError(
+                f"Transfer {fallback_order + 1} has no Photoshop layer id or position."
+            )
         logical_path = _optional_text(source.get("path")).replace("\\", "/")
         name = logical_path.rsplit("/", 1)[-1] if logical_path else "Painter Layer"
         return direction, PhotoshopExportItem(
@@ -345,7 +397,9 @@ def _transfer_item(value, fallback_order, manifest_dir):
                 "kind",
                 f"transfers[{fallback_order}].source",
             ),
-            target_layer_id=_decimal_id(target.get("id"), fallback_order),
+            target_layer_id=target_layer_id,
+            target_index_path=target_index_path,
+            target_name=_optional_text(target.get("path")).replace("\\", "/").rsplit("/", 1)[-1],
             target_kind=target_kind,
             insertion=insertion,
             blend_mode=_optional_text(source.get("blend_mode")) or "normal",
@@ -353,26 +407,33 @@ def _transfer_item(value, fallback_order, manifest_dir):
             visible=source.get("visible") is not False,
         )
 
-    png = _asset_path(source.get("png"), manifest_dir, "source PNG")
-    mask_png = _asset_path(
-        source.get("mask_png"),
-        manifest_dir,
-        "source mask PNG",
-        required=False,
-    )
-    logical_path = _optional_text(source.get("path")).replace("\\", "/")
-    name = logical_path.rsplit("/", 1)[-1] if logical_path else png.stem
     return direction, PainterImportItem(
         order=_integer(record.get("order"), fallback_order),
-        name=name,
-        png=png,
-        mask_png=mask_png,
+        layer=_photoshop_layer(source, manifest_dir, f"transfers[{fallback_order}].source"),
         target_uid=_uid(target.get("id"), fallback_order),
         target_kind=target_kind,
         insertion=insertion,
+    )
+
+
+def _photoshop_layer(source, manifest_dir, label):
+    kind = "group" if _optional_text(source.get("kind")) == "group" else "layer"
+    logical_path = _optional_text(source.get("path")).replace("\\", "/")
+    children = source.get("children") or []
+    if not isinstance(children, list):
+        raise DesktopTransferError(f"Transfer {label}.children must be a list.")
+    return PhotoshopLayer(
+        name=logical_path.rsplit("/", 1)[-1] if logical_path else "Photoshop Layer",
+        kind=kind,
+        png=None if kind == "group" else _asset_path(source.get("png"), manifest_dir, "source PNG"),
+        mask_png=_asset_path(source.get("mask_png"), manifest_dir, "source mask PNG", required=False),
         blend_mode=_optional_text(source.get("blend_mode")) or "normal",
         opacity=_number(source.get("opacity"), 100.0),
         visible=source.get("visible") is not False,
+        children=tuple(
+            _photoshop_layer(_mapping(child, f"{label}.children[{index}]"), manifest_dir, f"{label}.children[{index}]")
+            for index, child in enumerate(children)
+        ),
     )
 
 
@@ -506,6 +567,16 @@ def _decimal_id(value, index):
         raise DesktopTransferError(
             f"Transfer {index + 1} has an invalid Photoshop layer id: {text!r}."
         ) from exc
+
+
+def _index_path(value, index):
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, int) and item >= 0 for item in value):
+        raise DesktopTransferError(
+            f"Transfer {index + 1} has an invalid Photoshop layer position: {value!r}."
+        )
+    return tuple(value)
 
 
 def _mapping(value, label):

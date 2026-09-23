@@ -78,13 +78,18 @@ describe("transferBetweenHosts", () => {
     expect(next.mappings).toHaveLength(2)
   })
 
-  it("previews a selected group as the same single rendered object Apply produces", () => {
+  it("previews a Photoshop group as the Painter folder of layers Apply creates", () => {
     const next = transferSelection(fixture(), new Set(["photoshop:group", "photoshop:paint"]), "substance_painter:working")
     expect(next.mappings).toHaveLength(1)
     const pending = next.painter[1].children?.at(-1)
-    expect(pending?.kind).toBe("layer")
-    expect(pending?.children).toBeUndefined()
-    expect(pending?.ref.kind).toBe("group")
+    expect(pending?.kind).toBe("group")
+    expect(pending?.children?.map(node => node.id)).toEqual(["photoshop:paint", "photoshop:color"])
+  })
+
+  it("never transfers locked Photoshop rows", () => {
+    const state = fixture()
+    state.photoshop[1].locked = "Adjustment layer · not supported"
+    expect(transferBetweenHosts(state, "photoshop:cleanup", "substance_painter:maskout")).toBe(state)
   })
 
   it("cannot hide a destination that contains pending transfers", () => {

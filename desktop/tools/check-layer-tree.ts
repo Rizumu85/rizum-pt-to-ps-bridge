@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 
 const app = await launch({
   command: process.execPath,
-  args: ["src/main.tsx", "--photoshop", "test-fixtures/photoshop_selection.json", "--painter", "test-fixtures/painter_snapshot.json", "--output", "screenshots/tree-check-transfer.json"],
+  args: ["src/main.tsx", "--psd", "test-fixtures/photoshop_document.psd", "--painter", "test-fixtures/painter_snapshot.json", "--output", "screenshots/tree-check-transfer.json"],
   env: { GPUIX_BACKGROUND: "1" },
 })
 try {
@@ -30,6 +30,6 @@ try {
   await app.getByTestId("layer-toggle:substance_painter:sp-working").click()
   await Bun.sleep(250)
   await app.getByText("Retouch group").hover()
-  assert.equal(await app.getByTestId("drop-indicator:photoshop:ps:42:103").count(), 0)
+  assert.equal(await app.getByTestId("drop-indicator:photoshop:ps:103").count(), 0)
   console.log("Native layer-tree click, drag, release, and collapse checks passed.")
 } finally { await app.close() }

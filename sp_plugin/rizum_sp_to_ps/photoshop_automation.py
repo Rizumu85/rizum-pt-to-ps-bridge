@@ -12,14 +12,6 @@ TRANSFER_LAUNCHER_FILENAME = "_transfer_to_photoshop.jsx"
 TRANSFER_RESULT_FILENAME = "photoshop_transfer_result.json"
 TRANSFER_PROGRESS_FILENAME = "photoshop_transfer_progress.json"
 _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
-DOCUMENT_LAUNCHER_FILENAME = "_export_photoshop_document.jsx"
-DOCUMENT_REQUEST_FILENAME = "photoshop_document_request.json"
-DOCUMENT_RESULT_FILENAME = "photoshop_document_result.json"
-DOCUMENT_MANIFEST_FILENAME = "photoshop_selection.json"
-DOCUMENT_PROGRESS_FILENAME = "photoshop_document_progress.json"
-_DOCUMENT_REQUEST_TOKEN = "__RIZUM_DOCUMENT_REQUEST_PATH__"
-_DOCUMENT_RESULT_TOKEN = "__RIZUM_DOCUMENT_RESULT_PATH__"
-_DOCUMENT_PROGRESS_TOKEN = "__RIZUM_DOCUMENT_PROGRESS_PATH__"
 _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 
 
@@ -29,14 +21,13 @@ class PhotoshopScriptLaunch:
     request_path: Path
     result_path: Path
     progress_path: Path
-    manifest_path: Path | None = None
 
 
 def _embed_json_runtime(template):
     if template.count(_JSON_RUNTIME_TOKEN) != 1:
         raise RuntimeError("Photoshop template has an invalid JSON runtime token")
     # A fresh ExtendScript engine has no JSON. Scope our codec to this script so
-    # connection/transfer receipts never depend on another installed extension.
+    # transfer receipts never depend on another installed extension.
     # Unmodified public-domain JSON-js, commit 7e83f38a2312429fd4933169c1f6a27fd65e889c:
     # https://github.com/douglascrockford/JSON-js/blob/7e83f38a2312429fd4933169c1f6a27fd65e889c/json2.js
     codec = (Path(__file__).parent / "vendor" / "json2.js").read_text(encoding="utf-8")
@@ -81,64 +72,3 @@ def write_photoshop_transfer_launcher(request_path):
     progress_path.unlink(missing_ok=True)
     launcher_path.write_text(script, encoding="utf-8")
     return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)
-
-
-def write_photoshop_document_launcher(psd_path, output_dir):
-    """Prepare a Photoshop-owned full-document manifest export."""
-    source = Path(psd_path).resolve()
-    if source.suffix.lower() not in {".psd", ".psb"}:
-        raise ValueError(f"Expected a Photoshop document, got: {source}")
-    if not source.is_file():
-        raise FileNotFoundError(f"Photoshop document does not exist: {source}")
-
-    destination = Path(output_dir).resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    request_path = destination / DOCUMENT_REQUEST_FILENAME
-    result_path = destination / DOCUMENT_RESULT_FILENAME
-    manifest_path = destination / DOCUMENT_MANIFEST_FILENAME
-    progress_path = destination / DOCUMENT_PROGRESS_FILENAME
-    result_path.unlink(missing_ok=True)
-    manifest_path.unlink(missing_ok=True)
-    progress_path.unlink(missing_ok=True)
-
-    request_path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "request_type": "photoshop_document_export",
-                "psd_file": str(source),
-                "output_dir": str(destination),
-                "manifest_file": str(manifest_path),
-                "result_file": str(result_path),
-            },
-            indent=2,
-            ensure_ascii=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    template_path = Path(__file__).with_name("photoshop_document.jsx")
-    template = template_path.read_text(encoding="utf-8")
-    if template.count(_DOCUMENT_REQUEST_TOKEN) != 1:
-        raise RuntimeError("Photoshop document template has an invalid request token")
-    script = _embed_json_runtime(template)
-    # Bootstrap output paths cannot depend on decoding the request: malformed
-    # input must still produce a receipt instead of leaving Painter waiting.
-    for token, path in (
-        (_DOCUMENT_REQUEST_TOKEN, request_path),
-        (_DOCUMENT_RESULT_TOKEN, result_path),
-        (_DOCUMENT_PROGRESS_TOKEN, progress_path),
-    ):
-        if script.count(token) != 1:
-            raise RuntimeError(f"Photoshop document template has an invalid token: {token}")
-        script = script.replace(token, json.dumps(str(path), ensure_ascii=True))
-    launcher_path = destination / DOCUMENT_LAUNCHER_FILENAME
-    launcher_path.write_text(script, encoding="utf-8")
-    return PhotoshopScriptLaunch(
-        launcher_path=launcher_path,
-        request_path=request_path,
-        result_path=result_path,
-        manifest_path=manifest_path,
-        progress_path=progress_path,
-    )

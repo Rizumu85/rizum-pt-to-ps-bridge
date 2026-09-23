@@ -5,15 +5,22 @@ import type { Readable } from "node:stream"
 
 import {
   emptyBridgeState,
+  findNode,
   type BridgeState,
   type HostLayerRef,
   type LayerNode,
 } from "./model"
+import {
+  clearTransferDirectory,
+  readPhotoshopDocument,
+  renderPhotoshopTransfer,
+  type PhotoshopDocument,
+} from "./psd"
 
 type JsonObject = Record<string, unknown>
 
 export type SessionOptions = {
-  photoshopManifest?: string
+  photoshopDocument?: string
   painterSnapshot?: string
   output?: string
 }
@@ -30,8 +37,7 @@ export type PainterContext = {
 
 export type BridgeSession = {
   state: BridgeState
-  photoshopConnected: boolean
-  sourceManifestPath: string
+  photoshop: PhotoshopDocument | null
   targetSnapshotPath: string
   outputPath: string
   photoshopSubtitle: string
@@ -48,7 +54,7 @@ export function parseSessionOptions(
   env: Record<string, string | undefined> = process.env,
 ): SessionOptions {
   const values: Partial<SessionOptions> = {
-    photoshopManifest: env.PT_BRIDGE_PHOTOSHOP_MANIFEST,
+    photoshopDocument: env.PT_BRIDGE_PHOTOSHOP_DOCUMENT,
     painterSnapshot: env.PT_BRIDGE_PAINTER_SNAPSHOT,
     output: env.PT_BRIDGE_TRANSFER_OUTPUT,
   }
@@ -56,39 +62,34 @@ export function parseSessionOptions(
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]
     const value = argv[index + 1]
-    if (!["--session", "--photoshop", "--painter", "--output"].includes(flag)) {
+    if (!["--psd", "--painter", "--output"].includes(flag)) {
       throw new Error(`Unknown desktop argument: ${flag}`)
     }
     if (!value || value.startsWith("--")) {
       throw new Error(`Desktop argument ${flag} requires a path`)
     }
 
-    if (flag === "--session" || flag === "--photoshop") values.photoshopManifest = value
+    if (flag === "--psd") values.photoshopDocument = value
     if (flag === "--painter") values.painterSnapshot = value
     if (flag === "--output") values.output = value
     index += 1
   }
 
-  if (!values.painterSnapshot && !values.photoshopManifest) {
+  if (!values.painterSnapshot) {
     throw new Error("Pass --painter <painter_snapshot.json> to open PT Bridge")
   }
   return values
 }
 
 export async function loadBridgeSession(options: SessionOptions): Promise<BridgeSession> {
-  const sourceManifestPath = options.photoshopManifest
-    ? path.resolve(options.photoshopManifest)
-    : ""
-  const source = sourceManifestPath ? await readPhotoshopSelection(sourceManifestPath) : {}
-  const targetSnapshotPath = path.resolve(
-    options.painterSnapshot ?? targetSnapshotFromSelection(source, sourceManifestPath),
-  )
+  if (!options.painterSnapshot) throw new Error("Pass --painter <painter_snapshot.json> to open PT Bridge")
+  const targetSnapshotPath = path.resolve(options.painterSnapshot)
   const target = await readJsonObject(targetSnapshotPath)
-  const photoshop = sourceManifestPath ? photoshopNodes(source, sourceManifestPath) : []
+  const photoshop = options.photoshopDocument
+    ? await readPhotoshopDocument(options.photoshopDocument)
+    : null
   const contexts = painterContexts(target)
-  const sourceContext = sourceManifestPath
-    ? await photoshopDocumentContext(source, sourceManifestPath)
-    : {}
+  const sourceContext = photoshop ? await photoshopSidecar(photoshop.path) : {}
   const active = objectValue(target.active_context)
   const activeContexts = contexts.filter(context =>
     context.textureSet === textValue(active.texture_set) && context.stack === textValue(active.stack))
@@ -99,29 +100,24 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
     : matchingPainterContext(contexts, sourceContext) ?? contexts[0]
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
-  const sourceDocument = objectValue(source.document)
-  const targetDocument = objectValue(target.project)
   const outputPath = path.resolve(
-    options.output ?? path.join(path.dirname(sourceManifestPath || targetSnapshotPath), "desktop_transfer.json"),
+    options.output ?? path.join(path.dirname(targetSnapshotPath), "desktop_transfer.json"),
   )
 
   return {
-    state: { photoshop, painter: initialContext.nodes, mappings: [] },
-    photoshopConnected: Boolean(sourceManifestPath),
-    sourceManifestPath,
+    state: { photoshop: photoshop?.nodes ?? [], painter: initialContext.nodes, mappings: [] },
+    photoshop,
     targetSnapshotPath,
     outputPath,
-    photoshopSubtitle: sourceManifestPath
-      ? textValue(sourceDocument.name) || textValue(source.document_name) || "Selection"
-      : "No selection loaded",
+    photoshopSubtitle: photoshop ? photoshop.name : "No document connected",
     painterContexts: contexts,
     initialPainterContextId: initialContext.id,
-    status: sourceManifestPath
+    status: photoshop
       ? "Drag layers between Photoshop and Painter to map a transfer"
       : "Connect Photoshop to start mapping layers",
-    sourceDocument,
+    sourceDocument: photoshop ? { name: photoshop.name, path: photoshop.path } : {},
     sourceContext,
-    targetDocument,
+    targetDocument: objectValue(target.project),
   }
 }
 
@@ -129,11 +125,10 @@ export function failedBridgeSession(error: unknown): BridgeSession {
   const message = error instanceof Error ? error.message : String(error)
   return {
     state: structuredClone(emptyBridgeState),
-    photoshopConnected: false,
-    sourceManifestPath: "",
+    photoshop: null,
     targetSnapshotPath: "",
     outputPath: "",
-    photoshopSubtitle: "No selection loaded",
+    photoshopSubtitle: "No document connected",
     painterContexts: [],
     initialPainterContextId: "",
     status: message,
@@ -153,7 +148,7 @@ export function failedBridgeSession(error: unknown): BridgeSession {
 export const PAINTER_REQUEST_MARKER = "@ptbridge "
 
 export type PainterReply =
-  | { type: "photoshop_connected"; manifest: string }
+  | { type: "photoshop_connected"; psd: string }
   | { type: "photoshop_connect_cancelled" }
   | { type: "photoshop_connect_failed"; message: string }
 
@@ -211,8 +206,8 @@ function parsePainterReply(line: string): PainterReply | Error {
   } catch {
     return new Error("Painter sent an unreadable Bridge reply")
   }
-  if (reply.type === "photoshop_connected" && textValue(reply.manifest)) {
-    return { type: "photoshop_connected", manifest: textValue(reply.manifest) }
+  if (reply.type === "photoshop_connected" && textValue(reply.psd)) {
+    return { type: "photoshop_connected", psd: textValue(reply.psd) }
   }
   if (reply.type === "photoshop_connect_cancelled") return { type: "photoshop_connect_cancelled" }
   if (reply.type === "photoshop_connect_failed") {
@@ -230,7 +225,7 @@ export async function connectPhotoshop(
   if (reply.type === "photoshop_connect_cancelled") return null
   if (reply.type === "photoshop_connect_failed") throw new Error(reply.message)
   return loadBridgeSession({
-    photoshopManifest: reply.manifest,
+    photoshopDocument: reply.psd,
     painterSnapshot: session.targetSnapshotPath,
     output: session.outputPath,
   })
@@ -246,12 +241,34 @@ export async function writeTransferManifest(
   const painterContext = session.painterContexts.find((context) => context.id === painterContextId)
   if (!painterContext) throw new Error("The selected Painter context is no longer available")
 
+  // Photoshop pixels are rendered only for what the user mapped, at Apply.
+  const assets = path.join(path.dirname(session.outputPath), "photoshop_assets")
+  if (state.mappings.some(mapping => mapping.direction === "photoshop_to_painter")) {
+    await clearTransferDirectory(assets)
+  }
+  const warnings: string[] = []
+  const transfers = []
+  for (const [order, mapping] of state.mappings.entries()) {
+    let source: unknown = manifestRef(mapping.source)
+    if (mapping.direction === "photoshop_to_painter") {
+      const node = findNode(state.painter, mapping.sourceId)
+      if (!node || !session.photoshop) throw new Error("A mapped Photoshop layer is no longer available")
+      source = await renderPhotoshopTransfer(session.photoshop, node, assets, warnings)
+    }
+    transfers.push({
+      order,
+      direction: mapping.direction,
+      source,
+      target: manifestRef(mapping.target),
+      insertion: mapping.placement,
+    })
+  }
+
   const payload = {
-    schema_version: 2,
+    schema_version: 3,
     request_type: "desktop_transfer",
     created_at: new Date().toISOString(),
     photoshop: {
-      manifest: session.sourceManifestPath,
       document: session.sourceDocument,
       context: session.sourceContext,
     },
@@ -266,31 +283,12 @@ export async function writeTransferManifest(
         channel_label: painterContext.channelLabel,
       },
     },
-    transfers: state.mappings.map((mapping, order) => ({
-      order,
-      direction: mapping.direction,
-      source: manifestRef(mapping.source),
-      target: manifestRef(mapping.target),
-      insertion: mapping.placement,
-    })),
+    transfers,
+    warnings,
   }
 
   await writeAtomicJson(session.outputPath, payload)
   return session.outputPath
-}
-
-async function readPhotoshopSelection(manifestPath: string): Promise<JsonObject> {
-  const selection = await readJsonObject(manifestPath)
-  if (selection.request_type !== "photoshop_selection") {
-    throw new Error("Photoshop manifest request_type must be 'photoshop_selection'")
-  }
-  if (selection.schema_version !== 1) {
-    throw new Error("Photoshop selection manifest uses an unsupported schema_version")
-  }
-  if (arrayValue(selection.layers).length === 0) {
-    throw new Error("Photoshop selection manifest has no exported layers")
-  }
-  return selection
 }
 
 async function writeAtomicJson(filePath: string, payload: unknown): Promise<void> {
@@ -311,66 +309,6 @@ async function writeAtomicJson(filePath: string, payload: unknown): Promise<void
   })
   // Painter watches this contract after the desktop exits, so replacement must be atomic.
   await rename(temporaryPath, filePath)
-}
-
-function photoshopNodes(manifest: JsonObject, manifestPath: string): LayerNode[] {
-  const manifestDir = path.dirname(manifestPath)
-  const records = arrayValue(manifest.layers).map((value, index) => {
-    const layer = objectValue(value)
-    const externalId = textValue(layer.source_id) || `selection-${index + 1}`
-    const name = textValue(layer.display_name) || textValue(layer.name) || `Layer ${index + 1}`
-    const kindText = textValue(layer.ps_kind) || "layer"
-    const isGroup = /group/i.test(kindText)
-    const group = textValue(layer.group)
-    const relativeAsset = textValue(layer.png)
-    const relativeMask = textValue(layer.mask_png)
-    const resolvedAsset = relativeAsset ? resolveAsset(manifestDir, relativeAsset) : null
-    const ref: HostLayerRef = {
-      host: "photoshop",
-      externalId,
-      nativeId: textValue(layer.ps_layer_id) || externalId,
-      kind: kindText,
-      path: textValue(layer.path) || (group ? `${group}/${name}` : name),
-      assetPath: resolvedAsset,
-      maskPath: relativeMask ? resolveAsset(manifestDir, relativeMask) : null,
-      blendMode: textValue(layer.blend_mode) || "normal",
-      opacity: numberValue(layer.opacity, 100),
-      visible: layer.visible !== false,
-    }
-    const node: LayerNode = {
-      id: `photoshop:${externalId}`,
-      kind: isGroup ? "group" : "layer",
-      name,
-      detail: isGroup ? "Group" : layerDetail(layer),
-      masked: Boolean(relativeMask),
-      thumbnailPath: availableThumbnail(resolvedAsset),
-      ref,
-    }
-    if (isGroup) node.children = []
-    return { layer, node }
-  })
-
-  // Full-document manifests list groups before their descendants. Rebuilding the
-  // tree here preserves old flat selections whose parent group was not exported.
-  const groups = new Map<string, LayerNode>()
-  const groupsById = new Map<string, LayerNode>()
-  for (const { node } of records) {
-    if (node.kind !== "group") continue
-    if (node.ref.path) groups.set(node.ref.path, node)
-    if (node.ref.nativeId) groupsById.set(node.ref.nativeId, node)
-  }
-  const roots: LayerNode[] = []
-  for (const { layer, node } of records) {
-    const layerPath = textValue(layer.path)
-    const separator = layerPath.lastIndexOf("/")
-    const parentPath = separator > 0 ? layerPath.slice(0, separator) : textValue(layer.group)
-    const parentId = textValue(layer.parent_id)
-    const parent = (parentId ? groupsById.get(parentId) : undefined)
-      ?? (parentPath ? groups.get(parentPath) : undefined)
-    if (parent && parent !== node) parent.children?.push(node)
-    else roots.push(node)
-  }
-  return roots
 }
 
 function painterContexts(snapshot: JsonObject): PainterContext[] {
@@ -447,12 +385,6 @@ function requestNodes(values: unknown[], parentPath: string, channel: string): L
   })
 }
 
-function targetSnapshotFromSelection(selection: JsonObject, manifestPath: string): string {
-  const explicit = textValue(selection.painter_snapshot)
-  if (explicit) return resolveAsset(path.dirname(manifestPath), explicit)
-  throw new Error("Pass --painter <snapshot> or include painter_snapshot in the Photoshop manifest")
-}
-
 function painterContextSubtitle(textureSet: string, stack: string, channel: string): string {
   const stackLabel = stack && stack !== textureSet ? `${textureSet} / ${stack}` : textureSet
   return `${stackLabel} · ${channel}`
@@ -484,7 +416,8 @@ function humanize(value: string): string {
 function manifestRef(ref: HostLayerRef) {
   return {
     host: ref.host,
-    id: ref.nativeId ?? ref.externalId,
+    // A Photoshop layer without a persistent id is addressed by index_path.
+    id: ref.host === "photoshop" ? ref.nativeId ?? null : ref.nativeId ?? ref.externalId,
     kind: ref.kind,
     path: ref.path,
     png: ref.assetPath ?? null,
@@ -493,16 +426,13 @@ function manifestRef(ref: HostLayerRef) {
     opacity: ref.opacity ?? null,
     visible: ref.visible ?? null,
     has_mask: ref.hasMask === true,
+    index_path: ref.indexPath ?? null,
   }
 }
 
-async function photoshopDocumentContext(
-  selection: JsonObject,
-  manifestPath: string,
-): Promise<JsonObject> {
-  const relativePath = textValue(selection.sidecar) || textValue(selection.painter_snapshot)
-  if (!relativePath) return {}
-  const sidecarPath = resolveAsset(path.dirname(manifestPath), relativePath)
+async function photoshopSidecar(psdPath: string): Promise<JsonObject> {
+  // Written by the Photoshop build next to each PSD it saves.
+  const sidecarPath = psdPath.replace(/\.[^.\\/]*$/, "") + ".rizum.json"
   if (!existsSync(sidecarPath)) return {}
   const candidate = await readJsonObject(sidecarPath)
   return textValue(candidate.texture_set) && textValue(candidate.channel) ? candidate : {}

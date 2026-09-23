@@ -12,7 +12,7 @@ const fixtures = path.resolve(import.meta.dirname, "../test-fixtures")
 async function setup(nested = false) {
   const session = await loadBridgeSession({
     painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
-    photoshopManifest: path.join(fixtures, "photoshop_selection.json"),
+    photoshopDocument: path.join(fixtures, "photoshop_document.psd"),
   })
   if (nested) {
     const group = session.state.painter.find(node => node.kind === "group")!
@@ -39,7 +39,7 @@ describe("layer tree interaction", () => {
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       expect(insertionLines((await app.call("getTree", {})).tree)).toBe(1)
       expect(await app.getByTestId("drop-indicator:substance_painter:sp-lighten").count()).toBe(1)
-      expect(root.renderer.findByTestId("layer-row:photoshop:ps:42:100")?.style.opacity).toBe(0.65)
+      expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.opacity).toBe(0.65)
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
       root.renderer.flush()
@@ -65,7 +65,7 @@ describe("layer tree interaction", () => {
     const { app, root, close } = await setup()
     try {
       await app.mouse.down(app.getByText("Paint edit"))
-      expect(root.renderer.findByTestId("layer-row:photoshop:ps:42:100")?.style.opacity ?? 1).toBe(1)
+      expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.opacity ?? 1).toBe(1)
       await app.mouse.up(app.getByText("Paint edit"))
       await app.getByText("Working").hover()
       expect(insertionLines((await app.call("getTree", {})).tree)).toBe(0)

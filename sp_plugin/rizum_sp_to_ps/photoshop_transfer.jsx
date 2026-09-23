@@ -23,10 +23,7 @@
         // must not leave a half-applied batch that a retry would duplicate.
         for (var targetIndex = 0; targetIndex < request.layers.length; targetIndex += 1) {
             var mapped = request.layers[targetIndex];
-            var destination = findLayerById(document, Number(mapped.target_layer_id));
-            if (!destination) {
-                throw new Error("Photoshop target layer no longer exists: " + mapped.target_layer_id);
-            }
+            var destination = findTarget(document, mapped);
             if (mapped.insertion !== "after" && mapped.insertion !== "inside") {
                 throw new Error("Unsupported insertion: " + mapped.insertion);
             }
@@ -130,6 +127,34 @@
 
     function normalizedPath(path) {
         return String(path || "").replace(/\\/g, "/").toLowerCase();
+    }
+
+    function findTarget(document, mapped) {
+        if (mapped.target_layer_id !== null && mapped.target_layer_id !== undefined) {
+            var byId = findLayerById(document, Number(mapped.target_layer_id));
+            if (!byId) {
+                throw new Error("Photoshop target layer no longer exists: " + mapped.target_name);
+            }
+            return byId;
+        }
+        // PSDs without persistent layer ids are addressed by the position the
+        // desktop mapper read from the saved file. The name check refuses an
+        // insert when the open document no longer matches that file.
+        var layer = null;
+        var collection = document.layers;
+        var path = mapped.target_index_path || [];
+        for (var depth = 0; depth < path.length; depth += 1) {
+            layer = collection && path[depth] < collection.length ? collection[path[depth]] : null;
+            if (!layer) break;
+            collection = layer.typename === "LayerSet" ? layer.layers : null;
+        }
+        if (!layer || String(layer.name) !== String(mapped.target_name)) {
+            throw new Error(
+                "Photoshop layers changed since Bridge read the PSD. Save it in Photoshop and reconnect: "
+                + mapped.target_name
+            );
+        }
+        return layer;
     }
 
     function findLayerById(parent, targetId) {

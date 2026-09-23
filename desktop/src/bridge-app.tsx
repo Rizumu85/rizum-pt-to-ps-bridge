@@ -126,7 +126,7 @@ export function BridgeApp({
     if (rootRef.current) renderer.focusElement?.(rootRef.current.id)
     const nodes = findNode(bridge.photoshop, id) ? bridge.photoshop : bridge.painter
     const source = findNode(nodes, id)
-    if (!source) return
+    if (!source || source.locked) return
     const modifiers = { toggle: event.modifiers?.ctrl || event.modifiers?.cmd, range: event.modifiers?.shift }
     const visible = visibleSourceIds(nodes, source.ref.host, expanded)
     const next = selectLayerIds(selectedIds, selectionAnchor.current, id, visible, modifiers)
@@ -401,7 +401,7 @@ export function BridgeApp({
             nodes={bridge.photoshop}
             host="photoshop"
             headerAction={
-              session.photoshopConnected ? (
+              session.photoshop !== null ? (
                 <IconAction
                   icon="folder"
                   label="Change Photoshop document"
@@ -412,7 +412,7 @@ export function BridgeApp({
               ) : undefined
             }
             emptyContent={
-              session.photoshopConnected ? undefined : (
+              session.photoshop !== null ? undefined : (
                 <div
                   style={{
                     width: "100%",
