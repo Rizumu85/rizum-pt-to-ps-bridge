@@ -224,9 +224,9 @@ available, then a user choice persisted in `project.Metadata`.
 
 No Photoshop plugin is installed. Painter drives every Photoshop step by
 starting the configured Photoshop executable with a generated JSX launcher:
-building PSDs after export (`photoshop_build.jsx`), connecting an existing PSD
-to the desktop mapper (`photoshop_document.jsx`), and inserting mapped Painter
-layers (`photoshop_transfer.jsx`). This keeps the plugin zero-install and fully
+building PSDs after export (`photoshop_build.jsx`) and inserting mapped
+Painter layers (`photoshop_transfer.jsx`). Connecting a PSD needs no
+Photoshop at all (see §6.1). This keeps the plugin zero-install and fully
 automatic; a UXP panel was removed because UXP panels cannot receive a reliable
 external launch event and duplicated the ExtendScript builder.
 
@@ -483,11 +483,22 @@ and crashes, so return transfers must stay explicit (see
 
 ### 6.1 Connecting a Photoshop document
 
-**Connect Photoshop** in the desktop mapper asks Painter to pick a PSD/PSB.
-Painter runs `photoshop_document.jsx`, which duplicates the document once and
-renders each layer and group in isolation to a full-canvas PNG, so Photoshop's
-own renderer bakes masks, effects, and clipping. The script writes a
-`photoshop_selection.json` manifest that the open mapper loads in place.
+**Connect Photoshop** asks Painter to pick a PSD/PSB, and the mapper reads the
+saved file itself, so connecting never opens Photoshop. Because nothing comes
+from Photoshop's own renderer, the mapper treats layers this way:
+
+- Raster, text, and smart-object layers transfer as Painter fill layers; their
+  user masks transfer as real Painter masks.
+- Clipped layers merge into their base when transferred. Clipped rows stay
+  visible but locked with "Clipped · merges into <base>", and the base row
+  says how many layers merge into it.
+- Layer styles are not transferred; the row says so.
+- Adjustment and fill layers are locked, because Painter has no equivalent.
+- A Photoshop folder arrives in Painter as a folder of its layers. The mapper
+  shows no group composite previews.
+
+Only mapped layers are rendered to PNG, at Apply. The mapper reads the saved
+file, so unsaved Photoshop edits are not seen until the PSD is saved.
 
 ### 6.3 Non-goals for return data
 

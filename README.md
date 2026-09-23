@@ -6,8 +6,9 @@ Photoshop. It has three parts:
 - **Painter plugin** (`sp_plugin/`): exports layer-aware PNG payloads and
   `build_request.json` bundles, and applies desktop transfers.
 - **Photoshop automation** (`sp_plugin/rizum_sp_to_ps/*.jsx`): ExtendScript
-  that Painter runs in Photoshop to build PSDs, connect a PSD to the mapper,
-  and insert mapped layers. Nothing is installed in Photoshop.
+  that Painter runs in Photoshop to build PSDs and insert mapped layers.
+  Nothing is installed in Photoshop, and connecting a PSD to the mapper does
+  not open Photoshop.
 - **Desktop mapper** (`desktop/`): a native GPUiX window that shows both layer
   trees so you can map layers between the hosts and press Apply.
 

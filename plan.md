@@ -40,8 +40,8 @@ and Photoshop and applies them only on an explicit Apply.
 
 - [ ] Host-test the full round trip: Painter to Photoshop, Photoshop to
       Painter, retargeting, undo, reconnecting a PSD, and failure recovery.
-- [ ] Connect a PSD without opening Photoshop by reading it in the mapper.
-      Decided so far: clipped layers merge with their base when transferred
-      and the UI says so; Painter has no adjustment layers or layer styles; the
-      mapper does not need group composite previews. The handling of layers
-      that need Photoshop's renderer is still open.
+- [x] Connect a PSD without opening Photoshop by reading it in the mapper
+      (clipping merges into the base, styles are dropped, adjustment and fill
+      layers are locked, folders arrive as folders; see `design.md §6.1`).
+- [ ] Host-test PSD connect and Apply on production PSDs, including files
+      without persistent layer ids and 16-bit documents.

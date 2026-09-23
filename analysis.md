@@ -26,6 +26,15 @@ Host findings that still constrain the implementation:
 - **Photoshop automation from Painter uses ExtendScript.** UXP panels are lazy
   and cannot receive a reliable external launch event, so Painter launches
   Photoshop with a JSX file and waits for a published receipt.
+- **PSD reading.** The mapper reads PSD/PSB files with ag-psd (MIT) using
+  `useRawData`, which decodes one layer at a time. It supports 8/16/32-bit
+  channels including ZIP-with-prediction and PSB. Measured on production files:
+  a 25-layer 4K PSD connects in about 1.7 s and a 522-layer 6000 px file in
+  about 0.9 s. 32-bit layer data is linear and is encoded to sRGB.
+- **Many PSDs have no persistent layer ids.** None of the user's production
+  PSDs contained `lyid`. Painter-to-Photoshop inserts therefore address a
+  target by layer id when present, otherwise by sibling index path (top first,
+  matching the ExtendScript DOM) verified against the layer name.
 - **Desktop mapper stdio.** GPUiX serves its automation protocol whenever stdin
   is a pipe, so the Painter link uses marked stdout lines and single-line JSON
   replies on the shared stream (see `desktop/README.md`).
