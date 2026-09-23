@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
+import type { Readable } from "node:stream"
 
 import {
   emptyBridgeState,
@@ -142,15 +143,97 @@ export function failedBridgeSession(error: unknown): BridgeSession {
   }
 }
 
-export async function writeConnectPhotoshopRequest(session: BridgeSession): Promise<string> {
-  if (!session.outputPath) throw new Error("The transfer session has no output path")
-  await writeAtomicJson(session.outputPath, {
-    schema_version: 1,
-    request_type: "desktop_connect_photoshop",
-    created_at: new Date().toISOString(),
-    painter_snapshot: session.targetSnapshotPath,
+// Painter owns the file picker and Photoshop automation, but the mapper stays
+// open while Painter works so a connection never costs the user their window.
+// The link shares stdio with GPUiX: GPUiX serves SSE automation whenever stdin
+// is a pipe. Painter replies are single-line JSON, which the SSE parser ignores
+// (they never start with "data:"), and the link listens on the same
+// process.stdin stream because a second reader on fd 0 would split its bytes.
+// Requests share stdout with SSE replies and console output, hence the marker.
+export const PAINTER_REQUEST_MARKER = "@ptbridge "
+
+export type PainterReply =
+  | { type: "photoshop_connected"; manifest: string }
+  | { type: "photoshop_connect_cancelled" }
+  | { type: "photoshop_connect_failed"; message: string }
+
+export type PainterLink = {
+  request: (type: "connect_photoshop") => Promise<PainterReply>
+}
+
+export function createPainterLink(
+  input: Readable,
+  write: (line: string) => void,
+): PainterLink {
+  let waiting: { resolve: (reply: PainterReply) => void; reject: (error: Error) => void } | null = null
+  let closed = false
+  let buffer = ""
+
+  const settle = (outcome: PainterReply | Error) => {
+    const current = waiting
+    waiting = null
+    if (!current) return
+    if (outcome instanceof Error) current.reject(outcome)
+    else current.resolve(outcome)
+  }
+  const close = () => {
+    closed = true
+    settle(new Error("Painter closed the Bridge connection"))
+  }
+
+  input.on("data", (chunk: string | Uint8Array) => {
+    buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")
+    for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
+      const line = buffer.slice(0, newline).trim()
+      buffer = buffer.slice(newline + 1)
+      if (line.startsWith("{")) settle(parsePainterReply(line))
+    }
   })
-  return session.outputPath
+  input.on("end", close)
+  input.on("error", close)
+
+  return {
+    request(type) {
+      if (closed) return Promise.reject(new Error("Painter closed the Bridge connection"))
+      if (waiting) return Promise.reject(new Error("A Painter request is already pending"))
+      return new Promise((resolve, reject) => {
+        waiting = { resolve, reject }
+        write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type })}\n`)
+      })
+    },
+  }
+}
+
+function parsePainterReply(line: string): PainterReply | Error {
+  let reply: JsonObject
+  try {
+    reply = objectValue(JSON.parse(line))
+  } catch {
+    return new Error("Painter sent an unreadable Bridge reply")
+  }
+  if (reply.type === "photoshop_connected" && textValue(reply.manifest)) {
+    return { type: "photoshop_connected", manifest: textValue(reply.manifest) }
+  }
+  if (reply.type === "photoshop_connect_cancelled") return { type: "photoshop_connect_cancelled" }
+  if (reply.type === "photoshop_connect_failed") {
+    return { type: "photoshop_connect_failed", message: textValue(reply.message) || "Photoshop connection failed" }
+  }
+  return new Error(`Painter sent an unsupported Bridge reply: ${String(reply.type)}`)
+}
+
+/** Resolves the reconnected session, or null when the user cancelled Painter's picker. */
+export async function connectPhotoshop(
+  session: BridgeSession,
+  link: PainterLink,
+): Promise<BridgeSession | null> {
+  const reply = await link.request("connect_photoshop")
+  if (reply.type === "photoshop_connect_cancelled") return null
+  if (reply.type === "photoshop_connect_failed") throw new Error(reply.message)
+  return loadBridgeSession({
+    photoshopManifest: reply.manifest,
+    painterSnapshot: session.targetSnapshotPath,
+    output: session.outputPath,
+  })
 }
 
 export async function writeTransferManifest(

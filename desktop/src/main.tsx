@@ -40,10 +40,11 @@ import {
 } from "./model"
 import { colors, metrics, typography } from "./theme"
 import {
+  connectPhotoshop,
+  createPainterLink,
   failedBridgeSession,
   loadBridgeSession,
   parseSessionOptions,
-  writeConnectPhotoshopRequest,
   writeTransferManifest,
   type BridgeSession,
   type PainterContext,
@@ -849,17 +850,18 @@ function HostPanel({
 }
 
 export function BridgeApp({
-  session,
+  session: initialSession,
   onApply,
   onConnectPhotoshop,
   onApplied,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState, painterContextId: string) => Promise<string>
-  onConnectPhotoshop: () => Promise<string>
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<string>
+  onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
   onApplied?: (output: string) => void
 }) {
   const renderer = useGpuixRequired()
+  const [session, setSession] = useState(initialSession)
   const rootRef = useRef<PublicInstance | null>(null)
   const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
   const [activePainterContextId, setActivePainterContextId] = useState(
@@ -1056,7 +1058,7 @@ export function BridgeApp({
     setFailed(false)
     setStatus("Writing transfer manifest...")
     try {
-      const output = await onApply(bridge, activePainterContextId)
+      const output = await onApply(bridge, activePainterContextId, session)
       setHistory([])
       setRedoStack([])
       const filename = output.split(/[\\/]/).pop() || output
@@ -1081,12 +1083,28 @@ export function BridgeApp({
     pending.current = true
     setBusy(true)
     setFailed(false)
-    setStatus("Opening Photoshop connection...")
+    setStatus("Choose a Photoshop document in Painter...")
     console.info("[PT Bridge] connect_clicked")
     try {
-      const output = await onConnectPhotoshop()
-      console.info("[PT Bridge] connect_request_written")
-      onApplied?.(output)
+      const next = await onConnectPhotoshop(session)
+      if (!next) {
+        setStatus("Photoshop connection cancelled")
+        return
+      }
+      // Reconnecting replaces only the Photoshop side. Mappings are already
+      // empty here, so the Painter target the user chose stays selected.
+      const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
+        ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
+        ?? null
+      const state = bridgeStateForContext(next, context)
+      setSession(next)
+      if (context) setActivePainterContextId(context.id)
+      setBridge(state)
+      setSelectedIds(new Set())
+      setHistory([])
+      setRedoStack([])
+      setExpanded(collectExpandedIds(state))
+      setStatus(next.status)
     } catch (error) {
       console.error("[PT Bridge] connect_failed", error)
       setFailed(true)
@@ -1359,7 +1377,9 @@ const isEntryPoint =
 
 if (isEntryPoint) {
   const { registerBundledFonts } = await import("./fonts")
+  const { allowPainterForeground } = await import("./foreground")
   registerBundledFonts()
+  const painterLink = createPainterLink(process.stdin, (line) => process.stdout.write(line))
 
   let session: BridgeSession
   try {
@@ -1374,8 +1394,11 @@ if (isEntryPoint) {
   render(
     <BridgeApp
       session={session}
-      onApply={(state, contextId) => writeTransferManifest(session, state, contextId)}
-      onConnectPhotoshop={() => writeConnectPhotoshopRequest(session)}
+      onApply={(state, contextId, current) => writeTransferManifest(current, state, contextId)}
+      onConnectPhotoshop={(current) => {
+        allowPainterForeground()
+        return connectPhotoshop(current, painterLink)
+      }}
       onApplied={() => {
         // Painter owns the destination mutation, so a successful atomic write
         // is the desktop process's terminal state and its unambiguous handoff.

@@ -20,6 +20,8 @@ MANIFEST_DIR_KEY = "desktop_manifest_dir"
 MANIFEST_PATH_KEY = "desktop_manifest_path"
 PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
 PHOTOSHOP_START_TIMEOUT_SECONDS = 120
+DESKTOP_REQUEST_MARKER = "@ptbridge "
+IDLE_TOOLTIP = "Map layers between Painter and Photoshop"
 
 
 class DesktopBridgeController:
@@ -44,11 +46,11 @@ class DesktopBridgeController:
         self._photoshop_export_phase = None
         self._source_dialog = None
         self._trace_path = None
+        self._stdout_buffer = ""
 
         self.button = panel.dock_bridge_button
-        self.button.setEnabled(True)
-        self.button.setToolTip("Map layers between Painter and Photoshop")
         self.button.clicked.connect(self.open)
+        self._sync_button()
 
     def close(self):
         """Detach the controller and stop an owned desktop session on unload."""
@@ -77,10 +79,7 @@ class DesktopBridgeController:
 
     def open(self):
         """Launch one mapping session with the last connected Photoshop document."""
-        if (
-            self._process is not None or self._source_dialog is not None
-            or self._photoshop_launch is not None or self._applying_transfer
-        ):
+        if self._busy_reason() is not None:
             return
         if not self.panel._project_is_open():
             self._show("Bridge", "Open a Painter project before starting Bridge.")
@@ -115,6 +114,7 @@ class DesktopBridgeController:
 
         self._transfer_path = transfer_path
         self._process_error_reported = False
+        self._stdout_buffer = ""
         process = self.QtCore.QProcess(self.panel.widget)
         process.setProgram(str(executable))
         arguments = [
@@ -131,10 +131,29 @@ class DesktopBridgeController:
         process.readyReadStandardOutput.connect(self._desktop_output)
         process.started.connect(lambda: self._trace("desktop_started"))
         self._process = process
-        self.button.setEnabled(False)
-        self.button.setToolTip("PT Bridge desktop is open")
+        self._sync_button()
         self.panel.status.setText("Mapping Painter and Photoshop layers...")
         process.start()
+
+    def _busy_reason(self):
+        if self._photoshop_launch is not None:
+            return "Photoshop operation in progress"
+        if self._applying_transfer:
+            return "Applying mapped layers"
+        if self._process is not None or self._source_dialog is not None:
+            return "PT Bridge desktop is open"
+        return None
+
+    def _sync_button(self):
+        # The dock button is derived from session state here and nowhere else.
+        # Imperative enable/disable writes from several owners left it disabled
+        # after every export; export itself runs behind an application-modal
+        # progress dialog, so the panel has no reason to gate this button.
+        if self._closing:
+            return
+        reason = self._busy_reason()
+        self.button.setEnabled(reason is None)
+        self.button.setToolTip(reason or IDLE_TOOLTIP)
 
     def _recent_photoshop_manifest(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
@@ -169,7 +188,7 @@ class DesktopBridgeController:
             "JSON Files (*.json)",
         ])
         self._source_dialog = dialog
-        self.button.setEnabled(False)
+        self._sync_button()
         dialog.finished.connect(self._photoshop_source_chosen)
         dialog.open()
         dialog.raise_()
@@ -185,11 +204,15 @@ class DesktopBridgeController:
         dialog.deleteLater()
         if self._closing:
             return
-        self.button.setEnabled(True)
+        self._sync_button()
+        if self._process is None:
+            # The mapper window closed while the picker was open; its connection
+            # request ended with it.
+            return
         if result != self.QtWidgets.QDialog.DialogCode.Accepted or not paths:
             self._trace("photoshop_picker_cancelled")
             self.panel.status.setText("Photoshop connection cancelled.")
-            self._launch_desktop(self._recent_photoshop_manifest())
+            self._reply_to_desktop({"type": "photoshop_connect_cancelled"})
             return
         source_path = Path(paths[0])
         self._trace("photoshop_source_selected", source_path.suffix)
@@ -213,8 +236,22 @@ class DesktopBridgeController:
         except Exception as exc:
             self._photoshop_job_failed(str(exc))
             return
+        self._photoshop_connected(manifest_path)
+
+    def _photoshop_connected(self, manifest_path):
         self._remember_photoshop_manifest(manifest_path)
-        self._launch_desktop(manifest_path)
+        self._reply_to_desktop(
+            {"type": "photoshop_connected", "manifest": str(manifest_path)}
+        )
+
+    def _reply_to_desktop(self, payload):
+        # The mapper stays open while Painter connects Photoshop, so replies go
+        # to its stdin instead of relaunching it with a new session.
+        process = self._process
+        if process is None:
+            return
+        self._trace("desktop_reply", payload.get("type", ""))
+        process.write((json.dumps(payload) + "\n").encode("utf-8"))
 
     def _start_photoshop_document_export(self, source_path):
         try:
@@ -256,15 +293,13 @@ class DesktopBridgeController:
         timer.setInterval(400)
         timer.timeout.connect(self._poll_photoshop_job)
         self._photoshop_export_timer = timer
-        self.button.setEnabled(False)
-        self.button.setToolTip("Photoshop operation in progress")
+        self._sync_button()
         self.panel.status.setText(f"Waiting for Photoshop: {label}")
         timer.start()
 
     def _show_photoshop_progress(self, name):
-        # The mapper exits to hand ownership to Painter's file picker. Keep that
-        # handoff visible until the manifest is ready; a hidden dock label is not
-        # sufficient feedback, and launching a second mapper would allow duplicates.
+        # Only Painter reads the script's progress receipts, so Painter shows the
+        # layer count; the dock label is hidden and not sufficient feedback.
         dialog = self.QtWidgets.QProgressDialog(self.panel.widget.window())
         dialog.setWindowTitle("PT Bridge - Photoshop")
         dialog.setWindowModality(self.QtCore.Qt.WindowModality.NonModal)
@@ -330,9 +365,11 @@ class DesktopBridgeController:
                 message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
             self._show("Bridge transfer incomplete", message)
             return
-        self._launch_desktop(self._recent_photoshop_manifest())
         self.panel.status.setText("Photoshop connection failed.")
-        self._show("Bridge", message)
+        if self._process is not None:
+            self._reply_to_desktop({"type": "photoshop_connect_failed", "message": message})
+        else:
+            self._show("Bridge", message)
 
     def _poll_photoshop_job(self):
         launch = self._photoshop_launch
@@ -374,10 +411,9 @@ class DesktopBridgeController:
 
         self._trace("photoshop_document_ready", str(payload.get("exported_count", 0)))
         self._clear_photoshop_export()
-        self._remember_photoshop_manifest(manifest_path)
         exported_count = int(payload.get("exported_count") or 0)
         self.panel.status.setText(f"Loaded {exported_count} Photoshop layer(s).")
-        self._launch_desktop(manifest_path)
+        self._photoshop_connected(manifest_path)
 
     def _finish_photoshop_transfer(self, payload):
         transfer = self._pending_transfer_result
@@ -427,9 +463,7 @@ class DesktopBridgeController:
         if timer is not None:
             timer.stop()
             timer.deleteLater()
-        if not self._closing:
-            self.button.setEnabled(True)
-            self.button.setToolTip("Map layers between Painter and Photoshop")
+        self._sync_button()
 
     def _desktop_error(self, process_error):
         if self._closing or self._process_error_reported:
@@ -480,12 +514,6 @@ class DesktopBridgeController:
             self.panel.status.setText("Bridge response could not be read.")
             self._show("Bridge", str(exc))
             return
-        if request_type == "desktop_connect_photoshop":
-            process.deleteLater()
-            self.button.setEnabled(False)
-            # Leave the process-finished signal before opening a new modal owner.
-            self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
-            return
         if request_type != "desktop_transfer":
             process.deleteLater()
             self.panel.status.setText("Bridge response is unsupported.")
@@ -493,7 +521,7 @@ class DesktopBridgeController:
             return
 
         self._applying_transfer = True
-        self.button.setEnabled(False)
+        self._sync_button()
         self.panel.status.setText("Applying mapped layers...")
         try:
             result = desktop_transfer.apply_transfer_manifest(
@@ -507,7 +535,7 @@ class DesktopBridgeController:
             return
         finally:
             self._applying_transfer = False
-            self.button.setEnabled(not self._closing)
+            self._sync_button()
 
         process.deleteLater()
         if result.photoshop_launch is not None:
@@ -520,8 +548,10 @@ class DesktopBridgeController:
     def _take_process(self):
         process = self._process
         self._process = None
-        self.button.setEnabled(not self._closing)
-        self.button.setToolTip("Map layers between Painter and Photoshop")
+        if self._source_dialog is not None:
+            # The picker answers this mapper's request; it cannot outlive it.
+            self._source_dialog.close()
+        self._sync_button()
         return process
 
     def _show(self, title, message):
@@ -539,16 +569,41 @@ class DesktopBridgeController:
         try:
             self._connect_photoshop()
         except Exception as exc:
-            self.button.setEnabled(True)
+            self._source_dialog = None
+            self._sync_button()
             self.panel.status.setText("Photoshop connection could not open.")
-            self._show("Bridge", str(exc))
+            self._reply_to_desktop({"type": "photoshop_connect_failed", "message": str(exc)})
 
     def _desktop_output(self):
         if self._process is None:
             return
-        output = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        if output.strip():
-            self._trace("desktop", output.strip())
+        self._stdout_buffer += bytes(self._process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace"
+        )
+        *lines, self._stdout_buffer = self._stdout_buffer.split("\n")
+        for line in lines:
+            line = line.strip()
+            if line.startswith(DESKTOP_REQUEST_MARKER):
+                self._desktop_request(line[len(DESKTOP_REQUEST_MARKER):])
+            elif line:
+                self._trace("desktop", line)
+
+    def _desktop_request(self, text):
+        try:
+            request_type = json.loads(text).get("type")
+        except (ValueError, AttributeError):
+            request_type = None
+        self._trace("desktop_request", str(request_type))
+        if request_type != "connect_photoshop":
+            self._reply_to_desktop({
+                "type": "photoshop_connect_failed",
+                "message": f"Unsupported desktop request: {request_type or '(missing)'}",
+            })
+            return
+        if self._source_dialog is not None or self._photoshop_launch is not None:
+            return
+        # Leave the stdout signal before opening a new modal owner.
+        self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
 
     def _trace(self, event, detail="", *, reset=False):
         # Keep only lifecycle diagnostics, not snapshot data, so real host-only

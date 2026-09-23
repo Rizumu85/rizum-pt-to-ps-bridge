@@ -1,18 +1,23 @@
 import { spawn } from "node:child_process"
-import { mkdtemp, unlink } from "node:fs/promises"
+import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { connectStdio } from "@gpuix/react/automation"
 
+import { PAINTER_REQUEST_MARKER } from "../src/transport"
+
 const directory = await mkdtemp(path.join(tmpdir(), "bridge-win-input-"))
-// A temp drive does not exercise cloud/reparse-point directory semantics.
-const output = process.env.BRIDGE_TEST_OUTPUT_DIR
-  ? path.join(process.env.BRIDGE_TEST_OUTPUT_DIR, `_${path.basename(directory)}.json`)
-  : path.join(directory, "request.json")
 const compiled = process.env.BRIDGE_TEST_COMPILED === "1"
+const manifest = path.resolve("test-fixtures/photoshop_selection.json")
 const child = spawn(compiled ? path.resolve("dist/pt-bridge.exe") : process.execPath, [...(compiled ? [] : ["src/main.tsx"]), "--painter",
-  process.argv[2] ?? "test-fixtures/painter_snapshot.json", "--output", output],
+  process.argv[2] ?? "test-fixtures/painter_snapshot.json", "--output", path.join(directory, "desktop_transfer.json")],
   { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, GPUIX_BACKGROUND: "1" } })
+// Painter's link and GPUiX automation share this stdio pair, exactly as under
+// Painter's QProcess; the check proves neither protocol consumes the other.
+let requested = false
+child.stdout.on("data", data => {
+  if (String(data).split("\n").some(line => line.startsWith(PAINTER_REQUEST_MARKER))) requested = true
+})
 const app = await connectStdio({
   write: data => { child.stdin.write(data) },
   feed: listener => { child.stdout.on("data", data => listener(data.toString())) },
@@ -27,19 +32,14 @@ try {
     String(button.x), String(button.y)], { stdout: "inherit", stderr: "inherit" })
   if (await input.exited) throw new Error("Win32 input failed")
   await Bun.sleep(1000)
-  const connected = await Bun.file(output).exists()
-  if (!connected) await app.screenshot({ path: path.join(directory, "failed-click.png") })
-  console.log({ connected, directory })
-  if (!connected) throw new Error("Win32 Connect click did not write a request")
-  const request = await Bun.file(output).json()
-  if (request.request_type !== "desktop_connect_photoshop") throw new Error("Unexpected handoff request")
-  // Writing alone is insufficient: Painter opens its picker only after a clean exit.
-  if (child.exitCode !== 0) throw new Error(`Connect did not exit cleanly: ${child.exitCode}`)
+  if (!requested) {
+    await app.screenshot({ path: path.join(directory, "failed-click.png") })
+    throw new Error(`Win32 Connect click did not request Painter (${directory})`)
+  }
+  child.stdin.write(`${JSON.stringify({ type: "photoshop_connected", manifest })}\n`)
+  await app.getByText("Paint edit").waitFor({ timeoutMs: 5000 })
+  if (child.exitCode !== null) throw new Error(`Connect closed the mapper: ${child.exitCode}`)
+  console.log({ connected: true, directory })
 } finally {
   await app.close()
-  for (const file of [output, `${output}.tmp-${child.pid}`]) {
-    await unlink(file).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error
-    })
-  }
 }

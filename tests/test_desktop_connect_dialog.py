@@ -24,7 +24,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         )
         self.widget = QtWidgets.QWidget()
         self.panel = SimpleNamespace(
-            QtCore=SimpleNamespace(QSettings=lambda *_: self.settings, QTimer=QtCore.QTimer, Qt=QtCore.Qt),
+            QtCore=SimpleNamespace(QSettings=lambda *_: self.settings, QTimer=QtCore.QTimer, Qt=QtCore.Qt, QProcess=QtCore.QProcess),
             QtWidgets=QtWidgets, widget=self.widget,
             dock_bridge_button=QtWidgets.QPushButton(self.widget),
             status=QtWidgets.QLabel(self.widget),
@@ -33,6 +33,18 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller = DesktopBridgeController(self.panel, Mock())
         self.controller._launch_desktop = Mock()
         self.controller._start_photoshop_document_export = Mock()
+        # Connections start from an open mapper, which stays open for the reply.
+        self.process = Mock()
+        self.controller._process = self.process
+
+    def replies(self):
+        return [json.loads(call.args[0].decode("utf-8")) for call in self.process.write.call_args_list]
+
+    def assert_failed_reply(self, text):
+        reply = self.replies()[-1]
+        self.assertEqual(reply["type"], "photoshop_connect_failed")
+        self.assertIn(text, reply["message"])
+        self.controller._show_message_callback.assert_not_called()
 
     def begin_export(self):
         root = Path(self.directory.name)
@@ -73,38 +85,44 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertFalse(progress.isVisible())
         self.assertIsNone(self.controller._photoshop_launch)
         self.assertIsNone(self.controller._photoshop_export_timer)
-        self.controller._launch_desktop.assert_called_once_with(None)
-        self.assertIn("2 minutes", self.controller._show_message_callback.call_args.args[-1])
+        self.assert_failed_reply("2 minutes")
 
     def test_acknowledged_export_uses_long_timeout(self):
         launch = self.begin_export()
         launch.progress_path.write_text('{"phase":"opening_document"}', encoding="utf-8")
         self.controller._photoshop_export_started_at -= 121
         self.controller._poll_photoshop_job()
-        self.controller._launch_desktop.assert_not_called()
+        self.assertEqual(self.replies(), [])
         self.controller._photoshop_export_started_at -= 1800
         self.controller._poll_photoshop_job()
-        self.controller._launch_desktop.assert_called_once_with(None)
-        self.assertIn("30 minutes", self.controller._show_message_callback.call_args.args[-1])
+        self.assert_failed_reply("30 minutes")
 
-    def test_failure_receipt_restores_mapper_with_actual_error(self):
+    def test_failure_receipt_reaches_open_mapper_with_actual_error(self):
         launch = self.begin_export()
         launch.result_path.write_text(json.dumps({
             "success": False, "errors": [{"layer": "PSD", "error": "Could not decode"}],
         }), encoding="utf-8")
         self.controller._poll_photoshop_job()
-        self.controller._launch_desktop.assert_called_once_with(None)
-        self.assertIn("Could not decode", self.controller._show_message_callback.call_args.args[-1])
+        self.assert_failed_reply("Could not decode")
         self.assertIsNone(self.controller._photoshop_progress_dialog)
+        self.controller._launch_desktop.assert_not_called()
+
+    def test_failure_after_mapper_closed_is_reported_in_painter(self):
+        launch = self.begin_export()
+        self.controller._process = None
+        launch.result_path.write_text('{"success":false}', encoding="utf-8")
+        self.controller._poll_photoshop_job()
+        self.assertEqual(self.controller._show_message_callback.call_args.args[-2], "Bridge")
+        self.assertTrue(self.panel.dock_bridge_button.isEnabled())
 
     def test_corrupt_published_receipt_is_not_an_endless_wait(self):
         launch = self.begin_export()
         launch.result_path.write_text("not json", encoding="utf-8")
         self.controller._poll_photoshop_job()
-        self.controller._launch_desktop.assert_called_once_with(None)
+        self.assert_failed_reply("could not be read")
         self.assertIsNone(self.controller._photoshop_export_timer)
 
-    def test_success_reopens_mapper_with_manifest_and_closes_progress(self):
+    def test_success_sends_manifest_to_open_mapper_and_closes_progress(self):
         launch = self.begin_export()
         launch.manifest_path.write_text(json.dumps({
             "schema_version": 1, "request_type": "photoshop_selection", "layers": [{"png": "1.png"}],
@@ -113,17 +131,20 @@ class DesktopConnectDialogTests(unittest.TestCase):
         progress = self.controller._photoshop_progress_dialog
         self.controller._poll_photoshop_job()
         self.assertFalse(progress.isVisible())
-        self.controller._launch_desktop.assert_called_once_with(launch.manifest_path)
+        self.assertEqual(
+            self.replies(),
+            [{"type": "photoshop_connected", "manifest": str(launch.manifest_path)}],
+        )
+        self.controller._launch_desktop.assert_not_called()
         self.assertEqual(self.controller._recent_photoshop_manifest(), launch.manifest_path)
         self.controller._show_message_callback.assert_not_called()
 
-    def test_launch_failure_cleans_progress_and_restores_mapper(self):
+    def test_launch_failure_cleans_progress_and_reports_to_mapper(self):
         self.panel.launch_photoshop.return_value = (False, "Photoshop unavailable")
         self.begin_export()
         self.assertIsNone(self.controller._photoshop_progress_dialog)
         self.assertIsNone(self.controller._photoshop_export_timer)
-        self.controller._launch_desktop.assert_called_once_with(None)
-        self.assertEqual(self.controller._show_message_callback.call_args.args[-1], "Photoshop unavailable")
+        self.assert_failed_reply("Photoshop unavailable")
 
     def test_unload_closes_pending_connection_without_relaunch(self):
         self.begin_export()
@@ -135,6 +156,8 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._launch_desktop.assert_not_called()
 
     def begin_transfer(self):
+        # Apply is terminal for the mapper; Painter continues without it.
+        self.controller._process = None
         request = Path(self.directory.name) / "photoshop_transfer.json"
         request.write_text("{}", encoding="utf-8")
         launch = write_photoshop_transfer_launcher(request)
@@ -216,14 +239,34 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.app.processEvents()
         self.directory.cleanup()
 
-    def test_cancel_reopens_bridge_and_releases_picker(self):
+    def test_cancel_replies_to_open_mapper_and_releases_picker(self):
         self.controller._connect_photoshop()
         dialog = self.controller._source_dialog
         self.assertTrue(dialog.isVisible())
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
         dialog.reject()
         self.assertIsNone(self.controller._source_dialog)
-        self.controller._launch_desktop.assert_called_once_with(None)
+        self.assertEqual(self.replies(), [{"type": "photoshop_connect_cancelled"}])
+        self.controller._launch_desktop.assert_not_called()
+
+    def test_json_manifest_connects_open_mapper(self):
+        manifest = Path(self.directory.name) / "photoshop_selection.json"
+        manifest.write_text(json.dumps({
+            "schema_version": 1, "request_type": "photoshop_selection", "layers": [{"png": "1.png"}],
+        }), encoding="utf-8")
+        self.controller._connect_photoshop()
+        dialog = self.controller._source_dialog
+        dialog.selectFile(str(manifest))
+        dialog.accept()
+        self.assertEqual(self.replies(), [{"type": "photoshop_connected", "manifest": str(manifest)}])
+
+    def test_mapper_exit_closes_its_picker_and_releases_bridge(self):
+        self.controller._connect_photoshop()
+        dialog = self.controller._source_dialog
+        self.controller._take_process()
+        self.assertFalse(dialog.isVisible())
+        self.assertIsNone(self.controller._source_dialog)
+        self.assertEqual(self.replies(), [])
         self.assertTrue(self.panel.dock_bridge_button.isEnabled())
 
     def test_accept_psd_starts_export(self):

@@ -1,14 +1,17 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { PassThrough } from "node:stream"
 
 import { describe, expect, it, vi } from "vitest"
 
 import { transferBetweenHosts } from "./model"
 import {
+  PAINTER_REQUEST_MARKER,
+  connectPhotoshop,
+  createPainterLink,
   loadBridgeSession,
   parseSessionOptions,
-  writeConnectPhotoshopRequest,
   writeTransferManifest,
 } from "./transport"
 
@@ -20,7 +23,7 @@ vi.mock("node:fs/promises", async importOriginal => {
 })
 
 describe("desktop file transport", () => {
-  it.each(["connect", "apply"])("writes %s when mkdir reports EEXIST for a verified directory", async action => {
+  it("writes apply when mkdir reports EEXIST for a verified directory", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-existing-"))
     const output = path.join(directory, "request.json")
     const session = await loadBridgeSession({
@@ -30,14 +33,10 @@ describe("desktop file transport", () => {
     })
     // Reproduce Bun's cloud-directory error, but verify against the real filesystem.
     vi.mocked(mkdir).mockRejectedValueOnce(Object.assign(new Error("Directory already exists"), { code: "EEXIST" }))
-    if (action === "connect") {
-      await writeConnectPhotoshopRequest(session)
-    } else {
-      const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
-      await writeTransferManifest(session, mapped, session.initialPainterContextId)
-    }
+    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    await writeTransferManifest(session, mapped, session.initialPainterContextId)
     const request = JSON.parse(await readFile(output, "utf8"))
-    expect(request.request_type).toBe(action === "connect" ? "desktop_connect_photoshop" : "desktop_transfer")
+    expect(request.request_type).toBe("desktop_transfer")
   })
 
   it("rejects a real file blocking the output directory without modifying it", async () => {
@@ -46,9 +45,12 @@ describe("desktop file transport", () => {
     await writeFile(conflict, "keep this file")
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
       output: path.join(conflict, "request.json"),
     })
-    await expect(writeConnectPhotoshopRequest(session)).rejects.toMatchObject({ code: "EEXIST" })
+    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    await expect(writeTransferManifest(session, mapped, session.initialPainterContextId))
+      .rejects.toMatchObject({ code: "EEXIST" })
     expect(await readFile(conflict, "utf8")).toBe("keep this file")
   })
 
@@ -56,11 +58,13 @@ describe("desktop file transport", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-denied-"))
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopManifest: path.join(fixtureDir, "photoshop_selection.json"),
       output: path.join(directory, "request.json"),
     })
     const denied = Object.assign(new Error("Access denied"), { code: "EACCES" })
     vi.mocked(mkdir).mockRejectedValueOnce(denied)
-    await expect(writeConnectPhotoshopRequest(session)).rejects.toBe(denied)
+    const mapped = transferBetweenHosts(session.state, "photoshop:ps:42:101", "substance_painter:sp-working")
+    await expect(writeTransferManifest(session, mapped, session.initialPainterContextId)).rejects.toBe(denied)
   })
 
   it("opens Painter's active texture set instead of the PSD's original texture set", async () => {
@@ -238,13 +242,55 @@ describe("desktop file transport", () => {
     expect(session.photoshopSubtitle).toBe("No selection loaded")
     expect(session.state.photoshop).toEqual([])
     expect(session.state.painter.length).toBeGreaterThan(0)
+    expect(session.outputPath).toBe(output)
+  })
+})
 
-    await writeConnectPhotoshopRequest(session)
-    const request = JSON.parse(await readFile(output, "utf8"))
-    expect(request).toMatchObject({
-      schema_version: 1,
-      request_type: "desktop_connect_photoshop",
-      painter_snapshot: path.join(fixtureDir, "painter_snapshot.json"),
+function painterPipe() {
+  const input = new PassThrough()
+  return {
+    input,
+    send: (text: string) => { input.write(text) },
+    end: () => { input.end() },
+  }
+}
+
+describe("Painter link", () => {
+  it("marks requests and resolves the reply even when it arrives in pieces", async () => {
+    const pipe = painterPipe()
+    const written: string[] = []
+    const link = createPainterLink(pipe.input, line => written.push(line))
+    const reply = link.request("connect_photoshop")
+    expect(written).toEqual([`${PAINTER_REQUEST_MARKER}{"type":"connect_photoshop"}\n`])
+    pipe.send('{"type":"photoshop_connect_')
+    pipe.send('failed","message":"Photoshop is busy"}\n')
+    await expect(reply).resolves.toEqual({ type: "photoshop_connect_failed", message: "Photoshop is busy" })
+  })
+
+  it("rejects pending and later requests once Painter closes stdin", async () => {
+    const pipe = painterPipe()
+    const link = createPainterLink(pipe.input, () => {})
+    const pending = link.request("connect_photoshop")
+    pipe.end()
+    await expect(pending).rejects.toThrow("Painter closed the Bridge connection")
+    await expect(link.request("connect_photoshop")).rejects.toThrow("Painter closed the Bridge connection")
+  })
+
+  it("reloads the session from the connected manifest and keeps Painter paths", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(os.tmpdir(), "pt-bridge-link.json"),
     })
+    const manifest = path.join(fixtureDir, "photoshop_selection.json")
+    const connected = await connectPhotoshop(session, {
+      request: async () => ({ type: "photoshop_connected", manifest }),
+    })
+    expect(connected?.photoshopConnected).toBe(true)
+    expect(connected?.sourceManifestPath).toBe(manifest)
+    expect(connected?.targetSnapshotPath).toBe(session.targetSnapshotPath)
+    expect(connected?.outputPath).toBe(session.outputPath)
+    await expect(connectPhotoshop(session, {
+      request: async () => ({ type: "photoshop_connect_cancelled" }),
+    })).resolves.toBeNull()
   })
 })

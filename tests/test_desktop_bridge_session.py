@@ -105,26 +105,24 @@ class DesktopBridgeSessionTests(unittest.TestCase):
             self.assertIsNone(self.controller._recent_photoshop_manifest())
             self.assertNotIn(MANIFEST_PATH_KEY, _Settings.values)
 
-    def test_connect_handoff_releases_process_before_queuing_picker(self):
+    def test_marked_stdout_request_queues_picker_and_traces_other_output(self):
         with tempfile.TemporaryDirectory() as directory:
-            request = Path(directory) / "desktop_transfer.json"
-            request.write_text(json.dumps({"request_type": "desktop_connect_photoshop"}), encoding="utf-8")
-            process = SimpleNamespace(
-                readAllStandardError=lambda: b"",
-                readAllStandardOutput=lambda: b"[PT Bridge] connect_request_written",
-                deleteLater=Mock(),
-            )
+            chunks = [
+                b'[PT Bridge] connect_clicked\n@ptbridge {"type":"connect',
+                b'_photoshop"}\n',
+            ]
+            process = SimpleNamespace(readAllStandardOutput=lambda: chunks.pop(0))
             schedule = Mock()
             self.controller.QtCore = SimpleNamespace(QTimer=SimpleNamespace(singleShot=schedule))
             self.controller._process = process
-            self.controller._transfer_path = request
             self.controller._trace_path = Path(directory) / "desktop_session.log"
-            self.controller._desktop_finished(0, None)
-            self.assertIsNone(self.controller._process)
-            self.assertFalse(self.controller.button.enabled)
-            process.deleteLater.assert_called_once()
+            self.controller._desktop_output()
+            schedule.assert_not_called()
+            self.controller._desktop_output()
             schedule.assert_called_once_with(0, self.controller._open_photoshop_picker)
-            self.assertIn("connect_request_written", self.controller._trace_path.read_text())
+            trace = self.controller._trace_path.read_text()
+            self.assertIn("connect_clicked", trace)
+            self.assertNotIn("@ptbridge", trace)
 
     def test_exit_after_unload_does_not_touch_deleted_widgets(self):
         self.controller._closing = True
@@ -132,26 +130,24 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         self.controller._desktop_finished(0, None)
         self.controller.button.setEnabled.assert_not_called()
 
-    def test_picker_exception_restores_bridge_action_and_reports_error(self):
+    def test_picker_exception_is_reported_to_the_open_mapper(self):
         self.controller.panel.status = SimpleNamespace(setText=Mock())
         self.controller._connect_photoshop = Mock(side_effect=RuntimeError("Picker unavailable"))
-        self.controller._show_message_callback = Mock()
-        self.controller.button.setEnabled(False)
+        process = SimpleNamespace(write=Mock())
+        self.controller._process = process
         self.controller._open_photoshop_picker()
-        self.assertTrue(self.controller.button.enabled)
-        self.assertEqual(self.controller._show_message_callback.call_args.args[-1], "Picker unavailable")
+        reply = json.loads(process.write.call_args.args[0].decode("utf-8"))
+        self.assertEqual(reply, {"type": "photoshop_connect_failed", "message": "Picker unavailable"})
+        self.assertIsNone(self.controller._source_dialog)
 
-    def test_reads_desktop_connect_request(self):
+    def test_reads_desktop_transfer_request(self):
         with tempfile.TemporaryDirectory() as directory:
             request = Path(directory) / "desktop_transfer.json"
             request.write_text(
-                json.dumps({"request_type": "desktop_connect_photoshop"}),
+                json.dumps({"request_type": "desktop_transfer"}),
                 encoding="utf-8",
             )
-            self.assertEqual(
-                _desktop_request_type(request),
-                "desktop_connect_photoshop",
-            )
+            self.assertEqual(_desktop_request_type(request), "desktop_transfer")
 
     def test_photoshop_document_session_is_stable_and_path_specific(self):
         root = Path("C:/bridge")
