@@ -1,0 +1,554 @@
+import { useMemo, useRef, useState } from "react"
+import {
+  motion,
+  useGpuixRequired,
+  TooltipProvider,
+  type PublicInstance,
+  type EventPayload,
+} from "@gpuix/react"
+import {
+  cloneState,
+  findNode,
+  removeFromHost,
+  transferSelection,
+  selectLayerIds,
+  visibleSourceIds,
+  type BridgeState,
+  type HostId,
+  type LayerNode,
+} from "./model"
+import { colors, metrics, typography } from "./theme"
+import { connectPhotoshop, type BridgeSession, type PainterContext } from "./transport"
+import {
+  ConnectPhotoshopAction,
+  ContextOption,
+  ContextSelect,
+  IconAction,
+  InsetSeparator,
+  MappingHelpPopover,
+  motionEase,
+} from "./components"
+import { HostPanel } from "./layer-tree"
+
+export function BridgeApp({
+  session: initialSession,
+  onApply,
+  onConnectPhotoshop,
+  onApplied,
+}: {
+  session: BridgeSession
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<string>
+  onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
+  onApplied?: (output: string) => void
+}) {
+  const renderer = useGpuixRequired()
+  const [session, setSession] = useState(initialSession)
+  const rootRef = useRef<PublicInstance | null>(null)
+  const [bridge, setBridge] = useState<BridgeState>(() => cloneState(session.state))
+  const [activePainterContextId, setActivePainterContextId] = useState(
+    session.initialPainterContextId,
+  )
+  const [history, setHistory] = useState<BridgeState[]>([])
+  // Preview parity only earns toolbar space for commands backed by real state changes.
+  const [redoStack, setRedoStack] = useState<BridgeState[]>([])
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const press = useRef<{ id: string; x: number; y: number } | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const selectionAnchor = useRef<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
+  const [status, setStatus] = useState(session.status)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const pending = useRef(false)
+
+  const hasChanges = history.length > 0
+  const canRedo = redoStack.length > 0
+  const mappedIds = useMemo(
+    () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
+    [bridge.mappings],
+  )
+  const hoveredGroupId = nearestGroup(bridge.photoshop, hoveredId) ?? nearestGroup(bridge.painter, hoveredId)
+  const draggingHost = useMemo(() => {
+    if (!draggingId) return null
+    const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
+    return node?.ref.host ?? null
+  }, [bridge, draggingId])
+  const activePainterContext = useMemo(
+    () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
+    [activePainterContextId, session.painterContexts],
+  )
+  const painterStackOptions = useMemo(
+    () => uniqueStackOptions(session.painterContexts),
+    [session.painterContexts],
+  )
+  const activeStackId = activePainterContext ? painterStackId(activePainterContext) : ""
+  const channelOptions = useMemo(
+    () =>
+      session.painterContexts
+        .filter((context) => painterStackId(context) === activeStackId)
+        .map((context) => ({ value: context.id, label: context.channelLabel })),
+    [activeStackId, session.painterContexts],
+  )
+
+  const mutate = (next: BridgeState, message: string) => {
+    if (pending.current) return
+    if (next === bridge) return
+    setHistory((current) => [...current, cloneState(bridge)])
+    setRedoStack([])
+    setBridge(next)
+    setSelectedIds(new Set())
+    setStatus(message)
+    setFailed(false)
+  }
+
+  const removeSource = (host: HostId, id: string) => {
+    const next = removeFromHost(bridge, host, id)
+    if (next === bridge) {
+      setStatus("This target has pending transfers")
+      setFailed(true)
+      return
+    }
+    mutate(next, "Layer removed from this mapping session")
+  }
+
+  const endDrag = () => {
+    press.current = null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const startDrag = (id: string, event: EventPayload) => {
+    if (pending.current) return
+    // Native row presses do not bubble focus like DOM clicks; keep editing
+    // shortcuts with the staging area without stealing focus from open menus.
+    if (rootRef.current) renderer.focusElement?.(rootRef.current.id)
+    const nodes = findNode(bridge.photoshop, id) ? bridge.photoshop : bridge.painter
+    const source = findNode(nodes, id)
+    if (!source) return
+    const modifiers = { toggle: event.modifiers?.ctrl || event.modifiers?.cmd, range: event.modifiers?.shift }
+    const visible = visibleSourceIds(nodes, source.ref.host, expanded)
+    const next = selectLayerIds(selectedIds, selectionAnchor.current, id, visible, modifiers)
+    setSelectedIds(next)
+    if (!modifiers.range) selectionAnchor.current = id
+    press.current = next.has(id) ? { id, x: event.x ?? 0, y: event.y ?? 0 } : null
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const movePointer = (event: EventPayload, rowId?: string) => {
+    if (event.pressedButton !== 0 || pending.current) { endDrag(); return }
+    const start = press.current
+    if (!start) return
+    // A press is selection, not a drag. Native child controls can consume mouse-up,
+    // so released-button movement also clears the gesture instead of leaving a ghost drop.
+    if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
+    const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
+    const target = rowId ? findNode(bridge.photoshop, rowId) ?? findNode(bridge.painter, rowId) : null
+    setDraggingId(start.id)
+    const targetHost = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
+    setDropTargetId(target && target.ref.host === targetHost && source?.ref.host !== targetHost ? rowId! : null)
+  }
+
+  const drop = (targetId: string) => {
+    if (!draggingId) return
+    const next = transferSelection(bridge, selectedIds, targetId)
+    if (next === bridge) {
+      setStatus("This target has pending transfers")
+      setFailed(true)
+    }
+    mutate(next, "Mapping updated")
+    endDrag()
+  }
+
+  const undo = () => {
+    if (pending.current) return
+    const previous = history.at(-1)
+    if (!previous) return
+    setRedoStack((current) => [...current, cloneState(bridge)])
+    setBridge(previous)
+    setSelectedIds(new Set())
+    setHistory((current) => current.slice(0, -1))
+    setStatus("Last mapping undone")
+    setFailed(false)
+  }
+
+  const redo = () => {
+    if (pending.current) return
+    const next = redoStack.at(-1)
+    if (!next) return
+    setHistory((current) => [...current, cloneState(bridge)])
+    setBridge(next)
+    setSelectedIds(new Set())
+    setRedoStack((current) => current.slice(0, -1))
+    setStatus("Last mapping restored")
+    setFailed(false)
+  }
+
+  const reset = () => {
+    if (pending.current) return
+    const next = bridgeStateForContext(session, activePainterContext)
+    // Reset is an edit to the staging area, not a destructive history boundary.
+    if (JSON.stringify(next) === JSON.stringify(bridge)) return
+    mutate(next, "Mapping reset")
+    setDraggingId(null)
+    setDropTargetId(null)
+    setExpanded(collectExpandedIds(next))
+    setStatus("Mapping reset")
+    setFailed(false)
+  }
+
+  const switchPainterContext = (context: PainterContext | undefined) => {
+    if (pending.current) return
+    if (!context || context.id === activePainterContextId) return
+    if (bridge.mappings.length > 0) {
+      setStatus("Apply or reset pending transfers before changing the target.")
+      setFailed(true)
+      return
+    }
+    const next = bridgeStateForContext(session, context)
+    // Target references belong to one Painter context; carrying mappings across
+    // a context switch would silently apply them to a different stack/channel.
+    setActivePainterContextId(context.id)
+    setBridge(next)
+    setSelectedIds(new Set())
+    setHistory([])
+    setRedoStack([])
+    setDraggingId(null)
+    setDropTargetId(null)
+    setExpanded(collectExpandedIds(next))
+    setStatus(`Target changed · ${context.subtitle}`)
+    setFailed(false)
+  }
+
+  const changePainterStack = (stackId: string) => {
+    const contexts = session.painterContexts.filter(
+      (context) => painterStackId(context) === stackId,
+    )
+    const preferred = contexts.find(
+      (context) => context.channel === activePainterContext?.channel,
+    )
+    switchPainterContext(preferred ?? contexts[0])
+  }
+
+  const apply = async () => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    setFailed(false)
+    setStatus("Writing transfer manifest...")
+    try {
+      const output = await onApply(bridge, activePainterContextId, session)
+      setHistory([])
+      setRedoStack([])
+      const filename = output.split(/[\\/]/).pop() || output
+      setStatus(`Transfer manifest written · ${filename}`)
+      onApplied?.(output)
+    } catch (error) {
+      setFailed(true)
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+
+  const connectPhotoshop = async () => {
+    if (pending.current) return
+    if (bridge.mappings.length > 0) {
+      setStatus("Apply or reset pending transfers before changing documents.")
+      setFailed(true)
+      return
+    }
+    pending.current = true
+    setBusy(true)
+    setFailed(false)
+    setStatus("Choose a Photoshop document in Painter...")
+    console.info("[PT Bridge] connect_clicked")
+    try {
+      const next = await onConnectPhotoshop(session)
+      if (!next) {
+        setStatus("Photoshop connection cancelled")
+        return
+      }
+      // Reconnecting replaces only the Photoshop side. Mappings are already
+      // empty here, so the Painter target the user chose stays selected.
+      const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
+        ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
+        ?? null
+      const state = bridgeStateForContext(next, context)
+      setSession(next)
+      if (context) setActivePainterContextId(context.id)
+      setBridge(state)
+      setSelectedIds(new Set())
+      setHistory([])
+      setRedoStack([])
+      setExpanded(collectExpandedIds(state))
+      setStatus(next.status)
+    } catch (error) {
+      console.error("[PT Bridge] connect_failed", error)
+      setFailed(true)
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+
+  const toggle = (id: string) => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <TooltipProvider delayDuration={320} skipDelayDuration={250} disableHoverableContent>
+      <div
+        testId="bridge-root"
+        ref={rootRef}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (pending.current) return
+          if (event.key === "escape") { endDrag(); return }
+          if (!(event.modifiers?.ctrl || event.modifiers?.cmd)) return
+          if (event.key === "z") { if (event.modifiers.shift) redo(); else undo() }
+          if (event.key === "y") redo()
+        }}
+        style={{ width: "100%", height: "100%", backgroundColor: colors.canvas }}
+      >
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: motionEase }}
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: colors.canvas,
+            color: colors.text,
+            fontFamily: typography.family,
+            fontSize: typography.primarySize,
+            fontWeight: typography.primaryWeight,
+            userSelect: "none",
+          }}
+        >
+        <div
+          style={{
+            height: metrics.toolbarHeight,
+            flexShrink: 0,
+            paddingLeft: 16,
+            paddingRight: 16,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <ContextSelect
+            label="Texture Set:"
+            value={activeStackId}
+            options={painterStackOptions}
+            width={176}
+            busy={busy}
+            onValueChange={changePainterStack}
+          />
+          <ContextSelect
+            label="Channel:"
+            value={activePainterContextId}
+            options={channelOptions}
+            width={152}
+            busy={busy}
+            onValueChange={(contextId) =>
+              switchPainterContext(
+                session.painterContexts.find((context) => context.id === contextId),
+              )
+            }
+          />
+          <div style={{ flexGrow: 1 }} />
+          <IconAction icon="reset" label="Reset mapping" disabled={busy || !hasChanges} onClick={reset} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
+          <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <IconAction
+            icon="check"
+            label="Apply mapping"
+            disabled={busy || !hasChanges || bridge.mappings.length === 0}
+            onClick={apply}
+          />
+        </div>
+        <InsetSeparator />
+        <div
+          onMouseUp={endDrag}
+          style={{
+            flexGrow: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "row",
+            gap: metrics.panelGap,
+            padding: metrics.contentPadding,
+          }}
+        >
+          <HostPanel
+            panelId="photoshop"
+            title="PHOTOSHOP"
+            subtitle={session.photoshopSubtitle}
+            nodes={bridge.photoshop}
+            host="photoshop"
+            headerAction={
+              session.photoshopConnected ? (
+                <IconAction
+                  icon="folder"
+                  label="Change Photoshop document"
+                  testId="change-photoshop"
+                  disabled={busy}
+                  onClick={connectPhotoshop}
+                />
+              ) : undefined
+            }
+            emptyContent={
+              session.photoshopConnected ? undefined : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <ConnectPhotoshopAction onClick={connectPhotoshop} busy={busy} />
+                </div>
+              )
+            }
+            selectedIds={selectedIds} mappedIds={mappedIds}
+            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
+            draggingId={draggingId}
+            draggingHost={draggingHost}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={toggle}
+            onDragStart={startDrag}
+            onPointerMove={movePointer}
+            onDragEnd={endDrag}
+            onHover={setHoveredId}
+            onDrop={drop}
+            onRemove={(id) => removeSource("photoshop", id)}
+          />
+          {/* Mapping help explains both panes, while the toolbar remains reserved for real commands. */}
+          <HostPanel
+            panelId="painter"
+            title="SUBSTANCE PAINTER"
+            subtitle={activePainterContext?.subtitle || "No snapshot loaded"}
+            nodes={bridge.painter}
+            host="substance_painter"
+            headerAction={<MappingHelpPopover />}
+            selectedIds={selectedIds} mappedIds={mappedIds}
+            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
+            draggingId={draggingId}
+            draggingHost={draggingHost}
+            dropTargetId={dropTargetId}
+            expanded={expanded}
+            onToggle={toggle}
+            onDragStart={startDrag}
+            onPointerMove={movePointer}
+            onDragEnd={endDrag}
+            onHover={setHoveredId}
+            onDrop={drop}
+            onRemove={(id) => removeSource("substance_painter", id)}
+          />
+        </div>
+        {status !== session.status || !activePainterContext || selectedIds.size > 0 ? (
+          <div testId="bridge-status" role="status" style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}>
+            <text style={{
+              color: failed ? colors.danger : colors.secondary,
+              fontSize: typography.secondarySize,
+              fontFamily: typography.family,
+              whiteSpace: "normal",
+            }}>{failed || busy ? status : [
+              selectedIds.size ? `${selectedIds.size} selected` : "",
+              bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
+            ].filter(Boolean).join(" · ") || status}</text>
+          </div>
+        ) : null}
+        </motion.div>
+      </div>
+    </TooltipProvider>
+  )
+}
+
+function collectExpandedIds(state: BridgeState): Set<string> {
+  const ids = new Set<string>()
+  const visit = (nodes: LayerNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === "group") ids.add(node.id)
+      if (node.children) visit(node.children)
+    }
+  }
+  visit(state.photoshop)
+  visit(state.painter)
+  return ids
+}
+
+function nearestGroup(nodes: LayerNode[], id: string | null, parent: string | null = null): string | null {
+  if (!id) return null
+  for (const node of nodes) {
+    if (node.id === id) return node.kind === "group" ? node.id : parent
+    const nested = node.children ? nearestGroup(node.children, id, node.id) : null
+    if (nested) return nested
+  }
+  return null
+}
+
+export function visibleNodesHeight(nodes: LayerNode[], expanded: Set<string>): number {
+  return nodes.reduce((height, node) => {
+    const ownHeight = metrics.rowHeight
+    const childHeight =
+      node.kind === "group" && expanded.has(node.id)
+        ? visibleNodesHeight(node.children ?? [], expanded)
+        : 0
+    return height + ownHeight + childHeight
+  }, 0)
+}
+
+export function initialWindowHeight(state: BridgeState): number {
+  const expanded = collectExpandedIds(state)
+  const content = Math.max(visibleNodesHeight(state.photoshop, expanded), visibleNodesHeight(state.painter, expanded))
+  // Shared proportions fit content at a stable density; long data trees scroll
+  // rather than forcing every session into the previous tall, narrow silhouette.
+  return Math.max(metrics.minWindowHeight, Math.min(metrics.maxInitialHeight, content + 160))
+}
+
+function bridgeStateForContext(
+  session: BridgeSession,
+  context: PainterContext | null,
+): BridgeState {
+  return cloneState({
+    photoshop: session.state.photoshop,
+    painter: context?.nodes ?? [],
+    mappings: [],
+  })
+}
+
+function painterStackId(context: PainterContext): string {
+  return context.stack ? `${context.textureSet} / ${context.stack}` : context.textureSet
+}
+
+function uniqueStackOptions(contexts: PainterContext[]): ContextOption[] {
+  const options = new Map<string, ContextOption>()
+  for (const context of contexts) {
+    const value = painterStackId(context)
+    if (options.has(value)) continue
+    options.set(value, {
+      value,
+      label: context.stack ? `${context.textureSet} / ${context.stack}` : context.textureSet,
+    })
+  }
+  return [...options.values()]
+}
+

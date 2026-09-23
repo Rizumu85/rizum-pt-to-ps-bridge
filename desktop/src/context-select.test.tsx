@@ -4,7 +4,7 @@ import { connectTest } from "@gpuix/react/automation"
 import { createTestRoot } from "./test-root"
 import { describe, expect, it, vi } from "vitest"
 
-import { BridgeApp } from "./main"
+import { BridgeApp } from "./bridge-app"
 import type { BridgeState } from "./model"
 import { loadBridgeSession } from "./transport"
 
