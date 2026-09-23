@@ -18,6 +18,40 @@ Karpathy Guidelines are active for this project/thread until the user says other
 
 ---
 
+# Project Rules
+
+These rules come from the user and override the guidelines below wherever they
+conflict.
+
+1. **Commit and push every session.** Every conversation's changes are
+   committed and pushed to `origin` as a backup. Split commits by concern
+   (cleanup, refactor, fix, feature, docs) instead of one combined commit.
+2. **Decision comments, not narration.** Do not write comments that explain
+   what the code does. Write comments that record why this approach was chosen,
+   especially when it follows a requirement or decision the user stated, so a
+   later agent optimizing the architecture does not silently revert it and
+   knows what the decision must keep balancing. Add them only where a decision
+   is non-obvious or easy to undo by mistake; do not repeat the same rationale
+   in several places.
+3. **Fix causes, not symptoms.** Before fixing a bug, trace the whole
+   implementation path, its coupling, and state ownership to find why the bug
+   exists. Do not add a special case per bug, and check that the fix does not
+   break a neighbouring flow.
+4. **Research before features.** Before adding a feature, study how it fits the
+   existing architecture and tech stack, weighing performance and code
+   elegance. Judge from a product designer's view where the feature belongs in
+   the app's UI hierarchy and flow.
+5. **No fallback residue.** When the project changes direction, or an
+   experiment is abandoned, remove the old path completely. Do not add
+   fallbacks unless they are genuinely necessary.
+6. **Docs record what the user asks to record.** Update `analysis.md`,
+   `design.md`, `plan.md`, and other Markdown docs only when the user asks to
+   record something, or when a record is genuinely necessary (for example a
+   direction change or a contract other components depend on). Do not log
+   development diaries or small decisions.
+
+---
+
 # Rizum Guidelines
 
 Behavioral guidelines for coding agents that need planning, handoff docs, and clear user communication.
@@ -199,6 +233,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 # Current Project Notes
 
-- Work in the local tree only. Do not create or switch branches unless the user asks for it.
-- The project is a Substance Painter to Photoshop bridge with a Painter Python plugin, a Photoshop UXP plugin, and file-based PNG/JSON transport.
-- The active Phase 1 Photoshop-to-Painter return workflow is manual Photoshop selected-layer PNG export, followed by manual Painter import/placement by the user.
+- Work on `main`. Do not create or switch branches unless the user asks for it.
+- The project is a Substance Painter to Photoshop bridge with a Painter Python plugin, a Photoshop UXP plugin, a native GPUiX desktop mapper (`desktop/`), and file-based PNG/JSON transport.
+- Photoshop-to-Painter return data goes through the desktop mapper: the user maps layers explicitly and presses Apply. There is no background sync.
