@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps.ui import ExportDialog
+from sp_plugin.rizum_sp_to_ps import ui
+from sp_plugin.rizum_sp_to_ps.ui import ExportDialog, SmokeTestPanel
 
 
 class _Panel:
@@ -203,6 +205,38 @@ class ExportDialogLayoutTests(unittest.TestCase):
 
         self.assertTrue(self.export.run_button.isEnabled())
         self.assertEqual(self.export.run_button.activationProgress(), 1.0)
+
+    def test_closed_project_uses_the_new_dialog_empty_state(self):
+        self.export.panel._project_is_open = lambda: False
+        self.export.panel._project_is_ready = lambda: False
+
+        with mock.patch.object(ui, "_show_modal_message") as modal:
+            self.export.refresh_targets()
+
+        modal.assert_not_called()
+        self.assertTrue(self.export.status.isVisibleTo(self.export.dialog))
+        self.assertEqual(
+            self.export.status.text(),
+            "Open a Painter project to export.",
+        )
+        self.assertFalse(self.export.run_button.isEnabled())
+
+    def test_export_button_opens_the_new_dialog_without_a_project(self):
+        panel = SmokeTestPanel.__new__(SmokeTestPanel)
+        panel.widget = QtWidgets.QWidget()
+        panel.QtWidgets = QtWidgets
+        panel._project_is_open = lambda: False
+        self.addCleanup(panel.widget.deleteLater)
+
+        with (
+            mock.patch.object(ui, "ExportDialog") as dialog_type,
+            mock.patch.object(ui, "_show_modal_message") as modal,
+        ):
+            panel.open_export_dialog()
+
+        modal.assert_not_called()
+        dialog_type.assert_called_once_with(panel)
+        dialog_type.return_value.open.assert_called_once_with()
 
     def test_child_hover_does_not_accumulate_across_rows(self):
         self.export.scope_combo.setCurrentIndex(1)

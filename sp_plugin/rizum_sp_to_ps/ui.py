@@ -59,11 +59,9 @@ _components = importlib.reload(_components)
 _settings_controls = importlib.reload(_settings_controls)
 _settings_dialog = importlib.reload(_settings_dialog)
 _settings_layout = importlib.reload(_settings_layout)
-ActionButton = _components.ActionButton
 apply_theme = _vendored_ui.apply_theme
 build_compact_dock_stylesheet = _components.build_compact_dock_stylesheet
 compact_action_bar_width = _components.compact_action_bar_width
-compact_footer_button_width = _components.compact_footer_button_width
 install_compact_tooltip = _components.install_compact_tooltip
 make_combo_input = _components.make_combo_input
 make_collapsible_group = _components.make_collapsible_group
@@ -74,7 +72,6 @@ make_export_tree_item = _components.make_export_tree_item
 make_icon_button = _components.make_icon_button
 make_inset_separator = _components.make_inset_separator
 make_mock_checkbox = _components.make_mock_checkbox
-set_compact_footer_button_width = _components.set_compact_footer_button_width
 update_export_tree_item = _components.update_export_tree_item
 PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
@@ -498,42 +495,367 @@ def _make_settings_reveal_row(QtCore, QtWidgets, content, expanded_height):
     return _SettingsRevealRow()
 
 
-def _show_modal_message(QtWidgets, parent, title, message):
-    dialog = QtWidgets.QDialog(parent)
-    dialog.setWindowTitle(title)
-    dialog.setModal(True)
-    dialog.setFixedWidth(318)
-    apply_theme(dialog, mode="overlay")
+def _make_dialog_action(text, primary=False):
+    theme = PAINTER_DIALOG_STYLE
+    if primary:
+        colors = (
+            theme["accent"],
+            theme["accent_hover"],
+            theme["accent_pressed"],
+            theme["accent_text"],
+        )
+    else:
+        colors = (
+            theme["control"],
+            theme["control_hover"],
+            theme["control_pressed"],
+            theme["text"],
+        )
+    return SecondaryActionButton(
+        text,
+        *colors,
+        default_theme.radius_small,
+    )
 
-    layout = QtWidgets.QVBoxLayout(dialog)
-    layout.setContentsMargins(14, 12, 14, 12)
-    layout.setSpacing(10)
 
-    title_label = QtWidgets.QLabel(title)
-    title_label.setObjectName("RizumDialogTitle")
-    layout.addWidget(title_label)
-    layout.addWidget(make_inset_separator(0, thickness=1))
+class _CompactDialogShell:
+    """Shared native-chrome shell for compact bridge feedback dialogs."""
 
+    def __init__(
+        self,
+        QtWidgets,
+        parent,
+        title,
+        object_name,
+        *,
+        width=320,
+        body_spacing=10,
+    ):
+        self.QtWidgets = QtWidgets
+        self.dialog = PainterSettingsDialog(parent)
+        self.dialog.setObjectName(object_name)
+        self.dialog.setWindowTitle(title)
+        self.dialog.setModal(True)
+        self.dialog.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
+        self._width = int(width)
+        self._body_spacing = int(body_spacing)
+        self._buttons = []
+        self._scale_callbacks = []
+
+        surface_layout = self.dialog.settingsSurfaceLayout()
+        self.body = QtWidgets.QWidget()
+        self.body.setObjectName("RizumCompactDialogBody")
+        self.body_layout = QtWidgets.QVBoxLayout(self.body)
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        self.body_layout.setSpacing(0)
+        surface_layout.addWidget(self.body)
+
+        self.footer_separator = make_inset_separator(
+            PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+            thickness=1,
+        )
+        self.footer_separator.setObjectName("RizumCompactDialogFooterDivider")
+        surface_layout.addWidget(self.footer_separator)
+
+        self.footer = QtWidgets.QWidget()
+        self.footer.setObjectName("RizumCompactDialogFooter")
+        self.footer_outer = QtWidgets.QVBoxLayout(self.footer)
+        self.footer_outer.setContentsMargins(0, 0, 0, 0)
+        self.footer_outer.setSpacing(0)
+        self.footer_row = QtWidgets.QWidget()
+        self.footer_row.setObjectName("RizumCompactDialogFooterRow")
+        self.footer_layout = QtWidgets.QHBoxLayout(self.footer_row)
+        self.footer_layout.setContentsMargins(0, 0, 0, 0)
+        self.footer_layout.setSpacing(
+            PAINTER_SETTINGS_LAYOUT.footer_button_spacing
+        )
+        self.footer_outer.addWidget(self.footer_row)
+        surface_layout.addWidget(self.footer)
+
+    def add_action(self, text, *, primary=False, minimum=68, maximum=112):
+        button = _make_dialog_action(text, primary=primary)
+        self._buttons.append((button, int(minimum), int(maximum)))
+        return button
+
+    def add_scale_callback(self, callback):
+        self._scale_callbacks.append(callback)
+
+    def finalize(self):
+        apply_theme(self.dialog, mode="overlay")
+        self.dialog.syncSettingsUiScale()
+        self.dialog.settingsUiScaleChanged.connect(self._apply_ui_scale)
+        self._apply_ui_scale(self.dialog.settingsUiScale())
+        self.dialog._rizum_compact_shell = self
+        return self.dialog
+
+    def _metric(self, pixels, minimum=None):
+        return self.dialog.settingsMetric(pixels, minimum)
+
+    def _apply_ui_scale(self, _scale):
+        body_margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
+        self.body_layout.setContentsMargins(
+            body_margin,
+            PAINTER_SETTINGS_LAYOUT.body_margin_top.resolve(self.dialog),
+            body_margin,
+            PAINTER_SETTINGS_LAYOUT.body_margin_bottom.resolve(self.dialog),
+        )
+        self.body_layout.setSpacing(self._metric(self._body_spacing))
+
+        footer_margin = PAINTER_SETTINGS_LAYOUT.footer_margin_x.resolve(
+            self.dialog
+        )
+        footer_top = PAINTER_SETTINGS_LAYOUT.footer_top.resolve(self.dialog)
+        footer_gap = PAINTER_SETTINGS_LAYOUT.footer_gap.resolve(self.dialog)
+        footer_bottom = PAINTER_SETTINGS_LAYOUT.footer_bottom.resolve(self.dialog)
+        footer_row_height = PAINTER_SETTINGS_LAYOUT.footer_row_height.resolve(
+            self.dialog
+        )
+        self.footer_outer.setContentsMargins(
+            0,
+            footer_top + footer_gap,
+            0,
+            footer_bottom,
+        )
+        self.footer_row.setFixedHeight(footer_row_height)
+        self.footer.setFixedHeight(
+            footer_top + footer_gap + footer_row_height + footer_bottom
+        )
+        self.footer_layout.setContentsMargins(
+            footer_margin,
+            0,
+            footer_margin,
+            0,
+        )
+        self.footer_separator.layout().setContentsMargins(
+            footer_margin,
+            0,
+            footer_margin,
+            0,
+        )
+
+        button_height = PAINTER_SETTINGS_LAYOUT.footer_button_height.resolve(
+            self.dialog
+        )
+        scale = self.dialog.settingsUiScale()
+        for button, minimum, maximum in self._buttons:
+            button.setCompactHeight(button_height)
+            button.setFixedWidth(
+                max(
+                    self._metric(minimum),
+                    min(
+                        int(round(maximum * scale)),
+                        button.sizeHint().width() + self._metric(8, 6),
+                    ),
+                )
+            )
+
+        for callback in self._scale_callbacks:
+            callback(scale)
+
+        self.dialog.setFixedWidth(self._metric(self._width))
+        self._restyle()
+        self.dialog.layout().invalidate()
+        self.dialog.settingsSurfaceLayout().invalidate()
+        self.dialog.adjustSize()
+
+    def _restyle(self):
+        theme = PAINTER_DIALOG_STYLE
+        self.dialog._update_surface_stylesheet()
+        surface = self.dialog.settingsSurface()
+        surface.setStyleSheet(
+            surface.styleSheet()
+            + f"""
+QFrame#RizumPainterSettingsSurface {{
+    background: {theme["surface"]};
+}}
+QWidget#RizumCompactDialogBody,
+QWidget#RizumCompactDialogFooter,
+QWidget#RizumCompactDialogFooterRow,
+QWidget#RizumCompactDialogFooterDivider {{
+    background: transparent;
+    border: 0;
+}}
+QWidget#RizumCompactDialogFooterDivider QFrame#RizumInsetSeparator {{
+    background: #3a3b3e;
+}}
+"""
+        )
+
+
+def _build_modal_message(QtWidgets, parent, title, message):
+    shell = _CompactDialogShell(
+        QtWidgets,
+        parent,
+        title,
+        "RizumFeedbackDialog",
+        width=300,
+        body_spacing=0,
+    )
     message_label = QtWidgets.QLabel(message)
-    message_label.setObjectName("RizumDimLabel")
+    message_label.setObjectName("RizumSettingsItemMeta")
     message_label.setWordWrap(True)
     message_label.setMinimumHeight(42)
-    layout.addWidget(message_label)
-
-    footer = QtWidgets.QHBoxLayout()
-    footer.setContentsMargins(0, 6, 0, 0)
-    footer.addStretch(1)
-    ok_button = ActionButton.create("OK", "dialog-primary")
-    ok_button.clicked.connect(dialog.accept)
-    set_compact_footer_button_width(
-        ok_button,
-        compact_footer_button_width(ok_button, minimum=68, maximum=96),
+    shell.body_layout.addWidget(message_label)
+    shell.add_scale_callback(
+        lambda _scale: message_label.setMinimumHeight(shell._metric(42, 32))
     )
-    footer.addWidget(ok_button)
-    layout.addLayout(footer)
 
-    dialog.setStyleSheet(dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
-    dialog.exec()
+    shell.footer_layout.addStretch(1)
+    ok_button = shell.add_action(
+        "OK",
+        primary=True,
+        minimum=68,
+        maximum=96,
+    )
+    ok_button.clicked.connect(shell.dialog.accept)
+    shell.footer_layout.addWidget(ok_button)
+
+    dialog = shell.finalize()
+    dialog._rizum_message_label = message_label
+    dialog._rizum_ok_button = ok_button
+    return dialog
+
+
+def _show_modal_message(QtWidgets, parent, title, message):
+    return _build_modal_message(QtWidgets, parent, title, message).exec()
+
+
+class _ExportProgressDialog:
+    """Non-blocking compact export progress dialog with cancel support."""
+
+    def __init__(self, panel, label):
+        self.QtCore = panel.QtCore
+        self.QtWidgets = panel.QtWidgets
+        self._cancelled = False
+        self._finishing = False
+        self._minimum = 0
+        self._maximum = 0
+
+        self.shell = _CompactDialogShell(
+            self.QtWidgets,
+            panel.widget,
+            "Export",
+            "RizumExportProgressDialog",
+            width=340,
+            body_spacing=12,
+        )
+        status_row = self.QtWidgets.QWidget()
+        status_row.setObjectName("RizumExportProgressStatusRow")
+        status_layout = self.QtWidgets.QHBoxLayout(status_row)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(10)
+        self.status_label = self.QtWidgets.QLabel(f"Exporting {label}...")
+        self.status_label.setObjectName("RizumSettingsItemName")
+        self.status_label.setWordWrap(True)
+        self.status_label.setSizePolicy(
+            self.QtWidgets.QSizePolicy.Policy.Expanding,
+            self.QtWidgets.QSizePolicy.Policy.Preferred,
+        )
+        self.percent_label = self.QtWidgets.QLabel("")
+        self.percent_label.setObjectName("RizumSettingsItemMeta")
+        self.percent_label.setAlignment(
+            self.QtCore.Qt.AlignmentFlag.AlignRight
+            | self.QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+        status_layout.addWidget(self.status_label, 1)
+        status_layout.addWidget(self.percent_label)
+        self.shell.body_layout.addWidget(status_row)
+
+        self.progress_bar = self.QtWidgets.QProgressBar()
+        self.progress_bar.setObjectName("RizumExportProgressBar")
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 0)
+        self.shell.body_layout.addWidget(self.progress_bar)
+
+        self.shell.footer_layout.addStretch(1)
+        self.cancel_button = self.shell.add_action(
+            "Cancel",
+            minimum=72,
+            maximum=104,
+        )
+        self.cancel_button.clicked.connect(self._request_cancel)
+        self.shell.footer_layout.addWidget(self.cancel_button)
+        self.shell.add_scale_callback(self._apply_ui_scale)
+        self.dialog = self.shell.finalize()
+        self.dialog.rejected.connect(self._window_rejected)
+        modality = getattr(self.QtCore.Qt, "ApplicationModal", None)
+        if modality is None:
+            modality = self.QtCore.Qt.WindowModality.ApplicationModal
+        self.dialog.setWindowModality(modality)
+        self.dialog._rizum_progress_controller = self
+
+    def _apply_ui_scale(self, _scale):
+        bar_height = self.shell._metric(4, 3)
+        self.status_label.parentWidget().layout().setSpacing(
+            self.shell._metric(10, 8)
+        )
+        self.progress_bar.setFixedHeight(bar_height)
+        self.percent_label.setMinimumWidth(self.shell._metric(34, 26))
+        self.progress_bar.setStyleSheet(
+            f"""
+QProgressBar#RizumExportProgressBar {{
+    background: {PAINTER_DIALOG_STYLE["control"]};
+    border: 0;
+    border-radius: {max(1, bar_height // 2)}px;
+}}
+QProgressBar#RizumExportProgressBar::chunk {{
+    background: {PAINTER_DIALOG_STYLE["accent"]};
+    border: 0;
+    border-radius: {max(1, bar_height // 2)}px;
+}}
+"""
+        )
+
+    def _request_cancel(self):
+        if self._cancelled:
+            return
+        self._cancelled = True
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("Cancelling export...")
+
+    def _window_rejected(self):
+        if not self._finishing:
+            self._request_cancel()
+
+    def show(self):
+        self.dialog.show()
+
+    def close(self):
+        self._finishing = True
+        self.dialog.close()
+
+    def setRange(self, minimum, maximum):
+        self._minimum = int(minimum)
+        self._maximum = int(maximum)
+        self.progress_bar.setRange(self._minimum, self._maximum)
+        if self._maximum <= self._minimum:
+            self.percent_label.clear()
+        else:
+            self._update_percent(self.progress_bar.value())
+
+    def setValue(self, value):
+        self.progress_bar.setValue(int(value))
+        self._update_percent(value)
+
+    def _update_percent(self, value):
+        if self._maximum <= self._minimum:
+            self.percent_label.clear()
+            return
+        progress = (float(value) - self._minimum) / (
+            self._maximum - self._minimum
+        )
+        percent = round(max(0.0, min(1.0, progress)) * 100)
+        self.percent_label.setText(f"{percent}%")
+
+    def setLabelText(self, text):
+        if not self._cancelled:
+            self.status_label.setText(str(text))
+
+    def wasCanceled(self):
+        return self._cancelled
 
 
 def _make_bridge_dock_toolbar(QtCore, QtWidgets):
@@ -652,6 +974,7 @@ class SettingsDialog:
         self._text_blocks = []
         self._base_height = None
         self._design_height = None
+        self._loading_values = False
 
         surface_layout = self.dialog.settingsSurfaceLayout()
 
@@ -855,6 +1178,12 @@ class SettingsDialog:
         self._bind_toggle_row(uv_map_row, self.export_uv_map)
         self._bind_toggle_row(auto_row, self.auto_open_photoshop)
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
+        self.infinite_padding.toggled.connect(self._save_live)
+        self.dilation_stepper.valueChanged.connect(self._save_live)
+        self.bit_depth.currentIndexChanged.connect(self._save_live)
+        self.export_uv_map.toggled.connect(self._save_live)
+        self.auto_open_photoshop.toggled.connect(self._save_live)
+        self.photoshop_path.editingFinished.connect(self._save_live)
 
         apply_theme(self.dialog, mode="overlay")
         self.dialog.syncSettingsUiScale()
@@ -1161,17 +1490,26 @@ QPushButton[variant="icon"]:pressed {{
         self._sync_dialog_height()
 
     def load_values(self):
-        settings = self.panel.user_settings
-        self.photoshop_path.setText(settings.get("photoshop_path") or "")
-        self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
-        self.dilation_stepper.setValue(int(settings.get("dilation") or 8), emit=False)
-        self.auto_open_photoshop.setChecked(bool(settings.get("auto_open_photoshop")))
-        self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
-        self._sync_padding_mode(animate=False)
+        self._loading_values = True
+        try:
+            settings = self.panel.user_settings
+            self.photoshop_path.setText(settings.get("photoshop_path") or "")
+            self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
+            self.dilation_stepper.setValue(
+                int(settings.get("dilation") or 8),
+                emit=False,
+            )
+            self.auto_open_photoshop.setChecked(
+                bool(settings.get("auto_open_photoshop"))
+            )
+            self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
+            self._sync_padding_mode(animate=False)
 
-        bit_depth = settings.get("bit_depth")
-        index = self.bit_depth.findData(bit_depth)
-        self.bit_depth.setCurrentIndex(index if index >= 0 else 0)
+            bit_depth = settings.get("bit_depth")
+            index = self.bit_depth.findData(bit_depth)
+            self.bit_depth.setCurrentIndex(index if index >= 0 else 0)
+        finally:
+            self._loading_values = False
 
     def _sync_padding_mode(self, _enabled=None, animate=True):
         infinite = self.infinite_padding.isChecked()
@@ -1189,18 +1527,25 @@ QPushButton[variant="icon"]:pressed {{
         )
         if path:
             self.photoshop_path.setText(path)
+            self._save_live()
+
+    def _settings_values(self):
+        return {
+            "photoshop_path": self.photoshop_path.text().strip(),
+            "infinite_padding": self.infinite_padding.isChecked(),
+            "dilation": self.dilation_stepper.value(),
+            "auto_open_photoshop": self.auto_open_photoshop.isChecked(),
+            "export_uv_map": self.export_uv_map.isChecked(),
+            "bit_depth": self.bit_depth.currentData(),
+        }
+
+    def _save_live(self, *_args):
+        if self._loading_values:
+            return
+        self.panel.save_user_settings(self._settings_values())
 
     def save(self):
-        self.panel.save_user_settings(
-            {
-                "photoshop_path": self.photoshop_path.text().strip(),
-                "infinite_padding": self.infinite_padding.isChecked(),
-                "dilation": self.dilation_stepper.value(),
-                "auto_open_photoshop": self.auto_open_photoshop.isChecked(),
-                "export_uv_map": self.export_uv_map.isChecked(),
-                "bit_depth": self.bit_depth.currentData(),
-            }
-        )
+        self._save_live()
         self.dialog.accept()
 
 
@@ -1978,23 +2323,13 @@ QLabel#RizumSvgLabel:hover {{
         self._target_error = ""
         if not self.panel._project_is_open():
             self.targets = []
+            self._target_error = "Open a Painter project to export."
             self.refresh_tree()
-            _show_modal_message(
-                self.QtWidgets,
-                self.dialog,
-                "Export",
-                "Open a Painter project to export.",
-            )
             return
         if not self.panel._project_is_ready():
             self.targets = []
+            self._target_error = "Painter project is still loading or not editable."
             self.refresh_tree()
-            _show_modal_message(
-                self.QtWidgets,
-                self.dialog,
-                "Export",
-                "Painter project is still loading or not editable.",
-            )
             return
 
         self._selection_memory = ExportSelectionMemory(
@@ -2340,58 +2675,90 @@ QLabel#RizumSvgLabel:hover {{
         self.dialog.accept()
 
     def _show_export_handoff(self, result):
-        dialog = self.QtWidgets.QDialog(self.dialog)
-        dialog.setWindowTitle("Export complete")
-        dialog.setModal(True)
-        dialog.setMinimumWidth(340)
-        apply_theme(dialog, mode="overlay")
+        self._build_export_handoff(result).exec()
 
-        layout = self.QtWidgets.QVBoxLayout(dialog)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
-        title = self.QtWidgets.QLabel("Export complete")
-        title.setObjectName("RizumDialogTitle")
-        layout.addWidget(title)
-        layout.addWidget(make_inset_separator(0, thickness=1))
+    def _build_export_handoff(self, result):
+        shell = _CompactDialogShell(
+            self.QtWidgets,
+            self.dialog,
+            "Export complete",
+            "RizumExportHandoffDialog",
+            width=360,
+            body_spacing=10,
+        )
 
         summary = self.QtWidgets.QLabel(
             f"Exported {result['count']} build request(s). Continue in Photoshop when ready."
         )
-        summary.setObjectName("RizumDimLabel")
+        summary.setObjectName("RizumSettingsItemName")
         summary.setWordWrap(True)
-        layout.addWidget(summary)
+        shell.body_layout.addWidget(summary)
 
         path = self.QtWidgets.QLineEdit(str(result["output_dir"]))
-        path.setObjectName("RizumPathInput")
+        path.setObjectName("RizumExportHandoffPath")
         path.setReadOnly(True)
         path.setFrame(False)
         path.setCursorPosition(0)
-        layout.addWidget(path)
+        shell.body_layout.addWidget(path)
 
-        footer = self.QtWidgets.QHBoxLayout()
-        footer.setContentsMargins(0, 6, 0, 0)
-        open_button = ActionButton.create("Open Folder", "dialog-secondary")
-        copy_button = ActionButton.create("Copy List", "dialog-secondary")
-        done_button = ActionButton.create("Done", "dialog-primary")
+        open_button = shell.add_action(
+            "Open Folder",
+            minimum=86,
+            maximum=116,
+        )
+        copy_button = shell.add_action(
+            "Copy List",
+            minimum=78,
+            maximum=106,
+        )
+        done_button = shell.add_action(
+            "Done",
+            primary=True,
+            minimum=68,
+            maximum=96,
+        )
         open_button.clicked.connect(self.panel.open_output_folder)
         copy_button.clicked.connect(self.panel.copy_last_export_list_path)
-        done_button.clicked.connect(dialog.accept)
-        footer.addWidget(open_button)
-        footer.addWidget(copy_button)
-        footer.addStretch(1)
-        footer.addWidget(done_button)
-        layout.addLayout(footer)
-        for button, minimum, maximum in (
-            (open_button, 86, 116),
-            (copy_button, 78, 106),
-            (done_button, 68, 96),
-        ):
-            set_compact_footer_button_width(
-                button,
-                compact_footer_button_width(button, minimum=minimum, maximum=maximum),
+        done_button.clicked.connect(shell.dialog.accept)
+        shell.footer_layout.addWidget(open_button)
+        shell.footer_layout.addWidget(copy_button)
+        shell.footer_layout.addStretch(1)
+        shell.footer_layout.addWidget(done_button)
+
+        def scale_path(_scale):
+            height = PAINTER_SETTINGS_LAYOUT.control_height.resolve(shell.dialog)
+            radius = max(
+                4,
+                int(round(default_theme.radius_small * float(_scale))),
             )
-        dialog.setStyleSheet(dialog.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
-        dialog.exec()
+            path.setFixedHeight(height)
+            path.setStyleSheet(
+                f"""
+QLineEdit#RizumExportHandoffPath {{
+    color: {PAINTER_DIALOG_STYLE["muted"]};
+    background: {PAINTER_DIALOG_STYLE["control"]};
+    border: 0;
+    border-radius: {radius}px;
+    padding: 0 {shell._metric(10, 8)}px;
+    selection-background-color: {PAINTER_DIALOG_STYLE["control_hover"]};
+    selection-color: {PAINTER_DIALOG_STYLE["text"]};
+}}
+QLineEdit#RizumExportHandoffPath:hover,
+QLineEdit#RizumExportHandoffPath:focus {{
+    color: {PAINTER_DIALOG_STYLE["text"]};
+    background: {PAINTER_DIALOG_STYLE["control_hover"]};
+}}
+"""
+            )
+
+        shell.add_scale_callback(scale_path)
+        dialog = shell.finalize()
+        dialog._rizum_summary_label = summary
+        dialog._rizum_path_field = path
+        dialog._rizum_open_button = open_button
+        dialog._rizum_copy_button = copy_button
+        dialog._rizum_done_button = done_button
+        return dialog
 
 class SmokeTestPanel:
     """Painter dock panel for the PT Bridge workflow."""
@@ -2585,23 +2952,8 @@ class SmokeTestPanel:
             store.remove("bit_depth")
         store.sync()
         self.user_settings = self._load_user_settings()
-        _show_modal_message(
-            self.QtWidgets,
-            self.widget,
-            "Settings",
-            "Settings saved.",
-        )
 
     def open_export_dialog(self):
-        if not self._project_is_open():
-            _show_modal_message(
-                self.QtWidgets,
-                self.widget,
-                "Export",
-                "Open a Painter project to export.",
-            )
-            return
-
         dialog = ExportDialog(self)
         dialog.open()
 
@@ -2998,21 +3350,7 @@ class SmokeTestPanel:
             self.open_output_button.setEnabled(False)
 
     def _create_export_progress(self, label):
-        progress = self.QtWidgets.QProgressDialog(
-            f"Exporting {label}...",
-            "Cancel",
-            0,
-            0,
-            self.widget,
-        )
-        progress.setWindowTitle("Rizum PT-to-PS Export")
-        modality = getattr(self.QtCore.Qt, "ApplicationModal", None)
-        if modality is None:
-            modality = self.QtCore.Qt.WindowModality.ApplicationModal
-        progress.setWindowModality(modality)
-        progress.setAutoClose(False)
-        progress.setAutoReset(False)
-        progress.setMinimumDuration(0)
+        progress = _ExportProgressDialog(self, label)
         progress.show()
         self.QtWidgets.QApplication.processEvents()
         return progress
