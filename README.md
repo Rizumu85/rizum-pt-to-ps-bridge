@@ -99,3 +99,11 @@ installers\uninstall-ps-plugin-windows.bat
 
 After running the uninstaller, close Photoshop completely and reopen it before
 checking that `Plugins -> Rizum PT Bridge` is gone.
+
+## Run All Checks
+
+```text
+pwsh tools/run-checks.ps1
+```
+
+Runs the Painter Python tests plus the desktop typecheck and tests.
