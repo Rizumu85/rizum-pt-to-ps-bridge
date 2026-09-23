@@ -382,24 +382,9 @@ class SettingsDialog:
         uv_map_layout.addWidget(self.export_uv_map)
         body_layout.addWidget(uv_map_row)
 
-        self.auto_open_photoshop = _make_settings_toggle(self.QtCore, self.QtGui, self.QtWidgets)
-        auto_row, auto_layout = _settings_frame_row(
-            self.QtWidgets,
-            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
-        )
-        self._settings_rows.append(auto_row)
-        self.auto_texts = self._make_text_block(
-            "Auto-build in Photoshop",
-            "Hand off after a successful export",
-        )
-        auto_layout.addWidget(self.auto_texts)
-        auto_layout.addStretch(1)
-        auto_layout.addWidget(self.auto_open_photoshop)
-
         photoshop_section = _settings_section(self.QtWidgets, "Photoshop")
         self._settings_sections.append(photoshop_section)
         body_layout.addWidget(photoshop_section)
-        body_layout.addWidget(auto_row)
         path_row, path_row_layout = _settings_frame_row(
             self.QtWidgets,
             PAINTER_SETTINGS_LAYOUT.row_height.design,
@@ -492,13 +477,11 @@ class SettingsDialog:
 
         self._bind_toggle_row(padding_row, self.infinite_padding)
         self._bind_toggle_row(uv_map_row, self.export_uv_map)
-        self._bind_toggle_row(auto_row, self.auto_open_photoshop)
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
         self.infinite_padding.toggled.connect(self._save_live)
         self.dilation_stepper.valueChanged.connect(self._save_live)
         self.bit_depth.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
-        self.auto_open_photoshop.toggled.connect(self._save_live)
         self.photoshop_path.editingFinished.connect(self._save_live)
 
         apply_theme(self.dialog, mode="overlay")
@@ -577,12 +560,6 @@ class SettingsDialog:
             + self._settings_rows[2].layout().itemAt(0).widget().sizeHint().width()
             + 2 * body_margin
         )
-        auto_need = (
-            self.auto_texts.sizeHint().width()
-            + PAINTER_SETTINGS_LAYOUT.row_spacing
-            + self.auto_open_photoshop.width()
-            + 2 * body_margin
-        )
         uv_map_need = (
             self.uv_map_texts.sizeHint().width()
             + PAINTER_SETTINGS_LAYOUT.row_spacing
@@ -593,7 +570,6 @@ class SettingsDialog:
             metric(338, 254),
             footer_need,
             bit_depth_need,
-            auto_need,
             uv_map_need,
         )
 
@@ -640,7 +616,6 @@ class SettingsDialog:
 
         self.infinite_padding.setCompactHeight(metric(20))
         self.export_uv_map.setCompactHeight(metric(20))
-        self.auto_open_photoshop.setCompactHeight(metric(20))
         self.dilation_stepper.setCompactHeight(
             PAINTER_SETTINGS_LAYOUT.stepper_height.resolve(self.dialog)
         )
@@ -815,9 +790,6 @@ QPushButton[variant="icon"]:pressed {{
                 int(settings.get("dilation") or 8),
                 emit=False,
             )
-            self.auto_open_photoshop.setChecked(
-                bool(settings.get("auto_open_photoshop"))
-            )
             self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
             self._sync_padding_mode(animate=False)
 
@@ -850,7 +822,6 @@ QPushButton[variant="icon"]:pressed {{
             "photoshop_path": self.photoshop_path.text().strip(),
             "infinite_padding": self.infinite_padding.isChecked(),
             "dilation": self.dilation_stepper.value(),
-            "auto_open_photoshop": self.auto_open_photoshop.isChecked(),
             "export_uv_map": self.export_uv_map.isChecked(),
             "bit_depth": self.bit_depth.currentData(),
         }

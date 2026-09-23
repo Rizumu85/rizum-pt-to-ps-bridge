@@ -24,7 +24,6 @@ class _Panel:
             "photoshop_path": "",
             "infinite_padding": False,
             "dilation": 8,
-            "auto_open_photoshop": False,
             "bit_depth": None,
         }
         self.saved = []
@@ -107,7 +106,6 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
                     "photoshop_path": "",
                     "infinite_padding": False,
                     "dilation": 12,
-                    "auto_open_photoshop": False,
                     "bit_depth": None,
                 }
             )

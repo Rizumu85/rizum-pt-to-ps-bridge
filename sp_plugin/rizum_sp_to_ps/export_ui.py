@@ -31,10 +31,7 @@ from .ui_kit import (
     make_mock_checkbox,
     update_export_tree_item,
 )
-from .ui_dialogs import (
-    CompactDialogShell,
-    show_modal_message,
-)
+from .ui_dialogs import show_modal_message
 
 
 class ExportDialog:
@@ -1136,110 +1133,20 @@ QLabel#RizumSvgLabel:hover {{
             )
             return
 
-        settings = self.panel.user_settings
-        if settings.get("auto_open_photoshop"):
-            try:
-                launcher_path = write_photoshop_launcher(result["export_list"])
-            except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
-                show_modal_message(
-                    self.QtWidgets,
-                    self.dialog,
-                    "Photoshop",
-                    f"Could not prepare the Photoshop build script: {exc}",
-                )
-                return
-            launched, message = self.panel.launch_photoshop(launcher_path)
-            if not launched:
-                show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
-                return
-            self.dialog.accept()
+        # The plugin is an automation bridge: every export continues straight
+        # into the Photoshop build, so there is no manual handoff to choose.
+        try:
+            launcher_path = write_photoshop_launcher(result["export_list"])
+        except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
+            show_modal_message(
+                self.QtWidgets,
+                self.dialog,
+                "Photoshop",
+                f"Could not prepare the Photoshop build script: {exc}",
+            )
             return
-
-        self._show_export_handoff(result)
+        launched, message = self.panel.launch_photoshop(launcher_path)
+        if not launched:
+            show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
+            return
         self.dialog.accept()
-
-    def _show_export_handoff(self, result):
-        self._build_export_handoff(result).exec()
-
-    def _build_export_handoff(self, result):
-        shell = CompactDialogShell(
-            self.QtWidgets,
-            self.dialog,
-            "Export complete",
-            "RizumExportHandoffDialog",
-            width=360,
-            body_spacing=10,
-        )
-
-        summary = self.QtWidgets.QLabel(
-            f"Exported {result['count']} build request(s). Continue in Photoshop when ready."
-        )
-        summary.setObjectName("RizumSettingsItemName")
-        summary.setWordWrap(True)
-        shell.body_layout.addWidget(summary)
-
-        path = self.QtWidgets.QLineEdit(str(result["output_dir"]))
-        path.setObjectName("RizumExportHandoffPath")
-        path.setReadOnly(True)
-        path.setFrame(False)
-        path.setCursorPosition(0)
-        shell.body_layout.addWidget(path)
-
-        open_button = shell.add_action(
-            "Open Folder",
-            minimum=86,
-            maximum=116,
-        )
-        copy_button = shell.add_action(
-            "Copy List",
-            minimum=78,
-            maximum=106,
-        )
-        done_button = shell.add_action(
-            "Done",
-            primary=True,
-            minimum=68,
-            maximum=96,
-        )
-        open_button.clicked.connect(self.panel.open_output_folder)
-        copy_button.clicked.connect(self.panel.copy_last_export_list_path)
-        done_button.clicked.connect(shell.dialog.accept)
-        shell.footer_layout.addWidget(open_button)
-        shell.footer_layout.addWidget(copy_button)
-        shell.footer_layout.addStretch(1)
-        shell.footer_layout.addWidget(done_button)
-
-        def scale_path(_scale):
-            height = PAINTER_SETTINGS_LAYOUT.control_height.resolve(shell.dialog)
-            radius = max(
-                4,
-                int(round(default_theme.radius_small * float(_scale))),
-            )
-            path.setFixedHeight(height)
-            path.setStyleSheet(
-                f"""
-QLineEdit#RizumExportHandoffPath {{
-    color: {PAINTER_DIALOG_STYLE["muted"]};
-    background: {PAINTER_DIALOG_STYLE["control"]};
-    border: 0;
-    border-radius: {radius}px;
-    padding: 0 {shell._metric(10, 8)}px;
-    selection-background-color: {PAINTER_DIALOG_STYLE["control_hover"]};
-    selection-color: {PAINTER_DIALOG_STYLE["text"]};
-}}
-QLineEdit#RizumExportHandoffPath:hover,
-QLineEdit#RizumExportHandoffPath:focus {{
-    color: {PAINTER_DIALOG_STYLE["text"]};
-    background: {PAINTER_DIALOG_STYLE["control_hover"]};
-}}
-"""
-            )
-
-        shell.add_scale_callback(scale_path)
-        dialog = shell.finalize()
-        dialog._rizum_summary_label = summary
-        dialog._rizum_path_field = path
-        dialog._rizum_open_button = open_button
-        dialog._rizum_copy_button = copy_button
-        dialog._rizum_done_button = done_button
-        return dialog

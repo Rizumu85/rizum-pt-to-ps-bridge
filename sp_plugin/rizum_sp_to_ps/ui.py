@@ -291,8 +291,6 @@ class BridgePanel:
         self.QtGui = QtGui
         self.QtWidgets = QtWidgets
         self._closing = False
-        self.last_export_list_path = None
-        self.last_output_dir = None
         self.user_settings = self._load_user_settings()
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsBridgePanel")
@@ -399,7 +397,6 @@ class BridgePanel:
             "photoshop_path": store.value("photoshop_path", "", str) or "",
             "infinite_padding": to_bool(store.value("infinite_padding", False)),
             "dilation": optional_int(store.value("dilation", 8)) or 8,
-            "auto_open_photoshop": to_bool(store.value("auto_open_photoshop", True)),
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
             "bit_depth": bit_depth,
         }
@@ -409,7 +406,6 @@ class BridgePanel:
         store.setValue("photoshop_path", values.get("photoshop_path") or "")
         store.setValue("infinite_padding", bool(values.get("infinite_padding")))
         store.setValue("dilation", int(values.get("dilation") or 8))
-        store.setValue("auto_open_photoshop", bool(values.get("auto_open_photoshop")))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         bit_depth = values.get("bit_depth")
         if bit_depth:
@@ -484,30 +480,21 @@ class BridgePanel:
             "stacks": _unique_preserving_order(stacks),
             "channels": sorted(set(channels)),
         }
-        self.last_output_dir = Path(output_dir)
-        self.last_export_list_path = self._write_last_export_list(
+        output_dir = Path(output_dir)
+        export_list = self._write_last_export_list(
             label,
             all_paths,
-            self.last_output_dir,
+            output_dir,
             combined_settings,
         )
         return {
             "ok": True,
             "message": f"Exported {len(all_paths)} build request(s).",
             "count": len(all_paths),
-            "output_dir": self.last_output_dir,
-            "export_list": self.last_export_list_path,
+            "output_dir": output_dir,
+            "export_list": export_list,
             "paths": list(all_paths),
         }
-
-    def copy_last_export_list_path(self):
-        if self.last_export_list_path is not None:
-            self.QtWidgets.QApplication.clipboard().setText(str(self.last_export_list_path))
-
-    def open_output_folder(self):
-        if self.last_output_dir is not None:
-            url = self.QtCore.QUrl.fromLocalFile(str(self.last_output_dir))
-            self.QtGui.QDesktopServices.openUrl(url)
 
     def launch_photoshop(self, launcher_path):
         executable = Path(self.user_settings.get("photoshop_path") or "")
