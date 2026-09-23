@@ -448,9 +448,10 @@ def _insertion_position(item, target_node, layerstack):
         # Desktop group drops append visually; targeting the final child keeps
         # Painter's insertion order identical to the mapping preview.
         return layerstack.InsertPosition.below_node(children[-1])
+    # Folder children live in the Substack; Content only accepts effects.
     return layerstack.InsertPosition.inside_node(
         target_node,
-        layerstack.NodeStack.Content,
+        layerstack.NodeStack.Substack,
     )
 
 
