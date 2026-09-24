@@ -324,7 +324,9 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
         )
         self._settings_rows.append(padding_row)
-        padding_texts = self._make_text_block("Padding", "Infinite")
+        # The switch toggles infinite padding; "Padding" alone read as turning
+        # padding off. When it is off, the Dilation row below appears.
+        padding_texts = self._make_text_block("Infinite padding", "On")
         self.padding_meta = padding_texts.findChild(self.QtWidgets.QLabel, "RizumSettingsItemMeta")
         padding_layout.addWidget(padding_texts)
         padding_layout.addStretch(1)
@@ -484,6 +486,7 @@ class SettingsDialog:
         self.bit_depth.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
         self.photoshop_path.editingFinished.connect(self._save_live)
+        self.photoshop_path.editingFinished.connect(self._sync_photoshop_hint)
 
         apply_theme(self.dialog, mode="overlay")
         self.dialog.syncSettingsUiScale()
@@ -786,6 +789,7 @@ QPushButton[variant="icon"]:pressed {{
         try:
             settings = self.panel.user_settings
             self.photoshop_path.setText(settings.get("photoshop_path") or "")
+            self._sync_photoshop_hint()
             self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
             self.dilation_stepper.setValue(
                 int(settings.get("dilation") or 8),
@@ -803,7 +807,7 @@ QPushButton[variant="icon"]:pressed {{
     def _sync_padding_mode(self, _enabled=None, animate=True):
         infinite = self.infinite_padding.isChecked()
         if self.padding_meta is not None:
-            self.padding_meta.setText("Infinite" if infinite else "Custom")
+            self.padding_meta.setText("On" if infinite else "Off · uses dilation below")
         self.dilation_reveal.setExpanded(not infinite, animate=animate)
         self._sync_dialog_height()
 
@@ -817,6 +821,16 @@ QPushButton[variant="icon"]:pressed {{
         if path:
             self.photoshop_path.setText(path)
             self._save_live()
+
+    def _sync_photoshop_hint(self, *_args):
+        # Exports find the newest installed Photoshop when no path is set, so
+        # show which one will be used instead of an empty required field.
+        detected = self.panel.photoshop_executable()
+        if detected is None:
+            self.photoshop_path.setPlaceholderText("Photoshop.exe not found - choose it")
+        else:
+            self.photoshop_path.setPlaceholderText(f"Auto-detected: {detected}")
+        self.photoshop_path.setToolTip(self.photoshop_path.text() or str(detected or ""))
 
     def _settings_values(self):
         return {

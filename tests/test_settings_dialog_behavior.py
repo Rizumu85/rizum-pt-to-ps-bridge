@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -31,6 +32,9 @@ class _Panel:
     def save_user_settings(self, values):
         self.user_settings = dict(values)
         self.saved.append(dict(values))
+
+    def photoshop_executable(self):
+        return Path("C:/Adobe/Adobe Photoshop 2025/Photoshop.exe")
 
 
 class _SettingsStore:
@@ -113,6 +117,15 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         modal.assert_not_called()
         self.assertTrue(store.synced)
 
+
+    def test_empty_photoshop_path_shows_the_auto_detected_install(self):
+        self.assertIn("Auto-detected", self.settings.photoshop_path.placeholderText())
+        self.assertIn("Adobe Photoshop 2025", self.settings.photoshop_path.placeholderText())
+
+    def test_padding_switch_is_labelled_as_infinite_padding(self):
+        self.settings.infinite_padding.setChecked(False)
+        self.app.processEvents()
+        self.assertEqual(self.settings.padding_meta.text(), "Off · uses dilation below")
 
 if __name__ == "__main__":
     unittest.main()
