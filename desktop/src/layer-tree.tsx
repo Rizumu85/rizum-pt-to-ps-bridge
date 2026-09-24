@@ -50,6 +50,10 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
               objectFit="cover"
               style={{ width: 18, height: 18, pointerEvents: "none" }}
             />
+          ) : typeGlyph(node) ? (
+            <div style={{ width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name={typeGlyph(node)!} size={12} />
+            </div>
           ) : null}
         </div>
       )}
@@ -74,6 +78,13 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
       ) : null}
     </div>
   )
+}
+
+function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
+  if (node.ref.host !== "substance_painter") return null
+  if (/fill/i.test(node.ref.kind)) return "fillLayer"
+  if (/paint/i.test(node.ref.kind)) return "paintLayer"
+  return null
 }
 
 type TreeInteraction = {
@@ -176,7 +187,10 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           <LayerThumbnail node={node} />
           <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
             <PrimaryText>{node.name}</PrimaryText>
-            {mapped ? <text style={{ fontSize: typography.secondarySize, color: colors.secondary }}>Pending</text> : null}
+            {mapped || node.locked || node.note ? <text style={{
+              fontSize: typography.secondarySize, color: colors.secondary,
+              whiteSpace: "nowrap", textOverflow: "ellipsis",
+            }}>{mapped ? "Pending" : node.locked ?? node.note}</text> : null}
           </div>
         </div>
         {nativeNode ? <div
@@ -185,11 +199,11 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           style={{
             width: 22, height: 22, flexShrink: 0, display: "flex",
             alignItems: "center", justifyContent: "center", borderRadius: 5,
-            cursor: "pointer", hover: { backgroundColor: "#FF453A29" },
+            cursor: "pointer", hover: { backgroundColor: colors.controlActive },
             opacity: hovered ? 1 : 0, pointerEvents: hovered ? undefined : "none",
           }}
         >
-          <Icon name="x" size={12} color={colors.danger} />
+          <Icon name="x" size={12} color={colors.secondary} />
         </div> : null}
       </div>
       {node.kind === "group" ? <motion.div

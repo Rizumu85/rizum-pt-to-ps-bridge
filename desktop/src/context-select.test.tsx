@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 import { BridgeApp } from "./bridge-app"
 import type { BridgeState } from "./model"
 import { loadBridgeSession } from "./transport"
+import { writeFeaturePsd } from "./test-psd"
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
@@ -256,6 +257,23 @@ describe("Painter context selectors", () => {
       await app.close()
     }
   })
+  it("says under each Photoshop row what will not transfer as-is", async () => {
+    const session = await loadBridgeSession({
+      photoshopDocument: await writeFeaturePsd(),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    const root = createTestRoot({ width: 652, height: 560 })
+    const app = await connectTest(root.renderer)
+    try {
+      root.render(<BridgeApp session={session} onApply={async () => "unused"} onConnectPhotoshop={async () => null} />)
+      root.renderer.flush()
+      for (const text of [
+        "Clipped · merges into Base", "Merges 1 clipped · Styles not transferred",
+        "Adjustment layer · not supported", "Colour fill",
+      ]) expect(await app.getByText(text).count()).toBe(1)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("switches the rendered Painter tree with the texture set selector", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),

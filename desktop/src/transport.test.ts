@@ -5,10 +5,10 @@ import { PassThrough } from "node:stream"
 
 import { describe, expect, it, vi } from "vitest"
 
-import { writePsdBuffer } from "ag-psd"
 import { inflateSync } from "node:zlib"
 
 import { findNode, transferBetweenHosts } from "./model"
+import { writeFeaturePsd } from "./test-psd"
 import {
   PAINTER_REQUEST_MARKER,
   connectPhotoshop,
@@ -155,10 +155,12 @@ describe("desktop file transport", () => {
     const [clipped, base] = folder.children ?? []
     expect(clipped.locked).toBe("Clipped · merges into Base")
     expect(base.detail).toBe("Normal · 100% · merges 1 clipped · styles not transferred")
+    expect(base.note).toBe("Merges 1 clipped · Styles not transferred")
     expect(levels.locked).toBe("Adjustment layer · not supported")
     const [, , tint, ramp] = session.state.photoshop
     expect(tint.locked).toBeUndefined()
     expect(tint.detail).toBe("Multiply · 100% · colour fill")
+    expect(tint.note).toBe("Colour fill")
     expect(ramp.locked).toBe("Gradient or pattern fill · not supported")
     expect(transferBetweenHosts(session.state, clipped.id, "substance_painter:sp-working")).toBe(session.state)
   })
@@ -315,43 +317,6 @@ describe("Painter link", () => {
     })).resolves.toBeNull()
   })
 })
-
-async function writeFeaturePsd(): Promise<string> {
-  const size = 4
-  const fill = (rgba: number[]) => {
-    const data = new Uint8ClampedArray(size * size * 4)
-    for (let index = 0; index < data.length; index += 4) data.set(rgba, index)
-    return { width: size, height: size, data }
-  }
-  const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-feature-psd-"))
-  const file = path.join(directory, "features.psd")
-  await writeFile(file, writePsdBuffer({
-    width: size,
-    height: size,
-    children: [
-      {
-        id: 10, name: "Paint", blendMode: "pass through", children: [
-          { id: 12, name: "Shade", blendMode: "multiply", clipping: true, top: 0, left: 0, imageData: fill([128, 128, 128, 255]) },
-          {
-            id: 11, name: "Base", blendMode: "normal", top: 0, left: 0, imageData: fill([255, 0, 0, 255]),
-            effects: { dropShadow: [{ enabled: true }] },
-          },
-        ],
-      },
-      { id: 20, name: "Levels", adjustment: { type: "levels" } },
-      {
-        id: 30, name: "Tint", blendMode: "multiply", vectorFill: { type: "color", color: { r: 255, g: 128, b: 0 } },
-        mask: { top: 0, left: 0, bottom: size, right: size, defaultColor: 0, imageData: fill([255, 255, 255, 255]) },
-      },
-      {
-        id: 31, name: "Ramp", vectorFill: {
-          type: "solid", name: "", style: "linear", colorStops: [], opacityStops: [],
-        } as never,
-      },
-    ],
-  }, { generateThumbnail: false, noBackground: true }))
-  return file
-}
 
 function decodeRgba8(png: Uint8Array, x: number, y: number): Uint8Array {
   const view = new DataView(png.buffer, png.byteOffset)

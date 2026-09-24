@@ -174,6 +174,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
     }
     node.detail = node.locked
       ?? layerDetail(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
+    node.note = transferNote(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
   }
   return nodes.map(({ node }) => node)
 }
@@ -184,6 +185,14 @@ function layerDetail(layer: Layer, clippedCount: number, colorFill: boolean): st
   if (clippedCount) parts.push(`merges ${clippedCount} clipped`)
   if (layer.effects && !layer.effects.disabled) parts.push("styles not transferred")
   return parts.join(" · ")
+}
+
+function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): string | undefined {
+  const parts = []
+  if (colorFill) parts.push("Colour fill")
+  if (clippedCount) parts.push(`Merges ${clippedCount} clipped`)
+  if (layer.effects && !layer.effects.disabled) parts.push("Styles not transferred")
+  return parts.length ? parts.join(" · ") : undefined
 }
 
 function humanize(value: string): string {

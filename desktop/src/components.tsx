@@ -22,6 +22,11 @@ import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
 import iconX from "../../icons/x.svg" with { type: "text" }
 
+// Painter layers carry no rendered thumbnail in the snapshot; a type glyph
+// reads better than an empty tile that looks like a failed load.
+const iconPaintLayer = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><path d="M12.5 3.5 7.6 8.4" stroke="#9E9E9E" stroke-width="1.5" stroke-linecap="round"/><path d="M6.6 9.4c-1.9 0-2.9 1.3-3 3.1 1.8 0 3.1-1 3.1-2.9Z" fill="#9E9E9E"/></svg>`
+const iconFillLayer = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><rect x="3.25" y="3.25" width="9.5" height="9.5" rx="2" stroke="#9E9E9E" stroke-width="1.5"/><path d="M3.5 12.5 12.5 3.5v7a2 2 0 0 1-2 2Z" fill="#9E9E9E"/></svg>`
+
 const icons = {
   check: iconCheck,
   chevronDown: iconChevronDown,
@@ -32,6 +37,8 @@ const icons = {
   reset: iconReset,
   undo: iconUndo,
   x: iconX,
+  paintLayer: iconPaintLayer,
+  fillLayer: iconFillLayer,
 } as const
 
 export const motionEase: MotionEase = [0.23, 1, 0.32, 1]

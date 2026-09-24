@@ -28,6 +28,8 @@ export type LayerNode = {
   thumbnailPath?: string | null
   /** Why this node cannot be transferred; locked rows stay visible but inert. */
   locked?: string
+  /** What changes on transfer (merged clipping, dropped styles); shown under the name. */
+  note?: string
   ref: HostLayerRef
   children?: LayerNode[]
 }
