@@ -6,17 +6,28 @@ const dist = join(root, "dist")
 
 await mkdir(dist, { recursive: true })
 
-const compiler = Bun.spawn(
-  [process.execPath, "build", "--compile", "src/main.tsx", "--outfile", "dist/pt-bridge"],
-  {
-    cwd: root,
-    stdout: "inherit",
-    stderr: "inherit",
+// GPUiX 0.10's ESM loader requires its .node addon through createRequire,
+// which the compiler cannot follow, so the exe shipped without it and failed
+// at startup. The package's CommonJS loader uses a plain require that gets
+// embedded. Drop this redirect once GPUiX's ESM entry compiles on its own.
+const nativeLoader: import("bun").BunPlugin = {
+  name: "gpuix-native-cjs",
+  setup(build) {
+    build.onResolve({ filter: /^@gpuix\/native$/ }, () => ({
+      path: join(root, "node_modules", "@gpuix", "native", "index.cjs"),
+    }))
   },
-)
+}
 
-const exitCode = await compiler.exited
-if (exitCode !== 0) process.exit(exitCode)
+const result = await Bun.build({
+  entrypoints: [join(root, "src/main.tsx")],
+  compile: { outfile: join(dist, "pt-bridge") },
+  plugins: [nativeLoader],
+})
+if (!result.success) {
+  for (const log of result.logs) console.error(log)
+  process.exit(1)
+}
 
 // The unmodified font and its license travel beside the executable so private
 // registration never depends on a user's installed-font library.
