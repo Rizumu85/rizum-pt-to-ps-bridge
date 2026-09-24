@@ -223,9 +223,23 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         QtWidgets.QSizePolicy.Policy.Fixed,
     )
 
-    # desktop_bridge.DesktopBridgeController owns this button's state.
-    bridge_button = make_icon_button("action-bridge.svg", "Bridge")
+    # Bridge is a primary workflow next to Export, so it gets a label rather
+    # than an unlabelled glyph; desktop_bridge.DesktopBridgeController owns
+    # its enabled state and tooltip.
+    bridge_button = IconActionButton(
+        "Bridge",
+        "action-bridge.svg",
+        theme["control"],
+        theme["control_hover"],
+        theme["control_pressed"],
+        theme["text"],
+        default_theme.radius_small,
+    )
     bridge_button.setObjectName("RizumBridgeDockBridge")
+    bridge_button.setSizePolicy(
+        QtWidgets.QSizePolicy.Policy.Expanding,
+        QtWidgets.QSizePolicy.Policy.Fixed,
+    )
     bridge_button.setAttribute(
         QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips,
         True,
@@ -235,7 +249,7 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
     settings_button.setObjectName("RizumBridgeDockSettings")
 
     layout.addWidget(export_button, 1)
-    layout.addWidget(bridge_button)
+    layout.addWidget(bridge_button, 1)
     layout.addWidget(settings_button)
 
     def set_ui_scale(scale):
@@ -253,9 +267,10 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
 
         layout.setContentsMargins(margin, 0, margin, 0)
         layout.setSpacing(spacing)
-        export_button.setCompactHeight(control_height)
-        export_button.setMinimumWidth(metric(96, 72))
-        for button in (bridge_button, settings_button):
+        for button in (export_button, bridge_button):
+            button.setCompactHeight(control_height)
+            button.setMinimumWidth(metric(80, 64))
+        for button in (settings_button,):
             button.setStyleSheet(
                 f"QPushButton#{button.objectName()} {{"
                 f" min-width: {icon_frame}px; max-width: {icon_frame}px;"
@@ -271,7 +286,8 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         toolbar.setMinimumWidth(
             margin * 2
             + export_button.minimumWidth()
-            + icon_frame * 2
+            + bridge_button.minimumWidth()
+            + icon_frame
             + spacing * 2
         )
         toolbar.updateGeometry()
