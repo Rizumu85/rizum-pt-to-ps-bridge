@@ -46,11 +46,20 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def replies(self):
         return [json.loads(call.args[0].decode("utf-8")) for call in self.process.write.call_args_list]
 
-    def choose(self, path):
-        self.controller._connect_photoshop()
-        dialog = self.controller._source_dialog
-        dialog.selectFile(str(path))
-        dialog.accept()
+    def choose(self, path, during=None):
+        def picker(*_args):
+            if during:
+                during()
+            return (str(path) if path else "", "")
+        with patch.object(QtWidgets.QFileDialog, "getOpenFileName", side_effect=picker) as dialog:
+            self.controller._connect_photoshop()
+        return dialog
+
+    def test_picker_uses_the_system_dialog_filtered_to_photoshop_documents(self):
+        dialog = self.choose(None)
+        args = dialog.call_args.args
+        self.assertEqual(args[1], "Connect Photoshop Document")
+        self.assertEqual(args[3], "Photoshop Document (*.psd *.psb)")
 
     def test_accepting_a_psd_connects_the_open_mapper_without_photoshop(self):
         source = Path(self.directory.name) / "external.psd"
@@ -58,8 +67,8 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.choose(source)
         self.assertEqual(self.replies(), [{"type": "photoshop_connected", "psd": str(source)}])
         self.panel.launch_photoshop.assert_not_called()
-        self.assertIsNone(self.controller._source_dialog)
         self.assertEqual(self.controller._recent_photoshop_document(), source)
+        self.assertTrue(self.settings.value("photoshop_document_dir", "", str).endswith(Path(self.directory.name).name))
 
     def test_remembered_psd_that_moved_opens_bridge_disconnected(self):
         source = Path(self.directory.name) / "external.psd"
@@ -68,30 +77,18 @@ class DesktopConnectDialogTests(unittest.TestCase):
         source.unlink()
         self.assertIsNone(self.controller._recent_photoshop_document())
 
-    def test_cancel_replies_to_open_mapper_and_releases_picker(self):
-        self.controller._connect_photoshop()
-        dialog = self.controller._source_dialog
-        self.assertTrue(dialog.isVisible())
-        self.assertFalse(self.panel.dock_bridge_button.isEnabled())
-        dialog.reject()
-        self.assertIsNone(self.controller._source_dialog)
+    def test_cancel_replies_to_open_mapper(self):
+        self.choose(None, during=lambda: self.assertFalse(self.panel.dock_bridge_button.isEnabled()))
         self.assertEqual(self.replies(), [{"type": "photoshop_connect_cancelled"}])
         self.controller._launch_desktop.assert_not_called()
 
-    def test_mapper_exit_closes_its_picker_and_releases_bridge(self):
-        self.controller._connect_photoshop()
-        dialog = self.controller._source_dialog
-        self.controller._take_process()
-        self.assertFalse(dialog.isVisible())
-        self.assertIsNone(self.controller._source_dialog)
+    def test_mapper_closed_while_picking_ignores_the_answer(self):
+        source = Path(self.directory.name) / "external.psd"
+        source.touch()
+        self.choose(source, during=self.controller._take_process)
         self.assertEqual(self.replies(), [])
         self.assertTrue(self.panel.dock_bridge_button.isEnabled())
-
-    def test_unload_closes_picker_without_relaunch(self):
-        self.controller._connect_photoshop()
-        self.controller.close()
-        self.assertIsNone(self.controller._source_dialog)
-        self.controller._launch_desktop.assert_not_called()
+        self.assertIsNone(self.controller._recent_photoshop_document())
 
     def begin_transfer(self):
         # Apply is terminal for the mapper; Painter continues without it.

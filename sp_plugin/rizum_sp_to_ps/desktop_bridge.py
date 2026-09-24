@@ -43,7 +43,7 @@ class DesktopBridgeController:
         self._photoshop_progress_dialog = None
         self._photoshop_script_started = False
         self._photoshop_export_phase = None
-        self._source_dialog = None
+        self._picking = False
         self._trace_path = None
         self._stdout_buffer = ""
 
@@ -56,8 +56,6 @@ class DesktopBridgeController:
         if self._closing:
             return
         self._closing = True
-        if self._source_dialog is not None:
-            self._source_dialog.close()
         self._clear_photoshop_export()
         try:
             self.button.clicked.disconnect(self.open)
@@ -136,7 +134,7 @@ class DesktopBridgeController:
             return "Photoshop operation in progress"
         if self._applying_transfer:
             return "Applying mapped layers"
-        if self._process is not None or self._source_dialog is not None:
+        if self._process is not None or self._picking:
             return "PT Bridge desktop is open"
         return None
 
@@ -166,29 +164,26 @@ class DesktopBridgeController:
         self._trace("opening_photoshop_picker")
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         start_dir = settings.value(PHOTOSHOP_DIR_KEY, "", str) or ""
-        dialog = self.QtWidgets.QFileDialog(
-            self.panel.widget.window(), "Connect Photoshop Document", start_dir,
-        )
-        # Desktop has just relinquished focus. An owned, non-blocking Qt dialog
-        # can be raised explicitly and disposed on unload; a static OS dialog cannot.
-        dialog.setOption(self.QtWidgets.QFileDialog.Option.DontUseNativeDialog, True)
-        dialog.setFileMode(self.QtWidgets.QFileDialog.FileMode.ExistingFile)
-        dialog.setNameFilters(["Photoshop Document (*.psd *.psb)"])
-        self._source_dialog = dialog
+        # The system dialog keeps the user's shortcuts, recent folders and cloud
+        # drives, which Qt's widget dialog lacked. Use the static call: an owned
+        # native QFileDialog runs on a helper thread on Windows and crashed
+        # Painter when deleted right after it closed. Blocking is harmless
+        # here, since the mapper waits for this answer anyway; the mapper
+        # grants Painter foreground rights first so the dialog is not hidden.
+        self._picking = True
         self._sync_button()
-        dialog.finished.connect(self._photoshop_source_chosen)
-        dialog.open()
-        dialog.raise_()
-        dialog.activateWindow()
-        self._trace("photoshop_picker_visible", str(dialog.isVisible()))
+        try:
+            path, _selected_filter = self.QtWidgets.QFileDialog.getOpenFileName(
+                self.panel.widget.window(),
+                "Connect Photoshop Document",
+                start_dir,
+                "Photoshop Document (*.psd *.psb)",
+            )
+        finally:
+            self._picking = False
+        self._photoshop_source_chosen(path)
 
-    def _photoshop_source_chosen(self, result):
-        dialog = self._source_dialog
-        if dialog is None:
-            return
-        self._source_dialog = None
-        paths = dialog.selectedFiles()
-        dialog.deleteLater()
+    def _photoshop_source_chosen(self, path):
         if self._closing:
             return
         self._sync_button()
@@ -196,19 +191,19 @@ class DesktopBridgeController:
             # The mapper window closed while the picker was open; its connection
             # request ended with it.
             return
-        if result != self.QtWidgets.QDialog.DialogCode.Accepted or not paths:
+        if not path:
             self._trace("photoshop_picker_cancelled")
             self._reply_to_desktop({"type": "photoshop_connect_cancelled"})
             return
-        source_path = Path(paths[0])
+        source_path = Path(path)
         self._trace("photoshop_source_selected", source_path.suffix)
-        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         if source_path.suffix.lower() not in PHOTOSHOP_SUFFIXES:
             self._reply_to_desktop({
                 "type": "photoshop_connect_failed",
                 "message": f"{source_path.name} is not a Photoshop document.",
             })
             return
+        settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue(PHOTOSHOP_DIR_KEY, str(source_path.parent))
         # The mapper reads the PSD itself, so connecting never starts Photoshop.
         settings.setValue(PHOTOSHOP_DOCUMENT_KEY, str(source_path))
@@ -465,9 +460,6 @@ class DesktopBridgeController:
     def _take_process(self):
         process = self._process
         self._process = None
-        if self._source_dialog is not None:
-            # The picker answers this mapper's request; it cannot outlive it.
-            self._source_dialog.close()
         self._sync_button()
         return process
 
@@ -486,7 +478,6 @@ class DesktopBridgeController:
         try:
             self._connect_photoshop()
         except Exception as exc:
-            self._source_dialog = None
             self._sync_button()
             self._reply_to_desktop({"type": "photoshop_connect_failed", "message": str(exc)})
 
@@ -516,7 +507,7 @@ class DesktopBridgeController:
                 "message": f"Unsupported desktop request: {request_type or '(missing)'}",
             })
             return
-        if self._source_dialog is not None or self._photoshop_launch is not None:
+        if self._picking or self._photoshop_launch is not None:
             return
         # Leave the stdout signal before opening a new modal owner.
         self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)

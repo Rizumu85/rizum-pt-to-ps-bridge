@@ -110,7 +110,7 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         self.controller._open_photoshop_picker()
         reply = json.loads(process.write.call_args.args[0].decode("utf-8"))
         self.assertEqual(reply, {"type": "photoshop_connect_failed", "message": "Picker unavailable"})
-        self.assertIsNone(self.controller._source_dialog)
+        self.assertFalse(self.controller._picking)
 
     def test_reads_desktop_transfer_request(self):
         with tempfile.TemporaryDirectory() as directory:
