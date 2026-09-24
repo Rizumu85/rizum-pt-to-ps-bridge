@@ -94,5 +94,19 @@ class FeedbackDialogTests(unittest.TestCase):
         progress.close()
 
 
+    def test_long_message_is_not_clipped(self):
+        message = (
+            "Imported 3 Photoshop layer(s) into Painter.\n\n"
+            "Tint: Photoshop blend mode 'linear light' has no direct Painter "
+            "equivalent; Normal was kept."
+        )
+        dialog = ui_dialogs.build_modal_message(QtWidgets, self.panel.widget, "Bridge complete", message)
+        dialog.show()
+        self.app.processEvents()
+        label = dialog._rizum_message_label
+        self.assertGreaterEqual(label.height(), label.heightForWidth(label.width()))
+        dialog.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -173,11 +173,19 @@ class CompactDialogShell:
         for callback in self._scale_callbacks:
             callback(scale)
 
-        self.dialog.setFixedWidth(self._metric(self._width))
+        width = self._metric(self._width)
+        self.dialog.setFixedWidth(width)
         self._restyle()
-        self.dialog.layout().invalidate()
+        layout = self.dialog.layout()
+        layout.invalidate()
         self.dialog.settingsSurfaceLayout().invalidate()
-        self.dialog.adjustSize()
+        # Word-wrapped labels know their height only for a given width; sizing
+        # from the plain size hint clipped the last line of longer messages.
+        height = layout.heightForWidth(width) if layout.hasHeightForWidth() else -1
+        if height > 0:
+            self.dialog.setFixedHeight(max(height, layout.minimumSize().height()))
+        else:
+            self.dialog.adjustSize()
 
     def _restyle(self):
         theme = PAINTER_DIALOG_STYLE
