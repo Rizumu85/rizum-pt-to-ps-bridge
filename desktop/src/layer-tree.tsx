@@ -286,6 +286,7 @@ export function HostPanel({
   onDrop,
   onRemove,
   onTrackPointer,
+  contentKey,
 }: {
   panelId: "photoshop" | "painter"
   title: string
@@ -294,7 +295,14 @@ export function HostPanel({
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
   onTrackPointer: (event: EventPayload) => void
+  /** Names what the tree shows: a document or a Painter target. */
+  contentKey: string
 } & TreeInteraction) {
+  // A different document or target fades its tree in so the swap does not
+  // read as a glitch. Reloads, Apply refreshes and the window's first frame
+  // keep the key, so they stay instant.
+  const shown = useRef({ key: contentKey, fade: false })
+  if (shown.current.key !== contentKey) shown.current = { key: contentKey, fade: true }
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
     <div
@@ -363,7 +371,13 @@ export function HostPanel({
       <InsetSeparator />
       {emptyContent ? (
         <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0 }}>{emptyContent}</div>
-      ) : <LayerScroll id={panelId}><AnimatePresence initial={false}>
+      ) : <motion.div
+        key={contentKey}
+        initial={shown.current.fade ? { opacity: 0 } : false}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.16, ease: motionEase }}
+        style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
+      ><LayerScroll id={panelId}><AnimatePresence initial={false}>
           {nodes.map(node => <LayerRow
             key={node.id}
             node={node}
@@ -382,7 +396,7 @@ export function HostPanel({
             onDrop={onDrop}
             onRemove={onRemove}
           />)}
-      </AnimatePresence></LayerScroll>}
+      </AnimatePresence></LayerScroll></motion.div>}
     </div>
   )
 }

@@ -27,8 +27,8 @@ import {
   ContextSelect,
   DragPreview,
   IconAction,
-  InsetSeparator,
   MappingHelpPopover,
+  WorkingSeparator,
   motionEase,
   type PointerFeed,
 } from "./components"
@@ -64,10 +64,11 @@ export function BridgeApp({
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
-  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null })
+  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, returnTo: null })
   const trackPointer = (event: EventPayload) => {
     pointer.current.x = event.x ?? pointer.current.x
     pointer.current.y = event.y ?? pointer.current.y
@@ -134,7 +135,10 @@ export function BridgeApp({
     mutate(next, "Layer removed from this mapping session", new Set([id]))
   }
 
-  const endDrag = () => {
+  const endDrag = (landed = false) => {
+    pointer.current.returnTo = !landed && press.current && draggingId
+      ? { x: press.current.x, y: press.current.y }
+      : null
     press.current = null
     setDraggingId(null)
     setDropTargetId(null)
@@ -180,7 +184,7 @@ export function BridgeApp({
       setFailed(true)
     }
     mutate(next, "Mapping updated", selectedIds)
-    endDrag()
+    endDrag(next !== bridge)
   }
 
   const undo = () => {
@@ -260,6 +264,7 @@ export function BridgeApp({
     if (pending.current) return
     pending.current = true
     setBusy(true)
+    setApplying(true)
     setFailed(false)
     setStatus("Applying in Painter...")
     try {
@@ -273,6 +278,7 @@ export function BridgeApp({
     } finally {
       pending.current = false
       setBusy(false)
+      setApplying(false)
     }
   }
 
@@ -422,9 +428,9 @@ export function BridgeApp({
             onClick={apply}
           />
         </div>
-        <InsetSeparator />
+        <WorkingSeparator active={applying} />
         <div
-          onMouseUp={endDrag}
+          onMouseUp={() => endDrag()}
           style={{
             flexGrow: 1,
             minHeight: 0,
@@ -484,11 +490,12 @@ export function BridgeApp({
             onToggle={toggle}
             onDragStart={startDrag}
             onPointerMove={movePointer}
-            onDragEnd={endDrag}
+            onDragEnd={() => endDrag()}
             onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("photoshop", id)}
             onTrackPointer={trackPointer}
+            contentKey={session.photoshop?.path ?? ""}
           />
           {/* Mapping help explains both panes, while the toolbar remains reserved for real commands. */}
           <HostPanel
@@ -507,11 +514,12 @@ export function BridgeApp({
             onToggle={toggle}
             onDragStart={startDrag}
             onPointerMove={movePointer}
-            onDragEnd={endDrag}
+            onDragEnd={() => endDrag()}
             onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("substance_painter", id)}
             onTrackPointer={trackPointer}
+            contentKey={activePainterContextId}
           />
         </div>
         {/* The status line keeps its space while idle so the first click does

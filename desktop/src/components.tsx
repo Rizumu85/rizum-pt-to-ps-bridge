@@ -9,7 +9,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  useGpuixRequired,
+  useIsPresent,
   type MotionEase,
+  type PublicInstance,
 } from "@gpuix/react"
 import { colors, metrics, typography } from "./theme"
 
@@ -45,6 +48,8 @@ const icons = {
 } as const
 
 export const motionEase: MotionEase = [0.23, 1, 0.32, 1]
+// Something travelling back to where it belongs decelerates into place.
+const settleEase: MotionEase = [0.32, 0.72, 0, 1]
 export const maskThumbnailSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${colors.maskDark}"/><path d="M0 8 8 0v8Z" fill="${colors.maskLight}"/></svg>`
 
 type IconName = keyof typeof icons
@@ -134,6 +139,52 @@ export function InsetSeparator() {
     <div style={{ height: 1, flexShrink: 0, paddingLeft: 12, paddingRight: 12 }}>
       <div style={{ width: "100%", height: 1, backgroundColor: colors.line }} />
     </div>
+  )
+}
+
+/**
+ * The toolbar's separator doubles as the working indicator: a light sweeps
+ * along it while Painter applies, where the wait is real and the window is
+ * otherwise still. Picking a file is the user's time, so it shows nothing.
+ */
+export function WorkingSeparator({ active }: { active: boolean }) {
+  const track = useRef<PublicInstance>(null)
+  return (
+    <div style={{ height: 1, flexShrink: 0, paddingLeft: 12, paddingRight: 12 }}>
+      <div
+        ref={track}
+        style={{ position: "relative", width: "100%", height: 1, overflow: "hidden", backgroundColor: colors.line }}
+      >
+        <AnimatePresence>{active ? <WorkingSweep key="sweep" track={track} /> : null}</AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+function WorkingSweep({ track }: { track: { current: PublicInstance | null } }) {
+  const renderer = useGpuixRequired()
+  // GPUiX motion has no repeat, so each pass remounts the light; measuring per
+  // pass keeps the sweep spanning the separator after window resizes.
+  const [pass, setPass] = useState(0)
+  const width = (track.current && renderer.getElementBounds?.(track.current.id)?.width) || 0
+  const segment = Math.max(48, width * 0.28)
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12, ease: motionEase }}
+      style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, pointerEvents: "none" }}
+    >
+      <motion.div
+        key={pass}
+        initial={{ left: -segment }}
+        animate={{ left: width }}
+        transition={{ duration: 1.1, ease: "linear" }}
+        onMotionComplete={() => setPass(current => current + 1)}
+        style={{ position: "absolute", top: 0, width: segment, height: 1, backgroundColor: colors.text }}
+      />
+    </motion.div>
   )
 }
 
@@ -596,22 +647,34 @@ export function MappingHelpPopover() {
  * The layer the pointer is carrying. It follows the pointer through its own
  * state so a drag re-renders one chip per move, not both layer trees.
  */
-export type PointerFeed = { x: number; y: number; follow: ((x: number, y: number) => void) | null }
+export type PointerFeed = {
+  x: number
+  y: number
+  follow: ((x: number, y: number) => void) | null
+  /** Where a drag that did not land began; the chip travels back there. */
+  returnTo: { x: number; y: number } | null
+}
 
 export function DragPreview({ label, pointer }: { label: string; pointer: { current: PointerFeed } }) {
   const [position, setPosition] = useState(() => ({ x: pointer.current.x, y: pointer.current.y }))
+  const present = useIsPresent()
   useLayoutEffect(() => {
+    // A leaving chip stops following, so the pointer cannot fight its exit.
+    if (!present) return
     const follow = (x: number, y: number) => setPosition({ x, y })
     pointer.current.follow = follow
-    // A preview still fading out must not detach the next drag's preview.
+    // A preview still leaving must not detach the next drag's preview.
     return () => { if (pointer.current.follow === follow) pointer.current.follow = null }
-  }, [pointer])
+  }, [pointer, present])
+  // A landed drop fades where it was released, since the row now grows in at
+  // the target. A cancelled one flies home so the layer visibly stays put.
+  const home = present ? null : pointer.current.returnTo
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.12, ease: motionEase }}
+      exit={home ? { opacity: 0, left: home.x + 14, top: home.y + 10 } : { opacity: 0 }}
+      transition={home ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase }}
       style={{
         position: "absolute",
         left: position.x + 14,

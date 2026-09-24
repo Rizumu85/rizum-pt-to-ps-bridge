@@ -110,6 +110,25 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
+  it("flies the chip back to its row when a drag does not land", async () => {
+    const { app, root, close } = await setup()
+    try {
+      const home = await app.getByText("Paint edit").center()
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Mask cleanup"), { pressedButton: 0 })
+      const carried = await app.getByTestId("drag-preview").bounds()
+      await app.mouse.up(app.getByText("Mask cleanup"))
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      const settled = await app.getByTestId("drag-preview").bounds()
+      expect(Math.abs(settled.y - home.y)).toBeLessThan(Math.abs(carried.y - home.y))
+      expect(Math.abs(settled.y - (home.y + 10))).toBeLessThan(20)
+      root.renderer.dispatchNativeEvents()
+      expect(await app.getByTestId("drag-preview").count()).toBe(0)
+      expect(await app.getByText("Pending").count()).toBe(0)
+    } finally { await close() }
+  })
+
   it("animates rows the pointer moved, while undo swaps them instantly", async () => {
     const { app, root, close } = await setup()
     try {
