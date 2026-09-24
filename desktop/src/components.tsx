@@ -18,6 +18,7 @@ import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text"
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
 import iconFolder from "../../icons/folder.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
+import iconRefresh from "../../icons/refresh.svg" with { type: "text" }
 import iconReset from "../../icons/reset.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
 import iconX from "../../icons/x.svg" with { type: "text" }
@@ -34,6 +35,7 @@ const icons = {
   chevronUp: iconChevronUp,
   folder: iconFolder,
   redo: iconRedo,
+  refresh: iconRefresh,
   reset: iconReset,
   undo: iconUndo,
   x: iconX,
@@ -378,6 +380,46 @@ export function IconAction({
         <SecondaryText>{label}</SecondaryText>
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+/**
+ * Apply is the one commit in the mapper, so it is a labelled primary button
+ * with the pending count instead of another toolbar glyph.
+ */
+export function ApplyAction({ count, disabled, onClick }: { count: number; disabled: boolean; onClick: () => void }) {
+  return (
+    <div
+      testId="apply-mapping"
+      role="button"
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={disabled ? undefined : onClick}
+      onKeyDown={event => {
+        if (!disabled && (event.key === "enter" || event.key === "space")) onClick()
+      }}
+      style={{
+        height: 28,
+        paddingLeft: 14,
+        paddingRight: 14,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: metrics.rowRadius,
+        backgroundColor: disabled ? colors.control : colors.text,
+        cursor: disabled ? "default" : "pointer",
+        hover: disabled ? undefined : { backgroundColor: colors.textHover },
+      }}
+    >
+      <text style={{
+        color: disabled ? colors.tertiary : colors.canvas,
+        fontFamily: typography.family,
+        fontSize: typography.primarySize,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}>{count > 0 ? `Apply ${count}` : "Apply"}</text>
+    </div>
   )
 }
 

@@ -34,6 +34,11 @@ render(
       allowPainterForeground()
       return connectPhotoshop(current, painterLink)
     }}
+    onReloadPhotoshop={(current) => loadBridgeSession({
+      photoshopDocument: current.photoshop!.path,
+      painterSnapshot: current.targetSnapshotPath,
+      output: current.outputPath,
+    })}
     onApplied={() => {
       // Painter owns the destination mutation, so a successful atomic write
       // is the desktop process's terminal state and its unambiguous handoff.

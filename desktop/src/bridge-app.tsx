@@ -18,8 +18,9 @@ import {
   type LayerNode,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import { connectPhotoshop, type BridgeSession, type PainterContext } from "./transport"
+import type { BridgeSession, PainterContext } from "./transport"
 import {
+  ApplyAction,
   ConnectPhotoshopAction,
   ContextOption,
   ContextSelect,
@@ -34,11 +35,13 @@ export function BridgeApp({
   session: initialSession,
   onApply,
   onConnectPhotoshop,
+  onReloadPhotoshop,
   onApplied,
 }: {
   session: BridgeSession
   onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<string>
   onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
+  onReloadPhotoshop?: (session: BridgeSession) => Promise<BridgeSession>
   onApplied?: (output: string) => void
 }) {
   const renderer = useGpuixRequired()
@@ -253,7 +256,28 @@ export function BridgeApp({
     }
   }
 
-  const connectPhotoshop = async () => {
+  // Taking a new session keeps the Painter target the user chose; mappings
+  // are always empty here, so nothing staged can land on the wrong document.
+  const adoptSession = (next: BridgeSession, message: string) => {
+    const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
+      ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
+      ?? null
+    const state = bridgeStateForContext(next, context)
+    setSession(next)
+    if (context) setActivePainterContextId(context.id)
+    setBridge(state)
+    setSelectedIds(new Set())
+    setHistory([])
+    setRedoStack([])
+    setExpanded(collectExpandedIds(state))
+    setStatus(message)
+  }
+
+  const replacePhotoshop = async (
+    working: string,
+    load: () => Promise<BridgeSession | null>,
+    cancelled: string,
+  ) => {
     if (pending.current) return
     if (bridge.mappings.length > 0) {
       setStatus("Apply or reset pending transfers before changing documents.")
@@ -263,30 +287,12 @@ export function BridgeApp({
     pending.current = true
     setBusy(true)
     setFailed(false)
-    setStatus("Choose a Photoshop document in Painter...")
-    console.info("[PT Bridge] connect_clicked")
+    setStatus(working)
     try {
-      const next = await onConnectPhotoshop(session)
-      if (!next) {
-        setStatus("Photoshop connection cancelled")
-        return
-      }
-      // Reconnecting replaces only the Photoshop side. Mappings are already
-      // empty here, so the Painter target the user chose stays selected.
-      const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
-        ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
-        ?? null
-      const state = bridgeStateForContext(next, context)
-      setSession(next)
-      if (context) setActivePainterContextId(context.id)
-      setBridge(state)
-      setSelectedIds(new Set())
-      setHistory([])
-      setRedoStack([])
-      setExpanded(collectExpandedIds(state))
-      setStatus(next.status)
+      const next = await load()
+      if (next) adoptSession(next, next.status)
+      else setStatus(cancelled)
     } catch (error) {
-      console.error("[PT Bridge] connect_failed", error)
       setFailed(true)
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -294,6 +300,20 @@ export function BridgeApp({
       setBusy(false)
     }
   }
+
+  const connectPhotoshop = () => replacePhotoshop(
+    "Choose a Photoshop document in Painter...",
+    () => onConnectPhotoshop(session),
+    "Photoshop connection cancelled",
+  )
+
+  // Photoshop edits reach the mapper only through the saved file, so a reload
+  // is the way to pick them up without choosing the document again.
+  const reloadPhotoshop = () => replacePhotoshop(
+    "Reading the saved PSD...",
+    async () => onReloadPhotoshop ? onReloadPhotoshop(session) : null,
+    "",
+  )
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -374,9 +394,8 @@ export function BridgeApp({
           <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
           <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
-          <IconAction
-            icon="check"
-            label="Apply mapping"
+          <ApplyAction
+            count={bridge.mappings.length}
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
             onClick={apply}
           />
@@ -401,13 +420,22 @@ export function BridgeApp({
             host="photoshop"
             headerAction={
               session.photoshop !== null ? (
-                <IconAction
-                  icon="folder"
-                  label="Change Photoshop document"
-                  testId="change-photoshop"
-                  disabled={busy}
-                  onClick={connectPhotoshop}
-                />
+                <div style={{ display: "flex", flexDirection: "row", gap: 2 }}>
+                  {onReloadPhotoshop ? <IconAction
+                    icon="refresh"
+                    label="Reload the saved PSD"
+                    testId="reload-photoshop"
+                    disabled={busy}
+                    onClick={reloadPhotoshop}
+                  /> : null}
+                  <IconAction
+                    icon="folder"
+                    label="Change Photoshop document"
+                    testId="change-photoshop"
+                    disabled={busy}
+                    onClick={connectPhotoshop}
+                  />
+                </div>
               ) : undefined
             }
             emptyContent={

@@ -69,7 +69,7 @@ describe("Painter context selectors", () => {
       expect(await app.getByText("Pending").count()).toBe(0)
       await app.getByTestId("action:undo").click()
       expect(await app.getByText("2 pending transfers").count()).toBe(1)
-      await app.getByTestId("action:check").click()
+      await app.getByTestId("apply-mapping").click()
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings).toHaveLength(2)
       expect(apply.mock.calls[0][0].mappings.every(mapping => mapping.targetId === "substance_painter:sp-maskout")).toBe(true)
@@ -107,7 +107,7 @@ describe("Painter context selectors", () => {
       await app.mouse.move(app.getByText("Retouch group"), { pressedButton: 0 })
       await new Promise(resolve => setTimeout(resolve, 100))
       await app.mouse.up(app.getByText("Retouch group"))
-      await app.getByTestId("action:check").click()
+      await app.getByTestId("apply-mapping").click()
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({
         direction: "painter_to_photoshop", placement: "inside", targetId: "photoshop:ps:103",
@@ -131,7 +131,7 @@ describe("Painter context selectors", () => {
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       await new Promise(resolve => setTimeout(resolve, 100))
       await app.mouse.up(app.getByText("Lighten"))
-      await app.getByTestId("action:check").click()
+      await app.getByTestId("apply-mapping").click()
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       const mappings = apply.mock.calls[0][0].mappings
       expect(mappings).toHaveLength(1)
@@ -185,7 +185,7 @@ describe("Painter context selectors", () => {
       await app.mouse.up(target)
       await app.getByTestId("action:undo").click()
       await app.getByTestId("action:redo").click()
-      await app.getByTestId("action:check").click()
+      await app.getByTestId("apply-mapping").click()
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings).toHaveLength(1)
     } finally { root.unmount(); await app.close() }
@@ -257,6 +257,34 @@ describe("Painter context selectors", () => {
       await app.close()
     }
   })
+  it("labels Apply with the pending count and reloads the saved PSD in place", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const root = createTestRoot({ width: 652, height: 560 })
+    const app = await connectTest(root.renderer)
+    const reload = vi.fn(async () => session)
+    try {
+      root.render(<BridgeApp session={session} onApply={async () => "unused"}
+        onConnectPhotoshop={async () => null} onReloadPhotoshop={reload} />)
+      root.renderer.flush()
+      expect(await app.getByText("Apply").count()).toBe(1)
+      await app.mouse.down(app.getByText("Paint edit"))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.up(app.getByText("Working"))
+      expect(await app.getByText("Apply 1").count()).toBe(1)
+      await app.getByTestId("reload-photoshop").click()
+      expect(reload).not.toHaveBeenCalled()
+      expect(await app.getByText("Apply or reset pending transfers before changing documents.").count()).toBe(1)
+      await app.getByTestId("action:reset").click()
+      await app.getByTestId("reload-photoshop").click()
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledWith(session))
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("says under each Photoshop row what will not transfer as-is", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: await writeFeaturePsd(),

@@ -8,6 +8,7 @@ export const colors = {
   mapped: "#303030",
   line: "#353535",
   text: "#E0E0E0",
+  textHover: "#FFFFFF",
   secondary: "#9E9E9E",
   tertiary: "#666666",
   danger: "#FF453A",
