@@ -148,6 +148,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
         list.unshift(layer)
         document.clipped.set(baseNode.id, list)
         document.merged.add(node.id)
+        node.mergedIntoBase = true
       }
     }
   }

@@ -309,6 +309,33 @@ describe("Painter context selectors", () => {
     } finally { root.unmount(); await app.close() }
   })
 
+  it("warns on the pending row before Apply when Painter changes a blend mode", async () => {
+    const session = await loadBridgeSession({
+      photoshopDocument: await writeFeaturePsd(),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    const root = createTestRoot({ width: 652, height: 700 })
+    const app = await connectTest(root.renderer)
+    const drag = async (source: string) => {
+      await app.mouse.down(app.getByText(source))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.up(app.getByText("Working"))
+    }
+    try {
+      root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
+        onConnectPhotoshop={async () => null} />)
+      root.renderer.flush()
+      await drag("Glow")
+      expect(await app.getByText("Pending · Hard Mix becomes Normal").count()).toBe(1)
+      await drag("Paint")
+      // Its clipped layer merges into the base, so nothing is reported skipped.
+      expect(await app.getByText("skipped").count()).toBe(0)
+      expect(await app.getByText("Pending · Hard Mix becomes Normal").count()).toBe(1)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("says under each Photoshop row what will not transfer as-is", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: await writeFeaturePsd(),

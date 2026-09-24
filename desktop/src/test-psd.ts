@@ -34,6 +34,7 @@ export async function writeFeaturePsd(): Promise<string> {
         id: 30, name: "Tint", blendMode: "multiply", vectorFill: { type: "color", color: { r: 255, g: 128, b: 0 } },
         mask: { top: 0, left: 0, bottom: size, right: size, defaultColor: 0, imageData: fill([255, 255, 255, 255]) },
       },
+      { id: 40, name: "Glow", blendMode: "hard mix", top: 0, left: 0, imageData: fill([255, 255, 255, 255]) },
       {
         id: 31, name: "Ramp", vectorFill: {
           type: "solid", name: "", style: "linear", colorStops: [], opacityStops: [],

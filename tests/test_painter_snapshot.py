@@ -127,6 +127,9 @@ class PainterSnapshotTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot["request_type"], "painter_snapshot")
+        # The mapper's pre-Apply blend warning reads the same table Apply uses.
+        self.assertIn("multiply", snapshot["photoshop_blend_modes"])
+        self.assertNotIn("hardmix", snapshot["photoshop_blend_modes"])
         self.assertEqual(snapshot["active_context"], {"texture_set": "M_body", "stack": ""})
         self.assertEqual(snapshot["project"]["uuid"], "project-uuid")
         self.assertEqual(

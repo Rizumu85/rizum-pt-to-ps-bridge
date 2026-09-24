@@ -92,6 +92,7 @@ type TreeInteraction = {
   selectedIds: Set<string>
   mappedIds: Set<string>
   hoveredId: string | null
+  pendingNotes: Map<string, string>
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
@@ -107,7 +108,7 @@ type TreeInteraction = {
 
 function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
   const {
-    host, selectedIds, mappedIds, hoveredId, draggingId,
+    host, selectedIds, mappedIds, hoveredId, pendingNotes, draggingId,
     draggingHost, dropTargetId, expanded, onToggle, onDragStart, onPointerMove,
     onDragEnd, onHover, onDrop, onRemove,
   } = interaction
@@ -190,7 +191,7 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
             {mapped || node.locked || node.note ? <text style={{
               fontSize: typography.secondarySize, color: colors.secondary,
               whiteSpace: "nowrap", textOverflow: "ellipsis",
-            }}>{mapped ? "Pending" : node.locked ?? node.note}</text> : null}
+            }}>{mapped ? pendingNotes.get(node.id) ?? "Pending" : node.locked ?? node.note}</text> : null}
           </div>
         </div>
         {nativeNode ? <div
@@ -233,6 +234,7 @@ export function HostPanel({
   selectedIds,
   mappedIds,
   hoveredId,
+  pendingNotes,
   draggingId,
   draggingHost,
   dropTargetId,
@@ -321,7 +323,7 @@ export function HostPanel({
             node={node}
             host={host}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId}
+            hoveredId={hoveredId} pendingNotes={pendingNotes}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}

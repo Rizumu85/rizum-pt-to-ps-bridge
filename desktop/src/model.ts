@@ -30,6 +30,8 @@ export type LayerNode = {
   locked?: string
   /** What changes on transfer (merged clipping, dropped styles); shown under the name. */
   note?: string
+  /** A clipped Photoshop layer that travels inside its base, not on its own. */
+  mergedIntoBase?: boolean
   ref: HostLayerRef
   children?: LayerNode[]
 }

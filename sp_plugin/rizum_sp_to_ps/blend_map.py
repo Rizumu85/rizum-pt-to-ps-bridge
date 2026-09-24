@@ -38,6 +38,21 @@ DIRECT_BLEND_MODES = {
     "Color": "COLOR",
 }
 
+
+def normalized_blend_name(value):
+    return "".join(character.casefold() for character in str(value or "") if character.isalnum())
+
+
+def photoshop_to_painter_blend_modes():
+    """Photoshop blend modes Painter imports directly, keyed by normalized name.
+
+    This one table drives both the import and the mapper's pre-Apply warning,
+    so the preview never disagrees with what Apply does.
+    """
+    modes = {normalized_blend_name(ps): painter for painter, ps in DIRECT_BLEND_MODES.items()}
+    modes.update({"hue": "Tint", "luminosity": "Value"})
+    return modes
+
 APPROXIMATE_BLEND_MODES = {
     "Tint": "HUE",
     "Value": "LUMINOSITY",

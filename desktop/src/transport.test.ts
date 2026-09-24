@@ -158,7 +158,7 @@ describe("desktop file transport", () => {
     expect(base.detail).toBe("Normal · 100% · merges 1 clipped · styles not transferred")
     expect(base.note).toBe("Merges 1 clipped · Styles not transferred")
     expect(levels.locked).toBe("Adjustment layer · not supported")
-    const [, , tint, ramp] = session.state.photoshop
+    const [, , tint, , ramp] = session.state.photoshop
     expect(tint.locked).toBeUndefined()
     expect(tint.detail).toBe("Multiply · 100% · colour fill")
     expect(tint.note).toBe("Colour fill")

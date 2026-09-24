@@ -18,7 +18,7 @@ from . import (
     png_color_metadata,
     stack_node_export,
 )
-from .blend_map import decide_node_blending
+from .blend_map import decide_node_blending, photoshop_to_painter_blend_modes
 from .udim import uv_to_udim
 
 SCHEMA_VERSION = 1
@@ -787,6 +787,7 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
         "schema_version": SCHEMA_VERSION,
         "request_type": "painter_snapshot",
         "active_context": active_context,
+        "photoshop_blend_modes": sorted(photoshop_to_painter_blend_modes()),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": _project_info(modules["project"]),
         "contexts": contexts,

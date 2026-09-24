@@ -18,7 +18,7 @@ import {
   type LayerNode,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import type { ApplyOutcome, BridgeSession, PainterContext } from "./transport"
+import { normalizedBlendMode, type ApplyOutcome, type BridgeSession, type PainterContext } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -66,6 +66,11 @@ export function BridgeApp({
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
+  // Say before Apply what Painter will change, instead of only reporting it after.
+  const pendingNotes = useMemo(
+    () => photoshopPendingNotes(bridge, session.importBlendModes),
+    [bridge, session.importBlendModes],
+  )
   const mappedIds = useMemo(
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
@@ -450,7 +455,7 @@ export function BridgeApp({
               )
             }
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId}
+            hoveredId={hoveredId} pendingNotes={pendingNotes}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -472,7 +477,7 @@ export function BridgeApp({
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId}
+            hoveredId={hoveredId} pendingNotes={pendingNotes}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -503,6 +508,32 @@ export function BridgeApp({
       </div>
     </TooltipProvider>
   )
+}
+
+function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string> | null): Map<string, string> {
+  const notes = new Map<string, string>()
+  for (const mapping of state.mappings) {
+    if (mapping.direction !== "photoshop_to_painter") continue
+    const root = findNode(state.painter, mapping.sourceId)
+    if (!root) continue
+    const renamed = new Set<string>()
+    let skipped = 0
+    const visit = (node: LayerNode) => {
+      if (node.locked) {
+        if (!node.mergedIntoBase) skipped += 1
+        return
+      }
+      const mode = node.ref.blendMode ?? "normal"
+      if (importBlendModes && !importBlendModes.has(normalizedBlendMode(mode))) renamed.add(mode)
+      node.children?.forEach(visit)
+    }
+    visit(root)
+    const parts = ["Pending"]
+    for (const mode of renamed) parts.push(`${mode.replace(/\b\w/g, (letter) => letter.toUpperCase())} becomes Normal`)
+    if (skipped) parts.push(`${skipped} layer${skipped === 1 ? "" : "s"} skipped`)
+    if (parts.length > 1) notes.set(mapping.sourceId, parts.join(" · "))
+  }
+  return notes
 }
 
 function collectExpandedIds(state: BridgeState): Set<string> {

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import exporter, photoshop_automation
-from .blend_map import DIRECT_BLEND_MODES
+from .blend_map import normalized_blend_name, photoshop_to_painter_blend_modes
 
 
 SCHEMA_VERSION = 3
@@ -553,13 +553,7 @@ def _import_texture(path, resource):
 
 
 def _resolve_blending_mode(layerstack, photoshop_mode):
-    normalized = _normalized(photoshop_mode)
-    aliases = {
-        _normalized(ps_name): painter_name
-        for painter_name, ps_name in DIRECT_BLEND_MODES.items()
-    }
-    aliases.update({"hue": "Tint", "luminosity": "Value"})
-    painter_name = aliases.get(normalized)
+    painter_name = photoshop_to_painter_blend_modes().get(normalized_blend_name(photoshop_mode))
     return getattr(layerstack.BlendingMode, painter_name, None) if painter_name else None
 
 

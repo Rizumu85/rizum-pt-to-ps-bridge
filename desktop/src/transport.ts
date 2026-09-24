@@ -38,6 +38,8 @@ export type PainterContext = {
 export type BridgeSession = {
   state: BridgeState
   photoshop: PhotoshopDocument | null
+  /** Normalized Photoshop blend modes Painter imports as-is; null for older snapshots. */
+  importBlendModes: Set<string> | null
   targetSnapshotPath: string
   outputPath: string
   photoshopSubtitle: string
@@ -107,6 +109,9 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
   return {
     state: { photoshop: photoshop?.nodes ?? [], painter: initialContext.nodes, mappings: [] },
     photoshop,
+    importBlendModes: Array.isArray(target.photoshop_blend_modes)
+      ? new Set(target.photoshop_blend_modes.map((mode) => normalizedBlendMode(String(mode))))
+      : null,
     targetSnapshotPath,
     outputPath,
     photoshopSubtitle: photoshop ? photoshop.name : "No document connected",
@@ -126,6 +131,7 @@ export function failedBridgeSession(error: unknown): BridgeSession {
   return {
     state: structuredClone(emptyBridgeState),
     photoshop: null,
+    importBlendModes: null,
     targetSnapshotPath: "",
     outputPath: "",
     photoshopSubtitle: "No document connected",
@@ -471,6 +477,10 @@ function manifestRef(ref: HostLayerRef) {
     has_mask: ref.hasMask === true,
     index_path: ref.indexPath ?? null,
   }
+}
+
+export function normalizedBlendMode(mode: string): string {
+  return mode.toLowerCase().replace(/[^a-z0-9]/g, "")
 }
 
 async function photoshopSidecar(psdPath: string): Promise<JsonObject> {
