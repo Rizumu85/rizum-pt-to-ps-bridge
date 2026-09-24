@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -66,6 +67,11 @@ SecondaryActionButton = _settings_controls.SecondaryActionButton
 PAINTER_SETTINGS_LAYOUT = _settings_layout.PAINTER_SETTINGS_LAYOUT
 default_theme = _vendored_ui.default_theme
 SETTINGS_ORG = "Rizum"
+# The repository root plugin.json is what Painter loads, so it is the single
+# source for the version shown to users.
+PLUGIN_VERSION = json.loads(
+    (Path(__file__).resolve().parents[2] / "plugin.json").read_text(encoding="utf-8")
+)["version"]
 SETTINGS_APP = "PTBridge"
 
 

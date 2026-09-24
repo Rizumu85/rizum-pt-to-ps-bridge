@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .ui_kit import (
+    PLUGIN_VERSION,
     PAINTER_DIALOG_STYLE,
     PAINTER_SETTINGS_LAYOUT,
     PainterSettingsDialog,
@@ -425,7 +426,7 @@ class SettingsDialog:
         self._settings_rows.append(version_row)
         version_layout.addWidget(_settings_label(self.QtWidgets, "Version", "RizumSettingsItemName"))
         version_layout.addStretch(1)
-        version_layout.addWidget(_settings_label(self.QtWidgets, "2.0.0", "RizumSettingsItemMeta"))
+        version_layout.addWidget(_settings_label(self.QtWidgets, PLUGIN_VERSION, "RizumSettingsItemMeta"))
         body_layout.addWidget(version_row)
 
         surface_layout.addWidget(body)
