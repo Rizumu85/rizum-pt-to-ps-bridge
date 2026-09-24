@@ -31,6 +31,7 @@ class PhotoshopLayer:
     opacity: float
     visible: bool
     children: tuple["PhotoshopLayer", ...] = ()
+    color: tuple[float, float, float] | None = None
 
     def assets(self):
         yield from (path for path in (self.png, self.mask_png) if path is not None)
@@ -211,11 +212,10 @@ def apply_transfer_plan(plan, painter):
     else:
         modification = _NullContext()
     with modification:
-        for item, target_node, channel_type in resolved:
+        for item, target_node, channel_type, channel_is_color in resolved:
             position = _insertion_position(item, target_node, painter.layerstack)
-            _insert_photoshop_layer(
-                item.layer, position, channel_type, resources, painter.layerstack, warnings
-            )
+            target = _InsertTarget(painter, channel_type, channel_is_color, resources, warnings)
+            _insert_photoshop_layer(item.layer, position, target)
 
     return TransferResult(
         imported_count=len(plan.painter_imports),
@@ -225,14 +225,27 @@ def apply_transfer_plan(plan, painter):
     )
 
 
-def _insert_photoshop_layer(layer, position, channel_type, resources, layerstack, warnings):
+@dataclass(frozen=True)
+class _InsertTarget:
+    painter: object
+    channel_type: object
+    channel_is_color: bool
+    resources: dict
+    warnings: list
+
+
+def _insert_photoshop_layer(layer, position, target):
+    layerstack = target.painter.layerstack
+    channel_type = target.channel_type
+    resources = target.resources
+    warnings = target.warnings
     if layer.kind == "group":
         # A Photoshop folder stays a folder so its layers remain editable in Painter.
         node = layerstack.insert_group(position)
     else:
         node = layerstack.insert_fill(position)
         node.active_channels = {channel_type}
-        node.set_source(channel_type, resources[layer.png].identifier())
+        node.set_source(channel_type, _layer_source(layer, target))
     node.set_name(layer.name)
     node.set_visible(layer.visible)
     node.set_opacity(max(0.0, min(100.0, layer.opacity)) / 100.0, channel_type)
@@ -263,10 +276,22 @@ def _insert_photoshop_layer(layer, position, channel_type, resources, layerstack
             if previous is None
             else layerstack.InsertPosition.below_node(previous)
         )
-        previous = _insert_photoshop_layer(
-            child, child_position, channel_type, resources, layerstack, warnings
-        )
+        previous = _insert_photoshop_layer(child, child_position, target)
     return node
+
+
+def _layer_source(layer, target):
+    if layer.color is None:
+        return target.resources[layer.png].identifier()
+    colormanagement = target.painter.colormanagement
+    # Photoshop fill colours are document (sRGB-encoded) values. Colour
+    # channels keep that encoding; data channels take the values as-is.
+    space = (
+        colormanagement.GenericColorSpace.sRGB
+        if target.channel_is_color
+        else colormanagement.GenericColorSpace.Working
+    )
+    return colormanagement.Color(*layer.color, space)
 
 
 class _NullContext:
@@ -422,10 +447,13 @@ def _photoshop_layer(source, manifest_dir, label):
     children = source.get("children") or []
     if not isinstance(children, list):
         raise DesktopTransferError(f"Transfer {label}.children must be a list.")
+    color = _color(source.get("color"), label)
     return PhotoshopLayer(
         name=logical_path.rsplit("/", 1)[-1] if logical_path else "Photoshop Layer",
         kind=kind,
-        png=None if kind == "group" else _asset_path(source.get("png"), manifest_dir, "source PNG"),
+        color=color,
+        png=None if kind == "group" or color is not None
+        else _asset_path(source.get("png"), manifest_dir, "source PNG"),
         mask_png=_asset_path(source.get("mask_png"), manifest_dir, "source mask PNG", required=False),
         blend_mode=_optional_text(source.get("blend_mode")) or "normal",
         opacity=_number(source.get("opacity"), 100.0),
@@ -482,7 +510,8 @@ def _resolve_target(item, plan, layerstack):
         )
 
     channel_type = _matching_channel_type(stack, plan.channel)
-    return item, node, channel_type
+    channel = _call_or_attr(stack, "all_channels", {}).get(channel_type)
+    return item, node, channel_type, bool(_call_or_attr(channel, "is_color", True))
 
 
 def _matching_channel_type(stack, expected):
@@ -567,6 +596,18 @@ def _decimal_id(value, index):
         raise DesktopTransferError(
             f"Transfer {index + 1} has an invalid Photoshop layer id: {text!r}."
         ) from exc
+
+
+def _color(value, label):
+    if value is None:
+        return None
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or not all(isinstance(item, (int, float)) for item in value)
+    ):
+        raise DesktopTransferError(f"Transfer {label}.color must be three numbers.")
+    return tuple(max(0.0, min(1.0, float(item))) for item in value)
 
 
 def _index_path(value, index):

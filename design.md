@@ -493,7 +493,11 @@ from Photoshop's own renderer, the mapper treats layers this way:
   visible but locked with "Clipped · merges into <base>", and the base row
   says how many layers merge into it.
 - Layer styles are not transferred; the row says so.
-- Adjustment and fill layers are locked, because Painter has no equivalent.
+- Solid colour fill layers become Painter fill layers with that colour (plus
+  their mask), so the colour stays editable. Colour channels receive the sRGB
+  value; data channels receive the raw value.
+- Adjustment layers and gradient or pattern fills are locked, because Painter
+  has no equivalent.
 - A Photoshop folder arrives in Painter as a folder of its layers. The mapper
   shows no group composite previews.
 

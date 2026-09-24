@@ -7,6 +7,7 @@ import {
   initializeCanvas,
   readPsd,
   type BlendMode,
+  type Color,
   type Layer,
   type PixelData,
 } from "ag-psd"
@@ -35,7 +36,11 @@ export type PhotoshopDocument = {
   clipped: Map<string, Layer[]>
   /** Clipped node ids already merged into a base; skipping them is silent. */
   merged: Set<string>
+  /** Solid colour fill layers by node id, as sRGB components in 0..1. */
+  colors: Map<string, Rgb>
 }
+
+type Rgb = [number, number, number]
 
 export type PhotoshopTransferSource = {
   host: "photoshop"
@@ -43,6 +48,8 @@ export type PhotoshopTransferSource = {
   kind: "group" | "layer"
   path: string
   png: string | null
+  /** Solid fill colour (sRGB 0..1); Painter keeps it as an editable colour fill. */
+  color?: Rgb
   mask_png: string | null
   blend_mode: string
   opacity: number
@@ -75,6 +82,7 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
     layers: new Map(),
     clipped: new Map(),
     merged: new Set(),
+    colors: new Map(),
   }
   document.nodes = layerNodes(document, psd.children ?? [], "", [])
   return document
@@ -146,17 +154,33 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
 
   for (const { layer, node } of nodes) {
     if (layer.children) continue
-    const pixels = layer.adjustment ? undefined : getLayerImageData(layer)
-    if (layer.adjustment) node.locked = "Adjustment layer · not supported"
-    else if (!pixels) node.locked = layer.vectorFill ? "Fill layer · not supported" : "Empty layer"
-    else node.thumbnailPath = thumbnail(document, layer, pixels)
-    node.detail = node.locked ?? layerDetail(layer, document.clipped.get(node.id)?.length ?? 0)
+    const color = layer.vectorMask ? null : solidFillColor(layer)
+    if (layer.adjustment) {
+      node.locked = "Adjustment layer · not supported"
+    } else if (color) {
+      // A solid colour fill stays a colour in Painter instead of a baked bitmap,
+      // so it remains editable there; shapes keep their pixels because the
+      // vector outline is the content.
+      document.colors.set(node.id, color)
+      node.thumbnailPath = swatch(color)
+    } else if (layer.vectorFill?.type === "color" && !layer.vectorMask) {
+      node.locked = "Fill colour model not supported"
+    } else {
+      const pixels = getLayerImageData(layer)
+      if (pixels) node.thumbnailPath = thumbnail(document, layer, pixels)
+      else if (layer.vectorMask) node.locked = "Shape layer · not supported"
+      else if (layer.vectorFill) node.locked = "Gradient or pattern fill · not supported"
+      else node.locked = "Empty layer"
+    }
+    node.detail = node.locked
+      ?? layerDetail(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
   }
   return nodes.map(({ node }) => node)
 }
 
-function layerDetail(layer: Layer, clippedCount: number): string {
+function layerDetail(layer: Layer, clippedCount: number, colorFill: boolean): string {
   const parts = [`${humanize(layer.blendMode ?? "normal")} · ${Math.round((layer.opacity ?? 1) * 100)}%`]
+  if (colorFill) parts.push("colour fill")
   if (clippedCount) parts.push(`merges ${clippedCount} clipped`)
   if (layer.effects && !layer.effects.disabled) parts.push("styles not transferred")
   return parts.join(" · ")
@@ -168,6 +192,41 @@ function humanize(value: string): string {
 
 function hasMask(layer: Layer): boolean {
   return Boolean(layer.mask && !layer.mask.disabled)
+}
+
+function solidFillColor(layer: Layer): Rgb | null {
+  if (layer.vectorFill?.type !== "color") return null
+  return rgbFromDescriptor(layer.vectorFill.color)
+}
+
+/** Photoshop descriptor colours: RGB 0-255, HSB degrees/percent, Gray as % black. */
+function rgbFromDescriptor(color: Color): Rgb | null {
+  if ("r" in color) return [color.r / 255, color.g / 255, color.b / 255]
+  if ("fr" in color) return [color.fr, color.fg, color.fb]
+  if ("h" in color) {
+    const h = (((color.h % 360) + 360) % 360) / 60
+    const s = color.s / 100
+    const v = color.b / 100
+    const f = (n: number) => {
+      const k = (n + h) % 6
+      return v - v * s * Math.max(0, Math.min(k, 4 - k, 1))
+    }
+    return [f(5), f(3), f(1)]
+  }
+  if ("k" in color && !("c" in color)) {
+    const value = 1 - color.k / 100
+    return [value, value, value]
+  }
+  return null
+}
+
+function swatch(color: Rgb): string {
+  const size = 4
+  const data = new Uint8Array(size * size * 4)
+  for (let index = 0; index < data.length; index += 4) {
+    data.set([...color.map((value) => Math.round(clamp(value) * 255)), 255], index)
+  }
+  return pngDataUrl({ width: size, height: size, channels: 4, bitDepth: 8, data })
 }
 
 function thumbnail(document: PhotoshopDocument, layer: Layer, pixels: PixelData): string {
@@ -233,7 +292,13 @@ export async function renderPhotoshopTransfer(
     record.children = children
     return record
   }
-  record.png = await writeRaster(`${stem}.png`, layerCanvas(document, layer, document.clipped.get(node.id) ?? []))
+  const clipped = document.clipped.get(node.id) ?? []
+  const color = document.colors.get(node.id)
+  if (color && clipped.length === 0) {
+    record.color = color
+    return record
+  }
+  record.png = await writeRaster(`${stem}.png`, layerCanvas(document, layer, clipped, color))
   return record
 }
 
@@ -261,17 +326,23 @@ function newCanvas(document: PhotoshopDocument, channels: 1 | 4): RasterImage {
   }
 }
 
-function layerCanvas(document: PhotoshopDocument, base: Layer, clipped: Layer[]): RasterImage {
+function layerCanvas(document: PhotoshopDocument, base: Layer, clipped: Layer[], color?: Rgb): RasterImage {
   const canvas = newCanvas(document, 4)
   const scale = document.bitDepth === 8 ? 255 : 65535
-  const pixels = getLayerImageData(base)
-  if (!pixels) return canvas
-  const baseMax = maxSample(pixels)
-  eachPixel(document, base, pixels, (target, source) => {
-    for (let channel = 0; channel < 4; channel += 1) {
-      canvas.data[target + channel] = Math.round(sampleUnit(pixels, source + channel, channel, baseMax) * scale)
-    }
-  })
+  if (color) {
+    // A colour fill covers the canvas; its mask is transferred separately.
+    const pixel = [...color.map((value) => Math.round(clamp(value) * scale)), scale]
+    for (let index = 0; index < canvas.data.length; index += 4) canvas.data.set(pixel, index)
+  } else {
+    const pixels = getLayerImageData(base)
+    if (!pixels) return canvas
+    const baseMax = maxSample(pixels)
+    eachPixel(document, base, pixels, (target, source) => {
+      for (let channel = 0; channel < 4; channel += 1) {
+        canvas.data[target + channel] = Math.round(sampleUnit(pixels, source + channel, channel, baseMax) * scale)
+      }
+    })
+  }
   for (const layer of clipped) {
     if (layer.hidden) continue
     const source = getLayerImageData(layer)

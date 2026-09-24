@@ -156,7 +156,29 @@ describe("desktop file transport", () => {
     expect(clipped.locked).toBe("Clipped · merges into Base")
     expect(base.detail).toBe("Normal · 100% · merges 1 clipped · styles not transferred")
     expect(levels.locked).toBe("Adjustment layer · not supported")
+    const [, , tint, ramp] = session.state.photoshop
+    expect(tint.locked).toBeUndefined()
+    expect(tint.detail).toBe("Multiply · 100% · colour fill")
+    expect(ramp.locked).toBe("Gradient or pattern fill · not supported")
     expect(transferBetweenHosts(session.state, clipped.id, "substance_painter:sp-working")).toBe(session.state)
+  })
+
+  it("sends a colour fill as its colour and mask instead of a bitmap", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-fill-"))
+    const session = await loadBridgeSession({
+      photoshopDocument: await writeFeaturePsd(),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const tint = session.state.photoshop[2]
+    const mapped = transferBetweenHosts(session.state, tint.id, "substance_painter:sp-working")
+    const manifest = JSON.parse(await readFile(
+      await writeTransferManifest(session, mapped, session.initialPainterContextId), "utf8",
+    ))
+    const source = manifest.transfers[0].source
+    expect(source.png).toBeNull()
+    expect(source.color).toEqual([1, 128 / 255, 0])
+    expect(source.mask_png).toMatch(/Tint_ps_30_mask\.png$/)
   })
 
   it("renders a mapped folder as its layers with clipping merged into the base", async () => {
@@ -317,6 +339,15 @@ async function writeFeaturePsd(): Promise<string> {
         ],
       },
       { id: 20, name: "Levels", adjustment: { type: "levels" } },
+      {
+        id: 30, name: "Tint", blendMode: "multiply", vectorFill: { type: "color", color: { r: 255, g: 128, b: 0 } },
+        mask: { top: 0, left: 0, bottom: size, right: size, defaultColor: 0, imageData: fill([255, 255, 255, 255]) },
+      },
+      {
+        id: 31, name: "Ramp", vectorFill: {
+          type: "solid", name: "", style: "linear", colorStops: [], opacityStops: [],
+        } as never,
+      },
     ],
   }, { generateThumbnail: false, noBackground: true }))
   return file

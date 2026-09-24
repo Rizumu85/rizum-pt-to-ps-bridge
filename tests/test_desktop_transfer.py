@@ -353,6 +353,27 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertEqual(bottom.position, ("below", top))
         self.assertEqual(plan.warnings, ("Levels: Adjustment layer · not supported, skipped.",))
 
+    def test_photoshop_colour_fill_stays_an_editable_colour(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        source = payload["transfers"][0]["source"]
+        source.update({"png": None, "mask_png": None, "color": [1.0, 0.5, 0.0]})
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        for is_color, space in ((True, "srgb"), (False, "working")):
+            channel = _NamedValue("BaseColor")
+            stack = _Stack(channel)
+            stack.all_channels = lambda: {channel: SimpleNamespace(is_color=lambda: is_color)}
+            layerstack = _LayerStack(_TargetNode(stack))
+            painter = self.painter(layerstack)
+            painter.colormanagement = SimpleNamespace(
+                GenericColorSpace=SimpleNamespace(sRGB="srgb", Working="working"),
+                Color=lambda *values: values,
+            )
+
+            apply_transfer_plan(load_transfer_plan(self.manifest), painter)
+
+            self.assertEqual(layerstack.fills[0].sources, [(channel, (1.0, 0.5, 0.0, space))])
+            self.assertEqual(painter.resource.imported, [])
+
     def test_missing_source_png_is_rejected_before_painter_import(self):
         self.layer_png.unlink()
 

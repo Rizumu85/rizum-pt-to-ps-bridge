@@ -32,7 +32,8 @@ environment variables are `PT_BRIDGE_PAINTER_SNAPSHOT`,
 
 The mapper reads PSD/PSB files itself with ag-psd, so connecting a document
 never opens Photoshop. Photoshop-rendered content does not come along: layer
-styles are dropped, adjustment and fill layers are locked, and clipped layers
+styles are dropped, adjustment layers and gradient or pattern fills are
+locked, solid colour fills stay colours, and clipped layers
 are merged into their base when transferred. A Photoshop folder arrives in
 Painter as a folder of its layers. Only mapped layers are rendered to PNG, at
 Apply. `bun tools/make-psd-fixture.ts` regenerates the test PSD.
