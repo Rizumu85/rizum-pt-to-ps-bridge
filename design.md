@@ -63,13 +63,15 @@ real behavior. Mask Probe remains a developer utility and does not appear
 beside the normal Cancel/Export actions.
 
 Export dialog groups should not auto-expand on hover; expansion is an explicit
-row/arrow action. Bridge app layer rows should follow the desktop-reference
-behavior: rows and groups are visually quiet by default, with their rounded
-card container and remove control appearing only on hover or drag. Layer
-descriptions in the bridge app should use two lines, with the primary name
-above secondary metadata such as layer count, blend mode, opacity, or mask
-state. Masked layers should show a visible mask badge or paired thumbnail so
-the user can tell which rows have separate mask data.
+row/arrow action. Bridge app layer rows are visually quiet by default. Hover
+highlights only the row under the pointer, never its parent folders: the
+multi-level folder hover was tried and read as noise in real trees. The remove
+control appears on hover in neutral colours. A row's second line is reserved
+for what the user must know: "Pending" (with any pre-Apply warning such as a
+blend mode that becomes Normal or skipped layers), why a row is locked, or what
+changes on transfer (merged clipping, dropped styles, colour fill). Masked
+layers show a mask badge; Painter layers without a thumbnail show a paint or
+fill glyph.
 The export dialog uses the same hover hierarchy: hovering a stack shows the
 larger stack container, while hovering an individual channel also shows that
 channel's smaller row container.
@@ -154,16 +156,18 @@ making the exporter depend on one user-channel spelling.
 
 The desktop mapper (`desktop/`) is the transfer queue between the hosts. It
 shows Photoshop and Painter layer trees side by side and lets the user drag
-selected layers onto a target group or insertion position: group highlights
-mean "inside", thin insertion lines mean "after". Staged transfers are
-selectable, retargetable, and undoable. Apply writes one transfer manifest and
-closes the mapper; Painter then applies it and, for Painter-to-Photoshop
-transfers, runs a confirmed Photoshop job.
+selected layers onto a target group or insertion position: a framed folder row
+means "inside", a thin insertion line means "after". Staged transfers are
+selectable, retargetable, and undoable. **Apply** is a labelled primary button
+with the pending count. The mapper stays open after Apply: Painter applies the
+manifest, runs any Photoshop insert, and returns a fresh snapshot, so both
+trees refresh in place and the outcome appears in the status line.
 
-Connecting another Photoshop document keeps the mapper open. Painter owns the
-file picker and the Photoshop export, then hands the new selection back to the
-open window, so the user keeps their Painter target. The mapper never hides
-background sync behind the UI.
+Connecting another Photoshop document keeps the mapper open. Painter shows the
+system file dialog and hands the path back; the mapper reads the PSD itself
+and the user keeps their Painter target. A reload action re-reads the saved
+PSD after Photoshop edits. The mapper never hides background sync behind the
+UI.
 
 The Painter dock panel must also keep a module-level strong reference to its
 Python panel object. Painter owns the dock widget after `sp.ui.add_dock_widget`,
