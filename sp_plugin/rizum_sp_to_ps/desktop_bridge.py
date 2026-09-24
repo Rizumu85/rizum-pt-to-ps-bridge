@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from . import desktop_transfer, exporter
+from .photoshop_job import PhotoshopJob
+from .ui_dialogs import CompactProgressDialog
 
 
 SETTINGS_ORG = "Rizum"
@@ -17,8 +18,6 @@ SETTINGS_APP = "PTBridge"
 PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
 PHOTOSHOP_DOCUMENT_KEY = "photoshop_document_path"
 PHOTOSHOP_SUFFIXES = {".psd", ".psb"}
-PHOTOSHOP_EXPORT_TIMEOUT_SECONDS = 30 * 60
-PHOTOSHOP_START_TIMEOUT_SECONDS = 120
 DESKTOP_REQUEST_MARKER = "@ptbridge "
 IDLE_TOOLTIP = "Map layers between Painter and Photoshop"
 
@@ -36,13 +35,10 @@ class DesktopBridgeController:
         self._closing = False
         self._process_error_reported = False
         self._applying_transfer = False
-        self._photoshop_export_timer = None
-        self._photoshop_launch = None
+        self._photoshop_job = None
         self._pending_transfer_result = None
-        self._photoshop_export_started_at = 0.0
         self._photoshop_progress_dialog = None
-        self._photoshop_script_started = False
-        self._photoshop_export_phase = None
+        self._photoshop_phase = None
         self._picking = False
         self._trace_path = None
         self._stdout_buffer = ""
@@ -130,7 +126,7 @@ class DesktopBridgeController:
         process.start()
 
     def _busy_reason(self):
-        if self._photoshop_launch is not None:
+        if self._photoshop_job is not None:
             return "Photoshop operation in progress"
         if self._applying_transfer:
             return "Applying mapped layers"
@@ -221,10 +217,13 @@ class DesktopBridgeController:
 
     def _start_photoshop_job(self, launch, label, transfer_result):
         self._clear_photoshop_export()
-        self._photoshop_launch = launch
         self._pending_transfer_result = transfer_result
-        self._photoshop_export_started_at = time.monotonic()
-        self._show_photoshop_progress(label)
+        # Only Painter reads the script's progress receipts, so Painter shows
+        # the layer count in the same compact dialog style as export.
+        self._photoshop_progress_dialog = CompactProgressDialog(
+            self.panel, "Photoshop", f"Opening Photoshop... {label}", cancellable=False, modal=False,
+        )
+        self._photoshop_progress_dialog.show()
         try:
             launched, message = self.panel.launch_photoshop(launch.launcher_path)
         except Exception as exc:
@@ -233,58 +232,27 @@ class DesktopBridgeController:
         if not launched:
             self._photoshop_job_failed(message)
             return
-
-        # Process launch only acknowledges the OS handoff. Require a JSX receipt
-        # before treating Photoshop as connected, even if its window is visible.
         self._trace("photoshop_launch_requested", str(launch.launcher_path))
-        timer = self.QtCore.QTimer(self.panel.widget)
-        timer.setInterval(400)
-        timer.timeout.connect(self._poll_photoshop_job)
-        self._photoshop_export_timer = timer
+        self._photoshop_job = PhotoshopJob(
+            self.QtCore,
+            self.panel.widget,
+            launch,
+            on_progress=self._update_photoshop_progress,
+            on_done=self._finish_photoshop_transfer,
+            on_failed=self._photoshop_job_failed,
+        )
+        self._photoshop_job.start()
         self._sync_button()
-        timer.start()
 
-    def _show_photoshop_progress(self, name):
-        # Only Painter reads the script's progress receipts, so Painter shows the
-        # layer count; the dock label is hidden and not sufficient feedback.
-        dialog = self.QtWidgets.QProgressDialog(self.panel.widget.window())
-        dialog.setWindowTitle("PT Bridge - Photoshop")
-        dialog.setWindowModality(self.QtCore.Qt.WindowModality.NonModal)
-        dialog.setWindowFlag(self.QtCore.Qt.WindowType.WindowCloseButtonHint, False)
-        dialog.setCancelButton(None)
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.setMinimumDuration(0)
-        dialog.setMinimumWidth(360)
-        dialog.setRange(0, 0)
-        dialog.setLabelText(f"Opening Photoshop...\n{name}")
-        label = dialog.findChild(self.QtWidgets.QLabel)
-        label.setTextFormat(self.QtCore.Qt.TextFormat.PlainText)
-        label.setWordWrap(True)
-        self._photoshop_progress_dialog = dialog
-        dialog.show()
-        dialog.raise_()
-
-    def _update_photoshop_progress(self, path):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            return
-        if not isinstance(payload, dict):
-            return
+    def _update_photoshop_progress(self, payload):
         phase = payload.get("phase")
-        if phase not in {"reading_request", "opening_document", "transferring_layers", "saving_document"}:
-            return
-        self._photoshop_script_started = True
-        if phase != self._photoshop_export_phase:
-            self._trace("photoshop_progress", phase)
-            self._photoshop_export_phase = phase
+        if phase != self._photoshop_phase:
+            self._trace("photoshop_progress", str(phase))
+            self._photoshop_phase = phase
         dialog = self._photoshop_progress_dialog
-        if dialog is None:
-            return
         total = payload.get("total", 0)
         completed = payload.get("completed", 0)
-        if not isinstance(total, int) or not isinstance(completed, int):
+        if dialog is None or not isinstance(total, int) or not isinstance(completed, int):
             return
         if phase == "transferring_layers" and total > 0:
             dialog.setRange(0, total)
@@ -307,33 +275,6 @@ class DesktopBridgeController:
         if transfer.imported_count:
             message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
         self._show("Bridge transfer incomplete", message)
-
-    def _poll_photoshop_job(self):
-        launch = self._photoshop_launch
-        if launch is None:
-            return
-        elapsed = time.monotonic() - self._photoshop_export_started_at
-        if not launch.result_path.is_file():
-            self._update_photoshop_progress(launch.progress_path)
-            if not self._photoshop_script_started and elapsed > PHOTOSHOP_START_TIMEOUT_SECONDS:
-                self._photoshop_job_failed(
-                    "Photoshop did not start the script within 2 minutes. "
-                    "Check Photoshop for a startup or script confirmation dialog."
-                )
-            elif elapsed > PHOTOSHOP_EXPORT_TIMEOUT_SECONDS:
-                self._photoshop_job_failed(
-                    "Photoshop did not finish the operation within 30 minutes."
-                )
-            return
-        try:
-            payload = json.loads(launch.result_path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError) as exc:
-            # JSX publishes with rename; a malformed published receipt is a
-            # terminal failure, not a partially written file to wait on forever.
-            self._photoshop_job_failed(f"Photoshop result could not be read: {exc}")
-            return
-
-        self._finish_photoshop_transfer(payload)
 
     def _finish_photoshop_transfer(self, payload):
         transfer = self._pending_transfer_result
@@ -367,21 +308,16 @@ class DesktopBridgeController:
         self._show("Bridge complete", message)
 
     def _clear_photoshop_export(self):
-        timer = self._photoshop_export_timer
-        self._photoshop_export_timer = None
-        self._photoshop_launch = None
+        job = self._photoshop_job
+        self._photoshop_job = None
         self._pending_transfer_result = None
-        self._photoshop_export_started_at = 0.0
-        self._photoshop_script_started = False
-        self._photoshop_export_phase = None
+        self._photoshop_phase = None
         dialog = self._photoshop_progress_dialog
         self._photoshop_progress_dialog = None
         if dialog is not None:
             dialog.close()
-            dialog.deleteLater()
-        if timer is not None:
-            timer.stop()
-            timer.deleteLater()
+        if job is not None:
+            job.stop()
         self._sync_button()
 
     def _desktop_error(self, process_error):
@@ -507,7 +443,7 @@ class DesktopBridgeController:
                 "message": f"Unsupported desktop request: {request_type or '(missing)'}",
             })
             return
-        if self._picking or self._photoshop_launch is not None:
+        if self._picking or self._photoshop_job is not None:
             return
         # Leave the stdout signal before opening a new modal owner.
         self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)

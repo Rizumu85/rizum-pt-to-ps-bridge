@@ -10,6 +10,8 @@ from .exporter import (
     default_output_dir,
     write_build_bundles,
 )
+from .photoshop_automation import find_photoshop_executable, write_photoshop_launcher
+from .photoshop_job import PhotoshopJob
 from .ui_kit import (
     IconActionButton,
     PAINTER_DIALOG_STYLE,
@@ -24,7 +26,8 @@ from .ui_kit import (
     to_bool,
 )
 from .ui_dialogs import (
-    ExportProgressDialog,
+    show_modal_message,
+    CompactProgressDialog,
 )
 from .settings_ui import (
     SettingsDialog,
@@ -291,6 +294,7 @@ class BridgePanel:
         self.QtGui = QtGui
         self.QtWidgets = QtWidgets
         self._closing = False
+        self._build_job = None
         self.user_settings = self._load_user_settings()
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsBridgePanel")
@@ -337,6 +341,9 @@ class BridgePanel:
         """Stop owned Qt helpers before Painter removes the dock."""
         self._closing = True
         self.widget.removeEventFilter(self._dock_scale_filter)
+        if self._build_job is not None:
+            self._build_job.stop()
+            self._build_job = None
 
     def _current_ui_scale(self):
         app = self.QtWidgets.QApplication.instance()
@@ -496,10 +503,13 @@ class BridgePanel:
             "paths": list(all_paths),
         }
 
+    def photoshop_executable(self):
+        return find_photoshop_executable(self.user_settings.get("photoshop_path") or "")
+
     def launch_photoshop(self, launcher_path):
-        executable = Path(self.user_settings.get("photoshop_path") or "")
-        if not executable.is_file():
-            return False, "Set a valid Photoshop executable in Settings."
+        executable = self.photoshop_executable()
+        if executable is None:
+            return False, "Photoshop was not found. Set Photoshop.exe in Settings."
 
         # Passing JSX to Photoshop is the host-supported zero-click path used
         # by the released exporter; UXP panels are lazy and cannot receive a
@@ -513,6 +523,38 @@ class BridgePanel:
         if not started:
             return False, f"Could not launch Photoshop: {executable}"
         return True, ""
+
+    def start_photoshop_build(self, export_list, output_dir):
+        """Launch the PSD build and watch it until Photoshop reports back."""
+        receipts = Path(output_dir) / "_desktop_bridge" / "photoshop_build"
+        launch = write_photoshop_launcher(export_list, receipts)
+        launched, message = self.launch_photoshop(launch.launcher_path)
+        if not launched:
+            return False, message
+        if self._build_job is not None:
+            self._build_job.stop()
+        # Photoshop shows its own build progress and error summary, so Painter
+        # stays quiet on success and only speaks up when the script never ran.
+        self._build_job = PhotoshopJob(
+            self.QtCore,
+            self.widget,
+            launch,
+            on_progress=lambda _progress: None,
+            on_done=lambda _result: self._photoshop_build_finished(launch),
+            on_failed=self._photoshop_build_failed,
+        )
+        self._build_job.start()
+        return True, ""
+
+    def _photoshop_build_finished(self, launch):
+        self._build_job = None
+        for receipt in (launch.progress_path, launch.result_path):
+            receipt.unlink(missing_ok=True)
+
+    def _photoshop_build_failed(self, message):
+        self._build_job = None
+        if not self._closing:
+            show_modal_message(self.QtWidgets, self.widget, "Photoshop build", message)
 
     def _base_export_settings(self):
         settings = {
@@ -559,7 +601,7 @@ class BridgePanel:
         self.dock_settings_button.setEnabled(enabled)
 
     def _create_export_progress(self, label):
-        progress = ExportProgressDialog(self, label)
+        progress = CompactProgressDialog(self, "Export", f"Exporting {label}...")
         progress.show()
         self.QtWidgets.QApplication.processEvents()
         return progress

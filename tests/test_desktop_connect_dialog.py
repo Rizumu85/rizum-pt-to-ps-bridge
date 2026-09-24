@@ -100,6 +100,10 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._start_photoshop_job(launch, "Insert 3 layers", transfer)
         return launch
 
+    def poll(self):
+        if self.controller._photoshop_job is not None:
+            self.controller._photoshop_job.poll()
+
     def failure_message(self):
         args = self.controller._show_message_callback.call_args.args
         self.assertEqual(args[-2], "Bridge transfer incomplete")
@@ -108,9 +112,10 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def test_pending_job_has_visible_nonmodal_progress_and_blocks_duplicates(self):
         self.begin_transfer()
         progress = self.controller._photoshop_progress_dialog
-        self.assertTrue(progress.isVisible())
-        self.assertFalse(progress.isModal())
-        self.assertEqual(progress.maximum(), 0)
+        self.assertTrue(progress.dialog.isVisible())
+        self.assertFalse(progress.dialog.isModal())
+        self.assertEqual(progress.progress_bar.maximum(), 0)
+        self.assertIsNone(progress.cancel_button)
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
         self.controller.open()
         self.controller._launch_desktop.assert_not_called()
@@ -120,65 +125,64 @@ class DesktopConnectDialogTests(unittest.TestCase):
         launch.progress_path.write_text(json.dumps({
             "phase": "transferring_layers", "completed": 2, "total": 5,
         }), encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         progress = self.controller._photoshop_progress_dialog
-        self.assertEqual(progress.value(), 2)
-        self.assertEqual(progress.maximum(), 5)
-        self.assertIn("2 / 5", progress.labelText())
-        self.assertTrue(self.controller._photoshop_script_started)
+        self.assertEqual(progress.progress_bar.value(), 2)
+        self.assertEqual(progress.progress_bar.maximum(), 5)
+        self.assertIn("2 / 5", progress.status_label.text())
+        self.assertTrue(self.controller._photoshop_job.started)
 
     def test_missing_start_ack_times_out(self):
         self.begin_transfer()
         progress = self.controller._photoshop_progress_dialog
-        self.controller._photoshop_export_started_at -= 121
-        self.controller._poll_photoshop_job()
-        self.assertFalse(progress.isVisible())
-        self.assertIsNone(self.controller._photoshop_launch)
-        self.assertIsNone(self.controller._photoshop_export_timer)
+        self.controller._photoshop_job._started_at -= 121
+        self.poll()
+        self.assertFalse(progress.dialog.isVisible())
+        self.assertIsNone(self.controller._photoshop_job)
         self.assertIn("2 minutes", self.failure_message())
 
     def test_acknowledged_job_uses_long_timeout(self):
         launch = self.begin_transfer()
         launch.progress_path.write_text('{"phase":"opening_document"}', encoding="utf-8")
-        self.controller._photoshop_export_started_at -= 121
-        self.controller._poll_photoshop_job()
+        self.controller._photoshop_job._started_at -= 121
+        self.poll()
         self.controller._show_message_callback.assert_not_called()
-        self.controller._photoshop_export_started_at -= 1800
-        self.controller._poll_photoshop_job()
+        self.controller._photoshop_job._started_at -= 1800
+        self.poll()
         self.assertIn("30 minutes", self.failure_message())
 
     def test_corrupt_published_receipt_is_not_an_endless_wait(self):
         launch = self.begin_transfer()
         launch.result_path.write_text("not json", encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         self.assertIn("could not be read", self.failure_message())
-        self.assertIsNone(self.controller._photoshop_export_timer)
+        self.assertIsNone(self.controller._photoshop_job)
 
     def test_launch_failure_cleans_progress_and_reports(self):
         self.panel.launch_photoshop.return_value = (False, "Photoshop unavailable")
         self.begin_transfer()
         self.assertIsNone(self.controller._photoshop_progress_dialog)
-        self.assertIsNone(self.controller._photoshop_export_timer)
+        self.assertIsNone(self.controller._photoshop_job)
         self.assertIn("Photoshop unavailable", self.failure_message())
 
     def test_unload_closes_pending_job(self):
         self.begin_transfer()
         progress = self.controller._photoshop_progress_dialog
         self.controller.close()
-        self.assertFalse(progress.isVisible())
-        self.assertIsNone(self.controller._photoshop_export_timer)
-        self.controller._poll_photoshop_job()
+        self.assertFalse(progress.dialog.isVisible())
+        self.assertIsNone(self.controller._photoshop_job)
+        self.poll()
         self.controller._show_message_callback.assert_not_called()
 
     def test_apply_waits_for_photoshop_receipt_instead_of_reporting_launch_as_success(self):
         launch = self.begin_transfer()
-        self.controller._poll_photoshop_job()
+        self.poll()
         self.controller._show_message_callback.assert_not_called()
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
         launch.result_path.write_text(json.dumps({
             "success": True, "inserted": ["A", "B", "C"], "saved": True,
         }), encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         args = self.controller._show_message_callback.call_args.args
         self.assertEqual(args[-2], "Bridge complete")
         self.assertIn("Imported 2", args[-1])
@@ -206,7 +210,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         process.deleteLater.assert_called_once()
         self.controller._show_message_callback.assert_not_called()
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
-        self.assertEqual(self.controller._photoshop_launch, launch)
+        self.assertEqual(self.controller._photoshop_job.launch, launch)
 
     def test_partial_transfer_reports_both_hosts_without_reapplying_painter(self):
         launch = self.begin_transfer()
@@ -214,7 +218,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
             "success": False, "inserted": ["A"],
             "errors": [{"name": "B", "message": "Missing target"}],
         }), encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         message = self.failure_message()
         self.assertIn("Already imported 2", message)
         self.assertIn("Inserted 1 of 3", message)
@@ -224,7 +228,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def test_success_with_missing_inserts_is_not_reported_as_complete(self):
         launch = self.begin_transfer()
         launch.result_path.write_text('{"success":true,"inserted":[]}', encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         self.failure_message()
 
     def test_unsaved_photoshop_changes_are_reported_as_unsaved(self):
@@ -232,7 +236,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         launch.result_path.write_text(json.dumps({
             "success": True, "inserted": ["A", "B", "C"], "saved": False,
         }), encoding="utf-8")
-        self.controller._poll_photoshop_job()
+        self.poll()
         self.assertIn("not been saved", self.controller._show_message_callback.call_args.args[-1])
 
 

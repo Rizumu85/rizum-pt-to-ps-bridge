@@ -32,18 +32,27 @@ def reload_plugin():
         export_ui,
         exporter,
         photoshop_automation,
+        photoshop_job,
         settings_ui,
         ui_dialogs,
         ui_kit,
     )
 
     global _close_plugin, _start_plugin
-    importlib.reload(exporter)
-    importlib.reload(photoshop_automation)
-    importlib.reload(desktop_transfer)
-    importlib.reload(desktop_bridge)
-    # Dependency order: each UI module binds names from the ones above it.
-    for module in (ui_kit, ui_dialogs, settings_ui, export_ui, bridge_package.ui):
+    # Dependency order: each module binds names from the ones before it, so a
+    # module reloaded before its dependency would keep the stale definitions.
+    for module in (
+        exporter,
+        photoshop_automation,
+        photoshop_job,
+        desktop_transfer,
+        ui_kit,
+        ui_dialogs,
+        settings_ui,
+        export_ui,
+        bridge_package.ui,
+        desktop_bridge,
+    ):
         importlib.reload(module)
     bridge_package = importlib.reload(bridge_package)
     _close_plugin = bridge_package.close_plugin

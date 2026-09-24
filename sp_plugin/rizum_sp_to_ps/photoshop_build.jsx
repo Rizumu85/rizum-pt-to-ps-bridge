@@ -2,7 +2,10 @@
 
 (function () {
     var exportListPath = __RIZUM_EXPORT_LIST_PATH__;
-    var resultPath = File(exportListPath).parent.fsName + "/_photoshop_build_result.json";
+    // Receipts live in Painter's session folder: a successful build leaves the
+    // export folder holding only PSDs, and Painter must still see the result.
+    var progressPath = __RIZUM_BUILD_PROGRESS_PATH__;
+    var resultPath = __RIZUM_BUILD_RESULT_PATH__;
     var result = {
         built: [],
         errors: [],
@@ -26,9 +29,11 @@
         var requestPaths = buildRequestPaths(exportList);
         var pendingSaves = [];
         progress = createImportProgress(requestPaths.length);
+        publishProgress(0, requestPaths.length);
         var importStartedAt = new Date().getTime();
         for (var index = 0; index < requestPaths.length; index += 1) {
             var requestPath = requestPaths[index];
+            publishProgress(index, requestPaths.length);
             progress.beginRequest(index, requestPath);
             try {
                 var request = readJson(requestPath);
@@ -88,13 +93,12 @@
         }
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
-        if (result.errors.length > 0) {
-            writeResult(resultPath, exportListPath, result);
-        } else {
+        if (result.errors.length === 0) {
             // PSDs live beside the temporary bundle folders, so a fully
             // successful build can leave the user's export directory PSD-only.
-            cleanupSuccessfulExport(exportListPath, requestPaths, resultPath);
+            cleanupSuccessfulExport(exportListPath, requestPaths);
         }
+        writeResult(resultPath, exportListPath, result);
     }
 
     if (result.errors.length > 0) {
@@ -783,11 +787,37 @@
         return eval("(" + text + ")");
     }
 
-    function writeResult(path, sourcePath, state) {
-        var file = File(path);
-        if (!file.open("w")) {
+    function publishProgress(completed, total) {
+        writeTextAtomic(
+            progressPath,
+            "{\"phase\":\"building\",\"completed\":" + Number(completed) +
+            ",\"total\":" + Number(total) + "}\n"
+        );
+    }
+
+    function writeTextAtomic(path, text) {
+        // Painter polls these receipts; publishing by rename means it never
+        // reads a half-written file.
+        var target = File(path);
+        var temporary = File(path + ".tmp");
+        if (!temporary.open("w")) {
             return;
         }
+        temporary.encoding = "UTF8";
+        temporary.write(text);
+        temporary.close();
+        if (target.exists) {
+            target.remove();
+        }
+        temporary.rename(target.name);
+    }
+
+    function writeResult(path, sourcePath, state) {
+        var file = {
+            text: "",
+            write: function (value) { this.text += value; },
+            close: function () { writeTextAtomic(path, this.text); }
+        };
         file.encoding = "UTF8";
         var built = [];
         var errors = [];
@@ -818,7 +848,7 @@
         file.close();
     }
 
-    function cleanupSuccessfulExport(exportListPath, requestPaths, resultPath) {
+    function cleanupSuccessfulExport(exportListPath, requestPaths) {
         var outputFolder = File(exportListPath).parent;
         var outputKey = String(outputFolder.fsName).toLowerCase();
         var removedFolders = {};
@@ -832,7 +862,6 @@
             removedFolders[bundleKey] = true;
         }
         removeFileIfPresent(File(exportListPath));
-        removeFileIfPresent(File(resultPath));
         if ($.fileName) {
             removeFileIfPresent(File($.fileName));
         }

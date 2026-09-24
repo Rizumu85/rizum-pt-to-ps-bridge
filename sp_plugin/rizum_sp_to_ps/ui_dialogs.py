@@ -249,12 +249,13 @@ def show_modal_message(QtWidgets, parent, title, message):
     return build_modal_message(QtWidgets, parent, title, message).exec()
 
 
-class ExportProgressDialog:
-    """Non-blocking compact export progress dialog with cancel support."""
+class CompactProgressDialog:
+    """Compact progress dialog shared by Painter export and Photoshop jobs."""
 
-    def __init__(self, panel, label):
+    def __init__(self, panel, title, status, *, cancellable=True, modal=True):
         self.QtCore = panel.QtCore
         self.QtWidgets = panel.QtWidgets
+        self._cancellable = cancellable
         self._cancelled = False
         self._finishing = False
         self._minimum = 0
@@ -263,17 +264,17 @@ class ExportProgressDialog:
         self.shell = CompactDialogShell(
             self.QtWidgets,
             panel.widget,
-            "Export",
-            "RizumExportProgressDialog",
+            title,
+            "RizumProgressDialog",
             width=340,
             body_spacing=12,
         )
         status_row = self.QtWidgets.QWidget()
-        status_row.setObjectName("RizumExportProgressStatusRow")
+        status_row.setObjectName("RizumProgressStatusRow")
         status_layout = self.QtWidgets.QHBoxLayout(status_row)
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(10)
-        self.status_label = self.QtWidgets.QLabel(f"Exporting {label}...")
+        self.status_label = self.QtWidgets.QLabel(status)
         self.status_label.setObjectName("RizumSettingsItemName")
         self.status_label.setWordWrap(True)
         self.status_label.setSizePolicy(
@@ -291,26 +292,29 @@ class ExportProgressDialog:
         self.shell.body_layout.addWidget(status_row)
 
         self.progress_bar = self.QtWidgets.QProgressBar()
-        self.progress_bar.setObjectName("RizumExportProgressBar")
+        self.progress_bar.setObjectName("RizumProgressBar")
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setRange(0, 0)
         self.shell.body_layout.addWidget(self.progress_bar)
 
-        self.shell.footer_layout.addStretch(1)
-        self.cancel_button = self.shell.add_action(
-            "Cancel",
-            minimum=72,
-            maximum=104,
-        )
-        self.cancel_button.clicked.connect(self._request_cancel)
-        self.shell.footer_layout.addWidget(self.cancel_button)
+        self.cancel_button = None
+        if cancellable:
+            self.shell.footer_layout.addStretch(1)
+            self.cancel_button = self.shell.add_action(
+                "Cancel",
+                minimum=72,
+                maximum=104,
+            )
+            self.cancel_button.clicked.connect(self._request_cancel)
+            self.shell.footer_layout.addWidget(self.cancel_button)
+        else:
+            self.shell.footer_separator.hide()
+            self.shell.footer.hide()
         self.shell.add_scale_callback(self._apply_ui_scale)
         self.dialog = self.shell.finalize()
         self.dialog.rejected.connect(self._window_rejected)
-        modality = getattr(self.QtCore.Qt, "ApplicationModal", None)
-        if modality is None:
-            modality = self.QtCore.Qt.WindowModality.ApplicationModal
-        self.dialog.setWindowModality(modality)
+        modality = self.QtCore.Qt.WindowModality
+        self.dialog.setWindowModality(modality.ApplicationModal if modal else modality.NonModal)
         self.dialog._rizum_progress_controller = self
 
     def _apply_ui_scale(self, _scale):
@@ -322,12 +326,12 @@ class ExportProgressDialog:
         self.percent_label.setMinimumWidth(self.shell._metric(34, 26))
         self.progress_bar.setStyleSheet(
             f"""
-QProgressBar#RizumExportProgressBar {{
+QProgressBar#RizumProgressBar {{
     background: {PAINTER_DIALOG_STYLE["control"]};
     border: 0;
     border-radius: {max(1, bar_height // 2)}px;
 }}
-QProgressBar#RizumExportProgressBar::chunk {{
+QProgressBar#RizumProgressBar::chunk {{
     background: {PAINTER_DIALOG_STYLE["accent"]};
     border: 0;
     border-radius: {max(1, bar_height // 2)}px;
@@ -336,11 +340,11 @@ QProgressBar#RizumExportProgressBar::chunk {{
         )
 
     def _request_cancel(self):
-        if self._cancelled:
+        if self._cancelled or not self._cancellable:
             return
         self._cancelled = True
         self.cancel_button.setEnabled(False)
-        self.status_label.setText("Cancelling export...")
+        self.status_label.setText("Cancelling...")
 
     def _window_rejected(self):
         if not self._finishing:

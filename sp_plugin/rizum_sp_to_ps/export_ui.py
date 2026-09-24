@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .exporter import list_export_targets
-from .photoshop_automation import write_photoshop_launcher
 from .export_selection_memory import (
     ExportSelectionMemory,
     current_project_identity,
@@ -1119,6 +1118,16 @@ QLabel#RizumSvgLabel:hover {{
                 animate=self.dialog.isVisible(),
             )
             return
+        # Every export continues into Photoshop, so a missing Photoshop is
+        # reported before Painter spends time writing layer PNGs.
+        if self.panel.photoshop_executable() is None:
+            show_modal_message(
+                self.QtWidgets,
+                self.dialog,
+                "Photoshop",
+                "Photoshop was not found. Set Photoshop.exe in Settings before exporting.",
+            )
+            return
 
         result = self.panel._run_export_selections(
             "export dialog selection",
@@ -1136,16 +1145,11 @@ QLabel#RizumSvgLabel:hover {{
         # The plugin is an automation bridge: every export continues straight
         # into the Photoshop build, so there is no manual handoff to choose.
         try:
-            launcher_path = write_photoshop_launcher(result["export_list"])
-        except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
-            show_modal_message(
-                self.QtWidgets,
-                self.dialog,
-                "Photoshop",
-                f"Could not prepare the Photoshop build script: {exc}",
+            launched, message = self.panel.start_photoshop_build(
+                result["export_list"], result["output_dir"]
             )
-            return
-        launched, message = self.panel.launch_photoshop(launcher_path)
+        except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
+            launched, message = False, f"Could not prepare the Photoshop build script: {exc}"
         if not launched:
             show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
             return
