@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react"
 import {
+  AnimatePresence,
   motion,
   useGpuixRequired,
   TooltipProvider,
@@ -24,12 +25,14 @@ import {
   ConnectPhotoshopAction,
   ContextOption,
   ContextSelect,
+  DragPreview,
   IconAction,
   InsetSeparator,
   MappingHelpPopover,
   motionEase,
+  type PointerFeed,
 } from "./components"
-import { HostPanel } from "./layer-tree"
+import { HostPanel, RowMotionContext } from "./layer-tree"
 
 export function BridgeApp({
   session: initialSession,
@@ -63,6 +66,13 @@ export function BridgeApp({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
+  const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
+  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null })
+  const trackPointer = (event: EventPayload) => {
+    pointer.current.x = event.x ?? pointer.current.x
+    pointer.current.y = event.y ?? pointer.current.y
+    pointer.current.follow?.(pointer.current.x, pointer.current.y)
+  }
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
@@ -80,6 +90,11 @@ export function BridgeApp({
     const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
     return node?.ref.host ?? null
   }, [bridge, draggingId])
+  const dragLabel = useMemo(() => {
+    if (!draggingId) return null
+    if (selectedIds.size > 1) return `${selectedIds.size} layers`
+    return (findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId))?.name ?? null
+  }, [bridge, draggingId, selectedIds])
   const activePainterContext = useMemo(
     () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
     [activePainterContextId, session.painterContexts],
@@ -97,9 +112,10 @@ export function BridgeApp({
     [activeStackId, session.painterContexts],
   )
 
-  const mutate = (next: BridgeState, message: string) => {
+  const mutate = (next: BridgeState, message: string, moved: ReadonlySet<string> = new Set()) => {
     if (pending.current) return
     if (next === bridge) return
+    setMotionIds(moved)
     setHistory((current) => [...current, cloneState(bridge)])
     setRedoStack([])
     setBridge(next)
@@ -115,7 +131,7 @@ export function BridgeApp({
       setFailed(true)
       return
     }
-    mutate(next, "Layer removed from this mapping session")
+    mutate(next, "Layer removed from this mapping session", new Set([id]))
   }
 
   const endDrag = () => {
@@ -163,7 +179,7 @@ export function BridgeApp({
       setStatus("This target has pending transfers")
       setFailed(true)
     }
-    mutate(next, "Mapping updated")
+    mutate(next, "Mapping updated", selectedIds)
     endDrag()
   }
 
@@ -172,6 +188,7 @@ export function BridgeApp({
     const previous = history.at(-1)
     if (!previous) return
     setRedoStack((current) => [...current, cloneState(bridge)])
+    setMotionIds(new Set())
     setBridge(previous)
     setSelectedIds(new Set())
     setHistory((current) => current.slice(0, -1))
@@ -184,6 +201,7 @@ export function BridgeApp({
     const next = redoStack.at(-1)
     if (!next) return
     setHistory((current) => [...current, cloneState(bridge)])
+    setMotionIds(new Set())
     setBridge(next)
     setSelectedIds(new Set())
     setRedoStack((current) => current.slice(0, -1))
@@ -216,6 +234,7 @@ export function BridgeApp({
     // Target references belong to one Painter context; carrying mappings across
     // a context switch would silently apply them to a different stack/channel.
     setActivePainterContextId(context.id)
+    setMotionIds(new Set())
     setBridge(next)
     setSelectedIds(new Set())
     setHistory([])
@@ -266,6 +285,7 @@ export function BridgeApp({
     const state = bridgeStateForContext(next, context)
     setSession(next)
     if (context) setActivePainterContextId(context.id)
+    setMotionIds(new Set())
     setBridge(state)
     setSelectedIds(new Set())
     setHistory([])
@@ -340,6 +360,7 @@ export function BridgeApp({
         }}
         style={{ width: "100%", height: "100%", backgroundColor: colors.canvas }}
       >
+        <RowMotionContext.Provider value={motionIds}>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -467,6 +488,7 @@ export function BridgeApp({
             onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("photoshop", id)}
+            onTrackPointer={trackPointer}
           />
           {/* Mapping help explains both panes, while the toolbar remains reserved for real commands. */}
           <HostPanel
@@ -489,10 +511,17 @@ export function BridgeApp({
             onHover={setHoveredId}
             onDrop={drop}
             onRemove={(id) => removeSource("substance_painter", id)}
+            onTrackPointer={trackPointer}
           />
         </div>
-        {status !== session.status || !activePainterContext || selectedIds.size > 0 ? (
-          <div testId="bridge-status" role="status" style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}>
+        {/* The status line keeps its space while idle so the first click does
+            not shrink both panels; it only fades. */}
+        <motion.div
+          initial={false}
+          animate={{ opacity: status !== session.status || !activePainterContext || selectedIds.size > 0 ? 1 : 0 }}
+          transition={{ duration: 0.14, ease: motionEase }}
+          style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}
+        ><div testId="bridge-status" role="status">
             <text style={{
               color: failed ? colors.danger : colors.secondary,
               fontSize: typography.secondarySize,
@@ -502,9 +531,12 @@ export function BridgeApp({
               selectedIds.size ? `${selectedIds.size} selected` : "",
               bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
             ].filter(Boolean).join(" · ") || status}</text>
-          </div>
-        ) : null}
+        </div></motion.div>
         </motion.div>
+        </RowMotionContext.Provider>
+        <AnimatePresence>
+          {dragLabel ? <DragPreview key="drag" label={dragLabel} pointer={pointer} /> : null}
+        </AnimatePresence>
       </div>
     </TooltipProvider>
   )

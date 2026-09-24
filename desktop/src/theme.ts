@@ -9,6 +9,7 @@ export const colors = {
   line: "#353535",
   text: "#E0E0E0",
   textHover: "#FFFFFF",
+  textPressed: "#C4C4C4",
   secondary: "#9E9E9E",
   tertiary: "#666666",
   danger: "#FF453A",

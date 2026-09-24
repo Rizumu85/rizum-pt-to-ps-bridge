@@ -1,7 +1,7 @@
 import path from "node:path"
 import { connectTest, type TreeNode } from "@gpuix/react/automation"
 import { createTestRoot } from "./test-root"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { BridgeApp, initialWindowHeight } from "./bridge-app"
 import { loadBridgeSession } from "./transport"
 import { colors, metrics } from "./theme"
@@ -86,6 +86,57 @@ describe("layer tree interaction", () => {
       expect(root.renderer.findByTestId("layer-row:substance_painter:sp-working")?.style.opacity ?? 1).toBe(1)
       await app.getByText("Retouch group").hover()
       expect(insertionLines((await app.call("getTree", {})).tree)).toBe(0)
+    } finally { await close() }
+  })
+
+  it("carries a labelled chip with the pointer and says where a drop is refused", async () => {
+    const { app, root, close } = await setup()
+    try {
+      expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.cursor).toBe("grab")
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      expect(await app.getByTestId("drag-preview").count()).toBe(1)
+      expect(await app.getByText("Paint edit").count()).toBe(2)
+      const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
+      const chip = await app.getByTestId("drag-preview").bounds()
+      expect(chip.y).toBeGreaterThan(lighten.y)
+      expect(root.renderer.findByTestId("layer-row:substance_painter:sp-lighten")?.style.cursor).toBe("grabbing")
+      expect(root.renderer.findByTestId("layer-row:photoshop:ps:101")?.style.cursor).toBe("no-drop")
+      await app.mouse.up(app.getByText("Lighten"))
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      await vi.waitFor(async () => expect(await app.getByTestId("drag-preview").count()).toBe(0))
+    } finally { await close() }
+  })
+
+  it("animates rows the pointer moved, while undo swaps them instantly", async () => {
+    const { app, root, close } = await setup()
+    try {
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      await app.mouse.up(app.getByText("Lighten"))
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      await vi.waitFor(async () => expect(await app.getByText("Pending").count()).toBe(1))
+      root.renderer.simulateKeystrokes("ctrl-z")
+      root.renderer.dispatchNativeEvents()
+      root.renderer.flush()
+      expect(await app.getByText("Pending").count()).toBe(0)
+      expect(await app.getByText("Paint edit").count()).toBe(1)
+    } finally { await close() }
+  })
+
+  it("reserves the status line so the first click does not resize the panels", async () => {
+    const { app, close } = await setup()
+    try {
+      const before = await app.getByTestId("layer-thumbnail:substance_painter:sp-maskout").bounds()
+      const status = await app.getByTestId("bridge-status").bounds()
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.up(app.getByText("Paint edit"))
+      expect(await app.getByText("1 selected").count()).toBe(1)
+      expect((await app.getByTestId("bridge-status").bounds()).y).toBe(status.y)
+      expect((await app.getByTestId("layer-thumbnail:substance_painter:sp-maskout").bounds()).y).toBe(before.y)
     } finally { await close() }
   })
 

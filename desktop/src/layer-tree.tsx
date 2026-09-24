@@ -1,5 +1,6 @@
+import { createContext, useContext, useRef } from "react"
 import { LayerScroll } from "./layer-scroll"
-import { motion, type EventPayload } from "@gpuix/react"
+import { AnimatePresence, motion, useIsPresent, type EventPayload, type MotionTransition } from "@gpuix/react"
 import { type HostId, type LayerNode } from "./model"
 import { colors, metrics, typography } from "./theme"
 import {
@@ -80,6 +81,28 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
   )
 }
 
+/**
+ * Rows whose arrival or departure the pointer just caused: a drop or a ×.
+ * Only these grow in or fold away; undo, reset and reloads swap rows instantly
+ * because keyboard and bulk changes should read as immediate. It is context,
+ * not a prop, because a leaving row renders from its last props.
+ */
+export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
+
+// Growth is the user watching something open; shrinking is dismissal, so it
+// is quicker. Every height in the tree uses this one rule, which keeps nested
+// folders and their ancestors moving as one surface.
+const growDuration = 0.2
+const shrinkDuration = 0.14
+
+function useHeightTransition(height: number): MotionTransition {
+  const last = useRef({ height, duration: growDuration })
+  if (last.current.height !== height) {
+    last.current = { height, duration: height < last.current.height ? shrinkDuration : growDuration }
+  }
+  return { duration: last.current.duration, ease: motionEase }
+}
+
 function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
   if (node.ref.host !== "substance_painter") return null
   if (/fill/i.test(node.ref.kind)) return "fillLayer"
@@ -120,14 +143,26 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
   const hovered = hoveredId === node.id
   const selected = selectedIds.has(node.id)
   const children = node.children ?? []
+  const present = useIsPresent()
+  const animated = useContext(RowMotionContext).has(node.id)
+  const height = metrics.rowHeight + (open ? visibleNodesHeight(children, expanded) : 0)
+  const heightTransition = useHeightTransition(height)
+  const dragging = draggingId !== null
 
   return (
-    <div
-      testId={`layer-group:${node.id}`}
+    <motion.div
+      initial={animated ? { height: 0, opacity: 0 } : false}
+      animate={{ height, opacity: 1 }}
+      exit={animated ? { height: 0, opacity: 0 } : undefined}
+      transition={present ? heightTransition : { duration: shrinkDuration, ease: motionEase }}
       style={{
-        position: "relative", display: "flex", flexDirection: "column", minWidth: 0,
-        borderRadius: metrics.rowRadius,
+        display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0,
+        overflow: "hidden", borderRadius: metrics.rowRadius,
+        pointerEvents: present ? undefined : "none",
       }}
+    ><div
+      testId={`layer-group:${node.id}`}
+      style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0 }}
     >
       {/* Hover never lights folders, so a drop says where it lands on its own:
           a framed folder row takes the layers inside, a line inserts after. */}
@@ -166,7 +201,8 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           // Locked rows stay in the tree so the Photoshop hierarchy reads true,
           // while their detail line explains why they cannot be dragged.
           opacity: node.locked ? 0.5 : draggingId === node.id ? 0.65 : 1,
-          cursor: node.locked ? "default" : "move",
+          // The cursor answers "can I drop here" before the button is released.
+          cursor: dragging ? (acceptsDrop ? "grabbing" : "no-drop") : node.locked ? "default" : "grab",
         }}
       >
         <div
@@ -175,7 +211,7 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           style={{
             width: 14, height: 28, flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: node.kind === "group" ? "pointer" : "default",
+            cursor: dragging ? undefined : node.kind === "group" ? "pointer" : "default",
           }}
         >
           {node.kind === "group" ? <DisclosureIcon open={open} /> : null}
@@ -207,19 +243,22 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           <Icon name="x" size={12} color={colors.secondary} />
         </div> : null}
       </div>
+      {/* The row wrapper owns the folder's height, so children only fade. */}
       {node.kind === "group" ? <motion.div
         initial={false}
-        animate={{ height: open ? visibleNodesHeight(children, expanded) : 0, opacity: open ? 1 : 0 }}
-        transition={{ duration: 0.2, ease: motionEase }}
+        animate={{ opacity: open ? 1 : 0 }}
+        transition={heightTransition}
         style={{
-          display: "flex", flexDirection: "column", overflow: "hidden",
+          display: "flex", flexDirection: "column", flexShrink: 0,
           // Depth has one owner; folder decoration must not shift sibling columns.
           marginLeft: metrics.treeIndent, pointerEvents: open ? undefined : "none",
         }}
       >
-        {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
+        <AnimatePresence initial={false}>
+          {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
+        </AnimatePresence>
       </motion.div> : null}
-    </div>
+    </div></motion.div>
   )
 }
 
@@ -246,6 +285,7 @@ export function HostPanel({
   onHover,
   onDrop,
   onRemove,
+  onTrackPointer,
 }: {
   panelId: "photoshop" | "painter"
   title: string
@@ -253,11 +293,17 @@ export function HostPanel({
   nodes: LayerNode[]
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
+  onTrackPointer: (event: EventPayload) => void
 } & TreeInteraction) {
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
     <div
+      // GPUiX delivers pointer moves no higher than the host panels, so the
+      // drag preview is fed here; drops only land inside a panel anyway.
+      onMouseMove={onTrackPointer}
       style={{
+        // Rows that accept the drop override this; releasing anywhere else cancels.
+        cursor: draggingId ? "no-drop" : undefined,
         flexGrow: 1,
         flexBasis: 0,
         minWidth: 0,
@@ -317,7 +363,7 @@ export function HostPanel({
       <InsetSeparator />
       {emptyContent ? (
         <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0 }}>{emptyContent}</div>
-      ) : <LayerScroll id={panelId}>
+      ) : <LayerScroll id={panelId}><AnimatePresence initial={false}>
           {nodes.map(node => <LayerRow
             key={node.id}
             node={node}
@@ -336,7 +382,7 @@ export function HostPanel({
             onDrop={onDrop}
             onRemove={onRemove}
           />)}
-      </LayerScroll>}
+      </AnimatePresence></LayerScroll>}
     </div>
   )
 }

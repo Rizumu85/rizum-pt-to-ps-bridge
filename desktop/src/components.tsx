@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  AnimatePresence,
   motion,
   Select,
   SelectContent,
@@ -176,6 +177,9 @@ export function ContextSelect({
     }
 
     setVisuallyOpen(false)
+    // SelectContent renders nothing once its Select is closed, so
+    // AnimatePresence cannot hold it through the fade; the Select stays open
+    // until the exit has played instead.
     closeTimer.current = setTimeout(() => {
       setPresent(false)
       closeTimer.current = null
@@ -341,12 +345,12 @@ export function IconAction({
             active: disabled ? undefined : { backgroundColor: colors.controlActive },
           }}
         >
-          {/* GPUiX 0.6 has no transform tween, so scale only this fixed-size icon box. */}
+          {/* GPUiX has no transform tween, so scale only this fixed-size icon box. */}
           <motion.div
             initial={false}
             animate={{
-              width: pressed ? 12.75 : 15,
-              height: pressed ? 12.75 : 15,
+              width: pressed ? 13.5 : 15,
+              height: pressed ? 13.5 : 15,
               opacity: pressed ? 0.7 : 1,
             }}
             transition={{ duration: pressed ? 0.08 : 0.18, ease: motionEase }}
@@ -399,6 +403,7 @@ export function ApplyAction({ count, disabled, onClick }: { count: number; disab
         if (!disabled && (event.key === "enter" || event.key === "space")) onClick()
       }}
       style={{
+        position: "relative",
         height: 28,
         paddingLeft: 14,
         paddingRight: 14,
@@ -410,8 +415,28 @@ export function ApplyAction({ count, disabled, onClick }: { count: number; disab
         backgroundColor: disabled ? colors.control : colors.text,
         cursor: disabled ? "default" : "pointer",
         hover: disabled ? undefined : { backgroundColor: colors.textHover },
+        active: disabled ? undefined : { backgroundColor: colors.textPressed },
       }}
     >
+      {/* When work becomes pending, the dark face fades off the lit button
+          instead of the brightest surface in the window flashing on. Losing
+          the lit state is the system answering Apply or Undo, so that side is
+          instant. The face has no hitbox: it must not take the button's click. */}
+      <motion.div
+        initial={false}
+        animate={{ opacity: disabled ? 1 : 0 }}
+        transition={{ duration: disabled ? 0 : 0.2, ease: motionEase }}
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          borderRadius: metrics.rowRadius,
+          backgroundColor: colors.control,
+          pointerEvents: "none",
+        }}
+      />
       <text style={{
         color: disabled ? colors.tertiary : colors.canvas,
         fontFamily: typography.family,
@@ -510,8 +535,9 @@ export function MappingHelpPopover() {
           ?
         </text>
       </div>
-      {open ? (
+      <AnimatePresence>{open ? (
         <anchored
+          key="help"
           testId="mapping-help-popover"
           tabIndex={0}
           onMouseDownOutside={() => setOpen(false)}
@@ -527,11 +553,14 @@ export function MappingHelpPopover() {
           priority={2}
           occlude
         >
+          {/* Enters and leaves the way the context menus do: a short drop from its trigger. */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, top: -4 }}
+            animate={{ opacity: 1, top: 0 }}
+            exit={{ opacity: 0, top: -4 }}
             transition={{ duration: 0.14, ease: motionEase }}
             style={{
+              position: "relative",
               width: 240,
               display: "flex",
               flexDirection: "column",
@@ -557,8 +586,52 @@ export function MappingHelpPopover() {
             <PopoverText>Apply transfers them and refreshes both trees.</PopoverText>
           </motion.div>
         </anchored>
-      ) : null}
+      ) : null}</AnimatePresence>
     </div>
   )
 }
 
+
+/**
+ * The layer the pointer is carrying. It follows the pointer through its own
+ * state so a drag re-renders one chip per move, not both layer trees.
+ */
+export type PointerFeed = { x: number; y: number; follow: ((x: number, y: number) => void) | null }
+
+export function DragPreview({ label, pointer }: { label: string; pointer: { current: PointerFeed } }) {
+  const [position, setPosition] = useState(() => ({ x: pointer.current.x, y: pointer.current.y }))
+  useLayoutEffect(() => {
+    const follow = (x: number, y: number) => setPosition({ x, y })
+    pointer.current.follow = follow
+    // A preview still fading out must not detach the next drag's preview.
+    return () => { if (pointer.current.follow === follow) pointer.current.follow = null }
+  }, [pointer])
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12, ease: motionEase }}
+      style={{
+        position: "absolute",
+        left: position.x + 14,
+        top: position.y + 10,
+        maxWidth: 220,
+        height: 26,
+        paddingLeft: 9,
+        paddingRight: 9,
+        display: "flex",
+        alignItems: "center",
+        borderRadius: metrics.rowRadius,
+        borderWidth: 1,
+        borderColor: colors.line,
+        backgroundColor: colors.control,
+        boxShadow: { offsetX: 0, offsetY: 4, blurRadius: 12, spreadRadius: 0, color: "#00000066" },
+        // The chip rides under the pointer; it must never become the hit target.
+        pointerEvents: "none",
+      }}
+    >
+      <div testId="drag-preview" style={{ minWidth: 0 }}><PrimaryText>{label}</PrimaryText></div>
+    </motion.div>
+  )
+}
