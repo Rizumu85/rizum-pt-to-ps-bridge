@@ -69,7 +69,6 @@ export function BridgeApp({
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
-  const hoveredGroupId = nearestGroup(bridge.photoshop, hoveredId) ?? nearestGroup(bridge.painter, hoveredId)
   const draggingHost = useMemo(() => {
     if (!draggingId) return null
     const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
@@ -427,7 +426,7 @@ export function BridgeApp({
               )
             }
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
+            hoveredId={hoveredId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -449,7 +448,7 @@ export function BridgeApp({
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
+            hoveredId={hoveredId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}
@@ -493,16 +492,6 @@ function collectExpandedIds(state: BridgeState): Set<string> {
   visit(state.photoshop)
   visit(state.painter)
   return ids
-}
-
-function nearestGroup(nodes: LayerNode[], id: string | null, parent: string | null = null): string | null {
-  if (!id) return null
-  for (const node of nodes) {
-    if (node.id === id) return node.kind === "group" ? node.id : parent
-    const nested = node.children ? nearestGroup(node.children, id, node.id) : null
-    if (nested) return nested
-  }
-  return null
 }
 
 export function visibleNodesHeight(nodes: LayerNode[], expanded: Set<string>): number {

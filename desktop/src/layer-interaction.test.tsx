@@ -49,15 +49,28 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
-  it("highlights the nearest real folder without lighting every ancestor", async () => {
+  it("hover highlights only the row under the pointer, never its folders", async () => {
     const { app, root, close } = await setup(true)
     try {
       await app.getByText("Lighten").hover()
-      expect(String(root.renderer.findByTestId("layer-group:nested")?.style.backgroundColor).toLowerCase()).toBe(colors.groupHover.toLowerCase())
-      expect(root.renderer.findByTestId("layer-group:substance_painter:sp-working")?.style.backgroundColor).toBeUndefined()
-      await app.getByText("Working").hover()
-      expect(String(root.renderer.findByTestId("layer-group:substance_painter:sp-working")?.style.backgroundColor).toLowerCase()).toBe(colors.groupHover.toLowerCase())
-      expect(root.renderer.findByTestId("layer-group:nested")?.style.backgroundColor).toBeUndefined()
+      expect(root.renderer.findByTestId("layer-row:substance_painter:sp-lighten")?.style.backgroundColor).toBe(colors.controlHover)
+      for (const folder of ["layer-group:nested", "layer-group:substance_painter:sp-working"]) {
+        expect(root.renderer.findByTestId(folder)?.style.backgroundColor).toBeUndefined()
+      }
+      expect(root.renderer.findByTestId("layer-row:substance_painter:sp-working")?.style.backgroundColor).toBeUndefined()
+    } finally { await close() }
+  })
+
+  it("frames a folder drop target and draws a line for a layer target", async () => {
+    const { app, root, close } = await setup()
+    try {
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-working")?.style.borderWidth).toBe(1)
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-lighten")?.style.height).toBe(2)
+      root.renderer.simulateKeystrokes("escape")
+      root.renderer.dispatchNativeEvents()
     } finally { await close() }
   })
 

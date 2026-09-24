@@ -81,7 +81,6 @@ type TreeInteraction = {
   selectedIds: Set<string>
   mappedIds: Set<string>
   hoveredId: string | null
-  hoveredGroupId: string | null
   draggingId: string | null
   draggingHost: HostId | null
   dropTargetId: string | null
@@ -97,7 +96,7 @@ type TreeInteraction = {
 
 function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
   const {
-    host, selectedIds, mappedIds, hoveredId, hoveredGroupId, draggingId,
+    host, selectedIds, mappedIds, hoveredId, draggingId,
     draggingHost, dropTargetId, expanded, onToggle, onDragStart, onPointerMove,
     onDragEnd, onHover, onDrop, onRemove,
   } = interaction
@@ -116,12 +115,16 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
       style={{
         position: "relative", display: "flex", flexDirection: "column", minWidth: 0,
         borderRadius: metrics.rowRadius,
-        backgroundColor: hoveredGroupId === node.id ? colors.groupHover : undefined,
       }}
     >
+      {/* Hover never lights folders, so a drop says where it lands on its own:
+          a framed folder row takes the layers inside, a line inserts after. */}
       {activeDrop ? <div
         testId={`drop-indicator:${node.id}`}
-        style={{
+        style={node.kind === "group" ? {
+          position: "absolute", left: 0, right: 0, top: 0, height: metrics.rowHeight,
+          borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
+        } : {
           position: "absolute", left: 5, right: 5, top: metrics.rowHeight - 2, height: 2,
           backgroundColor: colors.drop, pointerEvents: "none",
         }}
@@ -216,7 +219,6 @@ export function HostPanel({
   selectedIds,
   mappedIds,
   hoveredId,
-  hoveredGroupId,
   draggingId,
   draggingHost,
   dropTargetId,
@@ -305,7 +307,7 @@ export function HostPanel({
             node={node}
             host={host}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} hoveredGroupId={hoveredGroupId}
+            hoveredId={hoveredId}
             draggingId={draggingId}
             draggingHost={draggingHost}
             dropTargetId={dropTargetId}

@@ -5,7 +5,6 @@ export const colors = {
   controlHover: "#363636",
   controlActive: "#404040",
   fieldHover: "#FFFFFF0D",
-  groupHover: "#2A2A2A",
   mapped: "#303030",
   line: "#353535",
   text: "#E0E0E0",
