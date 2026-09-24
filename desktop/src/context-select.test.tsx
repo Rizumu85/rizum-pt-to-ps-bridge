@@ -19,7 +19,7 @@ describe("Painter context selectors", () => {
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
-    const apply = vi.fn(async (_state: BridgeState, _context: string) => "result.json")
+    const apply = vi.fn(async (_state: BridgeState, _context: string) => ({ session: null, message: "Applied", failed: false }))
     const connect = vi.fn(async () => null)
     try {
       root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={connect} />)
@@ -83,7 +83,7 @@ describe("Painter context selectors", () => {
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
-    const apply = vi.fn(async (_state: BridgeState, _context: string) => "result.json")
+    const apply = vi.fn(async (_state: BridgeState, _context: string) => ({ session: null, message: "Applied", failed: false }))
     try {
       root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
       root.renderer.flush()
@@ -122,7 +122,7 @@ describe("Painter context selectors", () => {
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
-    const apply = vi.fn(async (_state: BridgeState, _context: string) => "result.json")
+    const apply = vi.fn(async (_state: BridgeState, _context: string) => ({ session: null, message: "Applied", failed: false }))
     try {
       root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
       root.renderer.flush()
@@ -147,7 +147,7 @@ describe("Painter context selectors", () => {
     let reject!: (error: Error) => void
     const connect = vi.fn(() => new Promise<null>((_resolve, fail) => { reject = fail }))
     try {
-      root.render(<BridgeApp session={session} onApply={async () => "unused"} onConnectPhotoshop={connect} />)
+      root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })} onConnectPhotoshop={connect} />)
       root.renderer.flush()
       await app.getByTestId("connect-photoshop").click()
       await app.getByTestId("connect-photoshop").click()
@@ -172,7 +172,7 @@ describe("Painter context selectors", () => {
     })
     const root = createTestRoot({ width: 652, height: 720 })
     const app = await connectTest(root.renderer)
-    const apply = vi.fn(async (_state: BridgeState, _context: string) => "result.json")
+    const apply = vi.fn(async (_state: BridgeState, _context: string) => ({ session: null, message: "Applied", failed: false }))
     try {
       root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
       root.renderer.flush()
@@ -199,7 +199,7 @@ describe("Painter context selectors", () => {
     const testRoot = createTestRoot({ width: 652, height: 484 })
     const app = await connectTest(testRoot.renderer)
     try {
-      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"}
+      testRoot.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
         onConnectPhotoshop={async () => null} />)
       testRoot.renderer.flush()
       await new Promise(resolve => setTimeout(resolve, 450))
@@ -226,10 +226,9 @@ describe("Painter context selectors", () => {
     const testRoot = createTestRoot({ width: 652, height: 484 })
     const app = await connectTest(testRoot.renderer)
     const connect = vi.fn(async () => null)
-    const applied = vi.fn()
     try {
-      testRoot.render(<BridgeApp session={session} onApply={async () => "unused"}
-        onConnectPhotoshop={connect} onApplied={applied} />)
+      testRoot.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
+        onConnectPhotoshop={connect} />)
       testRoot.renderer.flush()
       const button = app.getByTestId("connect-photoshop")
       const selector = await app.getByTestId("context-select:Texture Set:").bounds()
@@ -242,8 +241,6 @@ describe("Painter context selectors", () => {
       testRoot.renderer.flush()
       await app.mouse.up(button)
       await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce())
-      // Connecting keeps the mapper open; only Apply is a terminal handoff.
-      expect(applied).not.toHaveBeenCalled()
       for (const fraction of [0.04, 0.15, 0.35, 0.7, 0.95]) {
         await vi.waitFor(async () => expect(await app.getByText("Connecting...").count()).toBe(0))
         testRoot.renderer.flush()
@@ -266,7 +263,7 @@ describe("Painter context selectors", () => {
     const app = await connectTest(root.renderer)
     const reload = vi.fn(async () => session)
     try {
-      root.render(<BridgeApp session={session} onApply={async () => "unused"}
+      root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
         onConnectPhotoshop={async () => null} onReloadPhotoshop={reload} />)
       root.renderer.flush()
       expect(await app.getByText("Apply").count()).toBe(1)
@@ -285,6 +282,33 @@ describe("Painter context selectors", () => {
     } finally { root.unmount(); await app.close() }
   })
 
+  it("stays open after Apply and shows Painter's outcome", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const refreshed = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const root = createTestRoot({ width: 652, height: 560 })
+    const app = await connectTest(root.renderer)
+    const apply = vi.fn(async () => ({ session: refreshed, message: "Imported 1 Photoshop layer(s) into Painter.", failed: false }))
+    try {
+      root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
+      root.renderer.flush()
+      await app.mouse.down(app.getByText("Paint edit"))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await app.mouse.up(app.getByText("Working"))
+      await app.getByTestId("apply-mapping").click()
+      await vi.waitFor(async () => expect(await app.getByText("Imported 1 Photoshop layer(s) into Painter.").count()).toBe(1))
+      expect(await app.getByText("Pending").count()).toBe(0)
+      expect(await app.getByText("Apply").count()).toBe(1)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("says under each Photoshop row what will not transfer as-is", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: await writeFeaturePsd(),
@@ -293,7 +317,7 @@ describe("Painter context selectors", () => {
     const root = createTestRoot({ width: 652, height: 560 })
     const app = await connectTest(root.renderer)
     try {
-      root.render(<BridgeApp session={session} onApply={async () => "unused"} onConnectPhotoshop={async () => null} />)
+      root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })} onConnectPhotoshop={async () => null} />)
       root.renderer.flush()
       for (const text of [
         "Clipped · merges into Base", "Merges 1 clipped · Styles not transferred",
@@ -314,7 +338,7 @@ describe("Painter context selectors", () => {
       testRoot.render(
         <BridgeApp
           session={session}
-          onApply={async () => "unused"}
+          onApply={async () => ({ session: null, message: "Applied", failed: false })}
           onConnectPhotoshop={async () => null}
         />,
       )
@@ -347,7 +371,7 @@ describe("Painter context selectors", () => {
       testRoot.render(
         <BridgeApp
           session={session}
-          onApply={async () => "unused"}
+          onApply={async () => ({ session: null, message: "Applied", failed: false })}
           onConnectPhotoshop={async () => null}
         />,
       )
@@ -376,15 +400,13 @@ describe("Painter context selectors", () => {
     const testRoot = createTestRoot({ width: 652, height: 484 })
     const app = await connectTest(testRoot.renderer)
     const connect = vi.fn(async () => connected)
-    const applied = vi.fn()
 
     try {
       testRoot.render(
         <BridgeApp
           session={session}
-          onApply={async () => "unused"}
+          onApply={async () => ({ session: null, message: "Applied", failed: false })}
           onConnectPhotoshop={connect}
-          onApplied={applied}
         />,
       )
       testRoot.renderer.flush()
@@ -396,7 +418,6 @@ describe("Painter context selectors", () => {
       expect(await app.getByText("No document connected").count()).toBe(0)
       expect(await app.getByText("Locator").count()).toBeGreaterThan(0)
       expect(connect).toHaveBeenCalledWith(session)
-      expect(applied).not.toHaveBeenCalled()
     } finally {
       testRoot.unmount()
       await app.close()

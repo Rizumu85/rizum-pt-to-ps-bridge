@@ -7,7 +7,6 @@ from unittest.mock import Mock
 
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import (
     DesktopBridgeController,
-    _desktop_request_type,
     _photoshop_export_error_summary,
 )
 
@@ -111,15 +110,6 @@ class DesktopBridgeSessionTests(unittest.TestCase):
         reply = json.loads(process.write.call_args.args[0].decode("utf-8"))
         self.assertEqual(reply, {"type": "photoshop_connect_failed", "message": "Picker unavailable"})
         self.assertFalse(self.controller._picking)
-
-    def test_reads_desktop_transfer_request(self):
-        with tempfile.TemporaryDirectory() as directory:
-            request = Path(directory) / "desktop_transfer.json"
-            request.write_text(
-                json.dumps({"request_type": "desktop_transfer"}),
-                encoding="utf-8",
-            )
-            self.assertEqual(_desktop_request_type(request), "desktop_transfer")
 
     def test_photoshop_export_errors_are_bounded_for_the_dialog(self):
         payload = {

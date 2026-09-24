@@ -189,28 +189,65 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertIn("inserted 3", args[-1])
         self.assertIsNone(self.controller._photoshop_progress_dialog)
 
-    def test_desktop_apply_handoff_keeps_dock_busy_until_real_photoshop_result(self):
-        root = Path(self.directory.name)
-        transfer_path = root / "desktop_transfer.json"
-        transfer_path.write_text('{"request_type":"desktop_transfer"}', encoding="utf-8")
-        request_path = root / "photoshop_transfer.json"
-        request_path.write_text("{}", encoding="utf-8")
-        launch = write_photoshop_transfer_launcher(request_path)
-        result = TransferResult(0, 1, (), (), launch)
-        process = SimpleNamespace(readAllStandardOutput=lambda: b"", readAllStandardError=lambda: b"", deleteLater=Mock())
-        self.controller._process = process
-        self.controller._transfer_path = transfer_path
+    def apply_request(self, result=None, error=None):
+        manifest = Path(self.directory.name) / "desktop_transfer.json"
+        manifest.write_text("{}", encoding="utf-8")
+        self.controller._snapshot_path = Path(self.directory.name) / "painter_snapshot.json"
         def apply(*_args, **_kwargs):
             self.assertFalse(self.panel.dock_bridge_button.isEnabled())
-            self.controller.open()
-            self.controller._launch_desktop.assert_not_called()
+            if error:
+                raise error
             return result
-        with patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest", side_effect=apply):
-            self.controller._desktop_finished(0, None)
-        process.deleteLater.assert_called_once()
+        with (
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest", side_effect=apply),
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.exporter.write_painter_snapshot") as snapshot,
+        ):
+            self.controller._apply_desktop_transfer(manifest)
+            if self.controller._photoshop_job is not None:
+                launch = self.controller._photoshop_job.launch
+                launch.result_path.write_text(json.dumps({
+                    "success": True, "inserted": ["A"], "saved": True,
+                }), encoding="utf-8")
+                self.poll()
+        return snapshot
+
+    def test_apply_replies_to_the_open_mapper_with_a_fresh_snapshot(self):
+        snapshot = self.apply_request(TransferResult(2, 0, (), ("Tint: Normal was kept.",), None))
+        reply = self.replies()[-1]
+        self.assertEqual(reply["type"], "applied")
+        self.assertIn("Imported 2 Photoshop layer(s)", reply["message"])
+        self.assertIn("Normal was kept", reply["message"])
+        self.assertEqual(reply["snapshot"], str(self.controller._snapshot_path))
+        snapshot.assert_called_once()
         self.controller._show_message_callback.assert_not_called()
+        self.assertEqual(self.controller._process, self.process)
+
+    def test_apply_waits_for_photoshop_before_replying(self):
+        request_path = Path(self.directory.name) / "photoshop_transfer.json"
+        request_path.write_text("{}", encoding="utf-8")
+        launch = write_photoshop_transfer_launcher(request_path)
+        self.apply_request(TransferResult(0, 1, (), (), launch))
+        reply = self.replies()[-1]
+        self.assertEqual(reply["type"], "applied")
+        self.assertIn("inserted 1 Painter layer(s) into Photoshop", reply["message"])
+        self.assertIsNone(self.controller._photoshop_job)
+
+    def test_failed_apply_still_refreshes_the_mapper(self):
+        self.apply_request(error=RuntimeError("Painter target moved"))
+        reply = self.replies()[-1]
+        self.assertEqual(reply["type"], "apply_failed")
+        self.assertEqual(reply["message"], "Painter target moved")
+        self.assertIn("snapshot", reply)
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
-        self.assertEqual(self.controller._photoshop_job.launch, launch)
+
+    def test_closing_the_mapper_needs_no_apply(self):
+        process = SimpleNamespace(readAllStandardOutput=lambda: b"", readAllStandardError=lambda: b"", deleteLater=Mock())
+        self.controller._process = process
+        with patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest") as apply:
+            self.controller._desktop_finished(0, None)
+        apply.assert_not_called()
+        self.controller._show_message_callback.assert_not_called()
+        self.assertTrue(self.panel.dock_bridge_button.isEnabled())
 
     def test_partial_transfer_reports_both_hosts_without_reapplying_painter(self):
         launch = self.begin_transfer()

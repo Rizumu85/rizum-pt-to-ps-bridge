@@ -31,7 +31,7 @@ class DesktopBridgeController:
         self.QtWidgets = panel.QtWidgets
         self._show_message_callback = show_message
         self._process = None
-        self._transfer_path = None
+        self._snapshot_path = None
         self._closing = False
         self._process_error_reported = False
         self._applying_transfer = False
@@ -103,7 +103,7 @@ class DesktopBridgeController:
             self._show("Bridge", str(exc))
             return
 
-        self._transfer_path = transfer_path
+        self._snapshot_path = snapshot_path
         self._process_error_reported = False
         self._stdout_buffer = ""
         process = self.QtCore.QProcess(self.panel.widget)
@@ -274,7 +274,7 @@ class DesktopBridgeController:
         # because Photoshop failed, or claim both hosts rolled back together.
         if transfer.imported_count:
             message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
-        self._show("Bridge transfer incomplete", message)
+        self._finish_apply("apply_failed", message)
 
     def _finish_photoshop_transfer(self, payload):
         transfer = self._pending_transfer_result
@@ -305,7 +305,7 @@ class DesktopBridgeController:
         message = "; ".join(parts) + "."
         if warnings:
             message += "\n\n" + "\n".join(warnings)
-        self._show("Bridge complete", message)
+        self._finish_apply("applied", message)
 
     def _clear_photoshop_export(self):
         job = self._photoshop_job
@@ -347,51 +347,11 @@ class DesktopBridgeController:
             "utf-8",
             errors="replace",
         ).strip()
-        if int(exit_code) != 0:
-            detail = stderr or f"Desktop process exited with code {exit_code}."
-            process.deleteLater()
-            self._show("Bridge", detail)
-            return
-
-        transfer_path = self._transfer_path
-        if transfer_path is None or not transfer_path.is_file():
-            self._trace("desktop_closed_without_request")
-            process.deleteLater()
-            return
-
-        try:
-            request_type = _desktop_request_type(transfer_path)
-        except Exception as exc:
-            process.deleteLater()
-            self._show("Bridge", str(exc))
-            return
-        if request_type != "desktop_transfer":
-            process.deleteLater()
-            self._show("Bridge", f"Unsupported desktop request: {request_type or '(missing)'}")
-            return
-
-        self._applying_transfer = True
-        self._sync_button()
-        try:
-            result = desktop_transfer.apply_transfer_manifest(
-                transfer_path,
-                settings=self.panel.user_settings,
-            )
-        except Exception as exc:
-            process.deleteLater()
-            self._show("Bridge", str(exc))
-            return
-        finally:
-            self._applying_transfer = False
-            self._sync_button()
-
         process.deleteLater()
-        if result.photoshop_launch is not None:
-            self._start_photoshop_job(
-                result.photoshop_launch, f"Insert {result.exported_count} layer(s)", result,
-            )
-        else:
-            self._report_transfer_complete(result.imported_count, 0, result.warnings)
+        # Apply arrives as a request while the mapper is open, so an exit only
+        # means the user closed the window; nothing is applied on the way out.
+        if int(exit_code) != 0:
+            self._show("Bridge", stderr or f"Desktop process exited with code {exit_code}.")
 
     def _take_process(self):
         process = self._process
@@ -433,20 +393,66 @@ class DesktopBridgeController:
 
     def _desktop_request(self, text):
         try:
-            request_type = json.loads(text).get("type")
+            request = json.loads(text)
+            request_type = request.get("type")
         except (ValueError, AttributeError):
-            request_type = None
+            request, request_type = {}, None
         self._trace("desktop_request", str(request_type))
-        if request_type != "connect_photoshop":
+        if self._picking or self._photoshop_job is not None or self._applying_transfer:
+            self._reply_to_desktop({"type": "failed", "message": "Painter is still busy with the last request."})
+            return
+        # Leave the stdout signal before opening a modal owner or editing Painter.
+        if request_type == "connect_photoshop":
+            self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
+        elif request_type == "apply" and request.get("manifest"):
+            manifest = Path(request["manifest"])
+            self.QtCore.QTimer.singleShot(0, lambda: self._apply_desktop_transfer(manifest))
+        else:
             self._reply_to_desktop({
-                "type": "photoshop_connect_failed",
+                "type": "failed",
                 "message": f"Unsupported desktop request: {request_type or '(missing)'}",
             })
+
+    def _apply_desktop_transfer(self, manifest_path):
+        if self._closing:
             return
-        if self._picking or self._photoshop_job is not None:
+        self._applying_transfer = True
+        self._sync_button()
+        try:
+            result = desktop_transfer.apply_transfer_manifest(
+                manifest_path,
+                settings=self.panel.user_settings,
+            )
+        except Exception as exc:
+            self._finish_apply("apply_failed", str(exc))
             return
-        # Leave the stdout signal before opening a new modal owner.
-        self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
+        finally:
+            self._applying_transfer = False
+            self._sync_button()
+        if result.photoshop_launch is not None:
+            self._start_photoshop_job(
+                result.photoshop_launch, f"Insert {result.exported_count} layer(s)", result,
+            )
+        else:
+            self._report_transfer_complete(result.imported_count, 0, result.warnings)
+
+    def _finish_apply(self, reply_type, message):
+        """Report an Apply to the open mapper with a fresh Painter snapshot."""
+        if self._process is None:
+            # The mapper was closed while Photoshop worked; Painter is the only
+            # place left to report the outcome.
+            title = "Bridge complete" if reply_type == "applied" else "Bridge transfer incomplete"
+            self._show(title, message)
+            return
+        reply = {"type": reply_type, "message": message}
+        try:
+            # The mapper stays open after Apply, so it needs Painter's new
+            # layer tree to keep mapping against what is really there now.
+            exporter.write_painter_snapshot(self._snapshot_path, self.panel.user_settings)
+            reply["snapshot"] = str(self._snapshot_path)
+        except Exception as exc:
+            reply["message"] = f"{message}\n\nPainter layers could not be refreshed: {exc}"
+        self._reply_to_desktop(reply)
 
     def _trace(self, event, detail="", *, reset=False):
         # Keep only lifecycle diagnostics, not snapshot data, so real host-only
@@ -481,18 +487,6 @@ def _desktop_executable():
             "before using the Bridge action."
         )
     return path
-
-
-def _desktop_request_type(path):
-    try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise RuntimeError(f"Could not read desktop response: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Desktop response is not valid JSON: {path}") from exc
-    if not isinstance(payload, dict):
-        raise RuntimeError("Desktop response must be a JSON object.")
-    return payload.get("request_type")
 
 
 def _photoshop_export_error_summary(payload):

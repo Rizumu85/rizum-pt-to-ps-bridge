@@ -151,9 +151,17 @@ export type PainterReply =
   | { type: "photoshop_connected"; psd: string }
   | { type: "photoshop_connect_cancelled" }
   | { type: "photoshop_connect_failed"; message: string }
+  | { type: "applied" | "apply_failed"; message: string; snapshot: string | null }
 
 export type PainterLink = {
-  request: (type: "connect_photoshop") => Promise<PainterReply>
+  request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>) => Promise<PainterReply>
+}
+
+export type ApplyOutcome = {
+  /** The refreshed session, or null when Painter could not report its layers. */
+  session: BridgeSession | null
+  message: string
+  failed: boolean
 }
 
 export function createPainterLink(
@@ -188,12 +196,12 @@ export function createPainterLink(
   input.on("error", close)
 
   return {
-    request(type) {
+    request(type, fields = {}) {
       if (closed) return Promise.reject(new Error("Painter closed the Bridge connection"))
       if (waiting) return Promise.reject(new Error("A Painter request is already pending"))
       return new Promise((resolve, reject) => {
         waiting = { resolve, reject }
-        write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type })}\n`)
+        write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type, ...fields })}\n`)
       })
     },
   }
@@ -213,7 +221,41 @@ function parsePainterReply(line: string): PainterReply | Error {
   if (reply.type === "photoshop_connect_failed") {
     return { type: "photoshop_connect_failed", message: textValue(reply.message) || "Photoshop connection failed" }
   }
+  if (reply.type === "applied" || reply.type === "apply_failed") {
+    return {
+      type: reply.type,
+      message: textValue(reply.message) || (reply.type === "applied" ? "Applied" : "Apply failed"),
+      snapshot: textValue(reply.snapshot) || null,
+    }
+  }
+  if (reply.type === "failed") return new Error(textValue(reply.message) || "Painter could not handle the request")
   return new Error(`Painter sent an unsupported Bridge reply: ${String(reply.type)}`)
+}
+
+/**
+ * Hands one Apply to Painter and reloads both trees from what Painter reports,
+ * so the mapper stays open for the next mapping instead of closing on Apply.
+ */
+export async function applyTransfer(
+  session: BridgeSession,
+  state: BridgeState,
+  painterContextId: string,
+  link: PainterLink,
+): Promise<ApplyOutcome> {
+  const manifest = await writeTransferManifest(session, state, painterContextId)
+  const reply = await link.request("apply", { manifest })
+  if (reply.type !== "applied" && reply.type !== "apply_failed") {
+    throw new Error(`Painter sent an unexpected Apply reply: ${reply.type}`)
+  }
+  const failed = reply.type === "apply_failed"
+  if (!reply.snapshot) return { session: null, message: reply.message, failed }
+  const next = await loadBridgeSession({
+    // Photoshop inserts are saved into the same file, so it is read again too.
+    photoshopDocument: session.photoshop?.path,
+    painterSnapshot: reply.snapshot,
+    output: session.outputPath,
+  })
+  return { session: next, message: reply.message, failed }
 }
 
 /** Resolves the reconnected session, or null when the user cancelled Painter's picker. */
@@ -224,6 +266,7 @@ export async function connectPhotoshop(
   const reply = await link.request("connect_photoshop")
   if (reply.type === "photoshop_connect_cancelled") return null
   if (reply.type === "photoshop_connect_failed") throw new Error(reply.message)
+  if (reply.type !== "photoshop_connected") throw new Error(`Painter sent an unexpected connect reply: ${reply.type}`)
   return loadBridgeSession({
     photoshopDocument: reply.psd,
     painterSnapshot: session.targetSnapshotPath,

@@ -18,7 +18,7 @@ import {
   type LayerNode,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import type { BridgeSession, PainterContext } from "./transport"
+import type { ApplyOutcome, BridgeSession, PainterContext } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -36,13 +36,11 @@ export function BridgeApp({
   onApply,
   onConnectPhotoshop,
   onReloadPhotoshop,
-  onApplied,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<string>
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<ApplyOutcome>
   onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
   onReloadPhotoshop?: (session: BridgeSession) => Promise<BridgeSession>
-  onApplied?: (output: string) => void
 }) {
   const renderer = useGpuixRequired()
   const [session, setSession] = useState(initialSession)
@@ -239,14 +237,12 @@ export function BridgeApp({
     pending.current = true
     setBusy(true)
     setFailed(false)
-    setStatus("Writing transfer manifest...")
+    setStatus("Applying in Painter...")
     try {
-      const output = await onApply(bridge, activePainterContextId, session)
-      setHistory([])
-      setRedoStack([])
-      const filename = output.split(/[\\/]/).pop() || output
-      setStatus(`Transfer manifest written · ${filename}`)
-      onApplied?.(output)
+      const outcome = await onApply(bridge, activePainterContextId, session)
+      if (outcome.session) adoptSession(outcome.session, outcome.message)
+      else setStatus(outcome.message)
+      setFailed(outcome.failed)
     } catch (error) {
       setFailed(true)
       setStatus(error instanceof Error ? error.message : String(error))

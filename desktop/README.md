@@ -42,6 +42,11 @@ Under Painter, the mapper talks to its parent over stdio. **Connect Photoshop**
 writes one `@ptbridge {"type":"connect_photoshop"}` line to stdout, and Painter
 replies on stdin with one JSON line: `photoshop_connected` (with `psd`),
 `photoshop_connect_cancelled`, or `photoshop_connect_failed` (with `message`).
+**Apply** writes the transfer manifest and sends `{"type":"apply","manifest":…}`;
+Painter applies it, runs any Photoshop insert, and replies `applied` or
+`apply_failed` with a `message` and a fresh `snapshot`, which the mapper loads
+so the window stays open for the next mapping. A busy or unknown request gets
+`failed` with a `message`.
 GPUiX serves its automation protocol on the same pipes, so replies must stay
 single-line JSON. `bun tools/check-windows-input.ts` checks that both protocols
 work together with a real Win32 click (`BRIDGE_TEST_COMPILED=1` runs the built

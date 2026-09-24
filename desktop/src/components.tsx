@@ -554,7 +554,7 @@ export function MappingHelpPopover() {
             <PopoverText>Drag a native layer onto the other host.</PopoverText>
             <PopoverText>Group: place inside</PopoverText>
             <PopoverText>Layer: place after</PopoverText>
-            <PopoverText>Apply writes the transfer manifest.</PopoverText>
+            <PopoverText>Apply transfers them and refreshes both trees.</PopoverText>
           </motion.div>
         </anchored>
       ) : null}

@@ -20,7 +20,7 @@ async function setup(nested = false) {
   }
   const root = createTestRoot({ width: 700, height: 560 })
   const app = await connectTest(root.renderer)
-  root.render(<BridgeApp session={session} onApply={async () => "unused"} onConnectPhotoshop={async () => null} />)
+  root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })} onConnectPhotoshop={async () => null} />)
   root.renderer.flush()
   return { root, app, close: async () => { root.unmount(); await app.close() } }
 }

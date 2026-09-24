@@ -11,6 +11,7 @@ import { findNode, transferBetweenHosts } from "./model"
 import { writeFeaturePsd } from "./test-psd"
 import {
   PAINTER_REQUEST_MARKER,
+  applyTransfer,
   connectPhotoshop,
   createPainterLink,
   loadBridgeSession,
@@ -298,6 +299,41 @@ describe("Painter link", () => {
     pipe.end()
     await expect(pending).rejects.toThrow("Painter closed the Bridge connection")
     await expect(link.request("connect_photoshop")).rejects.toThrow("Painter closed the Bridge connection")
+  })
+
+  it("applies through Painter and reloads both trees from its reply", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-apply-"))
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const mapped = transferBetweenHosts(session.state, "photoshop:ps:101", "substance_painter:sp-working")
+    const requests: unknown[] = []
+    const reply = (type: "applied" | "apply_failed") => ({
+      request: async (kind: string, fields?: Record<string, string>) => {
+        requests.push({ kind, ...fields })
+        return { type, message: `${type} message`, snapshot: path.join(fixtureDir, "painter_snapshot.json") }
+      },
+    })
+
+    const done = await applyTransfer(session, mapped, session.initialPainterContextId, reply("applied"))
+    expect(requests[0]).toEqual({ kind: "apply", manifest: path.join(outputDir, "desktop_transfer.json") })
+    expect(done).toMatchObject({ message: "applied message", failed: false })
+    expect(done.session?.state.mappings).toEqual([])
+    expect(done.session?.photoshop?.path).toBe(session.photoshop?.path)
+
+    const failed = await applyTransfer(session, mapped, session.initialPainterContextId, reply("apply_failed"))
+    expect(failed).toMatchObject({ message: "apply_failed message", failed: true })
+    expect(failed.session).not.toBeNull()
+  })
+
+  it("rejects a request Painter reports as failed", async () => {
+    const pipe = painterPipe()
+    const link = createPainterLink(pipe.input, () => {})
+    const pending = link.request("apply", { manifest: "m.json" })
+    pipe.send('{"type":"failed","message":"Painter is still busy with the last request."}\n')
+    await expect(pending).rejects.toThrow("Painter is still busy")
   })
 
   it("reloads the session from the connected PSD and keeps Painter paths", async () => {

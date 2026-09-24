@@ -5,12 +5,12 @@ import { registerBundledFonts } from "./fonts"
 import { allowPainterForeground } from "./foreground"
 import { metrics } from "./theme"
 import {
+  applyTransfer,
   connectPhotoshop,
   createPainterLink,
   failedBridgeSession,
   loadBridgeSession,
   parseSessionOptions,
-  writeTransferManifest,
   type BridgeSession,
 } from "./transport"
 
@@ -29,7 +29,7 @@ try {
 render(
   <BridgeApp
     session={session}
-    onApply={(state, contextId, current) => writeTransferManifest(current, state, contextId)}
+    onApply={(state, contextId, current) => applyTransfer(current, state, contextId, painterLink)}
     onConnectPhotoshop={(current) => {
       allowPainterForeground()
       return connectPhotoshop(current, painterLink)
@@ -39,11 +39,6 @@ render(
       painterSnapshot: current.targetSnapshotPath,
       output: current.outputPath,
     })}
-    onApplied={() => {
-      // Painter owns the destination mutation, so a successful atomic write
-      // is the desktop process's terminal state and its unambiguous handoff.
-      setTimeout(() => process.exit(0), 80)
-    }}
   />,
   {
     title: "PT Bridge",
