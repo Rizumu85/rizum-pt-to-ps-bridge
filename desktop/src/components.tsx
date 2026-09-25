@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ForwardRefExoticComponent } from "react"
 import {
   AnimatePresence,
   motion,
@@ -48,6 +48,16 @@ const icons = {
 } as const
 
 export const motionEase: MotionEase = [0.23, 1, 0.32, 1]
+
+/**
+ * motion.div forwards every host prop, but GPUiX 0.10's types drop testId and
+ * role. Keep them on the animated element itself: an extra div only to carry
+ * them doubled the layer tree's depth, and nested flex layout grows costly
+ * with depth fast enough to cut the frame rate by more than half.
+ */
+export const Motion = motion.div as ForwardRefExoticComponent<
+  ComponentProps<typeof motion.div> & { testId?: string; role?: string }
+>
 // Something travelling back to where it belongs decelerates into place.
 const settleEase: MotionEase = [0.32, 0.72, 0, 1]
 export const maskThumbnailSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${colors.maskDark}"/><path d="M0 8 8 0v8Z" fill="${colors.maskLight}"/></svg>`
@@ -670,7 +680,8 @@ export function DragPreview({ label, pointer }: { label: string; pointer: { curr
   // the target. A cancelled one flies home so the layer visibly stays put.
   const home = present ? null : pointer.current.returnTo
   return (
-    <motion.div
+    <Motion
+      testId="drag-preview"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={home ? { opacity: 0, left: home.x + 14, top: home.y + 10 } : { opacity: 0 }}
@@ -694,7 +705,7 @@ export function DragPreview({ label, pointer }: { label: string; pointer: { curr
         pointerEvents: "none",
       }}
     >
-      <div testId="drag-preview" style={{ minWidth: 0 }}><PrimaryText>{label}</PrimaryText></div>
-    </motion.div>
+      <PrimaryText>{label}</PrimaryText>
+    </Motion>
   )
 }

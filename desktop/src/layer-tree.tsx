@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef } from "react"
+import { createContext, memo, useContext, useRef, useSyncExternalStore } from "react"
 import { LayerScroll } from "./layer-scroll"
 import { AnimatePresence, motion, useIsPresent, type EventPayload, type MotionTransition } from "@gpuix/react"
 import { type HostId, type LayerNode } from "./model"
@@ -10,6 +10,7 @@ import {
   PrimaryText,
   SecondaryText,
   maskThumbnailSource,
+  Motion,
   motionEase,
 } from "./components"
 import { visibleNodesHeight } from "./bridge-app"
@@ -110,15 +111,47 @@ function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
   return null
 }
 
-type TreeInteraction = {
+/**
+ * Hover and the drop target change on nearly every pointer move. They live in
+ * this store instead of app state so a move re-renders the two rows whose
+ * flag flipped, not both trees: every re-rendered row resends its style and
+ * motion to GPUiX, which made pointer feedback lag behind the cursor.
+ */
+export type TreePointer = { hoveredId: string | null; dropTargetId: string | null }
+
+export function createTreePointer() {
+  let state: TreePointer = { hoveredId: null, dropTargetId: null }
+  const listeners = new Set<() => void>()
+  return {
+    get: () => state,
+    set(next: Partial<TreePointer>) {
+      const merged = { ...state, ...next }
+      if (merged.hoveredId === state.hoveredId && merged.dropTargetId === state.dropTargetId) return
+      state = merged
+      for (const listener of listeners) listener()
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+}
+
+export type TreePointerStore = ReturnType<typeof createTreePointer>
+
+function usePointerFlag(store: TreePointerStore, select: (state: TreePointer) => boolean) {
+  return useSyncExternalStore(store.subscribe, () => select(store.get()))
+}
+
+/** Every value here must stay referentially stable between pointer moves. */
+export type TreeInteraction = {
   host: HostId
+  pointer: TreePointerStore
   selectedIds: Set<string>
   mappedIds: Set<string>
-  hoveredId: string | null
   pendingNotes: Map<string, string>
   draggingId: string | null
   draggingHost: HostId | null
-  dropTargetId: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
   onDragStart: (id: string, event: EventPayload) => void
@@ -129,18 +162,18 @@ type TreeInteraction = {
   onRemove: (id: string) => void
 }
 
-function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
+const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
   const {
-    host, selectedIds, mappedIds, hoveredId, pendingNotes, draggingId,
-    draggingHost, dropTargetId, expanded, onToggle, onDragStart, onPointerMove,
+    host, pointer, selectedIds, mappedIds, pendingNotes, draggingId,
+    draggingHost, expanded, onToggle, onDragStart, onPointerMove,
     onDragEnd, onHover, onDrop, onRemove,
   } = interaction
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
-  const activeDrop = acceptsDrop && dropTargetId === node.id
+  const activeDrop = usePointerFlag(pointer, state => state.dropTargetId === node.id) && acceptsDrop
   const mapped = mappedIds.has(node.id)
-  const hovered = hoveredId === node.id
+  const hovered = usePointerFlag(pointer, state => state.hoveredId === node.id)
   const selected = selectedIds.has(node.id)
   const children = node.children ?? []
   const present = useIsPresent()
@@ -150,19 +183,17 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
   const dragging = draggingId !== null
 
   return (
-    <motion.div
+    <Motion
+      testId={`layer-group:${node.id}`}
       initial={animated ? { height: 0, opacity: 0 } : false}
       animate={{ height, opacity: 1 }}
       exit={animated ? { height: 0, opacity: 0 } : undefined}
       transition={present ? heightTransition : { duration: shrinkDuration, ease: motionEase }}
       style={{
-        display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0,
+        position: "relative", display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0,
         overflow: "hidden", borderRadius: metrics.rowRadius,
         pointerEvents: present ? undefined : "none",
       }}
-    ><div
-      testId={`layer-group:${node.id}`}
-      style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0 }}
     >
       {/* Hover never lights folders, so a drop says where it lands on its own:
           a framed folder row takes the layers inside, a line inserts after. */}
@@ -258,35 +289,20 @@ function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode 
           {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
         </AnimatePresence>
       </motion.div> : null}
-    </div></motion.div>
+    </Motion>
   )
-}
+})
 
 export function HostPanel({
   panelId,
   title,
   subtitle,
   nodes,
-  host,
   headerAction,
   emptyContent,
-  selectedIds,
-  mappedIds,
-  hoveredId,
-  pendingNotes,
-  draggingId,
-  draggingHost,
-  dropTargetId,
-  expanded,
-  onToggle,
-  onDragStart,
-  onPointerMove,
-  onDragEnd,
-  onHover,
-  onDrop,
-  onRemove,
   onTrackPointer,
   contentKey,
+  ...interaction
 }: {
   panelId: "photoshop" | "painter"
   title: string
@@ -311,7 +327,7 @@ export function HostPanel({
       onMouseMove={onTrackPointer}
       style={{
         // Rows that accept the drop override this; releasing anywhere else cancels.
-        cursor: draggingId ? "no-drop" : undefined,
+        cursor: interaction.draggingId ? "no-drop" : undefined,
         flexGrow: 1,
         flexBasis: 0,
         minWidth: 0,
@@ -378,24 +394,7 @@ export function HostPanel({
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
       ><LayerScroll id={panelId}><AnimatePresence initial={false}>
-          {nodes.map(node => <LayerRow
-            key={node.id}
-            node={node}
-            host={host}
-            selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} pendingNotes={pendingNotes}
-            draggingId={draggingId}
-            draggingHost={draggingHost}
-            dropTargetId={dropTargetId}
-            expanded={expanded}
-            onToggle={onToggle}
-            onDragStart={onDragStart}
-            onPointerMove={onPointerMove}
-            onDragEnd={onDragEnd}
-            onHover={onHover}
-            onDrop={onDrop}
-            onRemove={onRemove}
-          />)}
+          {nodes.map(node => <LayerRow key={node.id} node={node} {...interaction} />)}
       </AnimatePresence></LayerScroll></motion.div>}
     </div>
   )

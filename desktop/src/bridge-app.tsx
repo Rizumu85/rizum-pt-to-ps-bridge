@@ -28,11 +28,12 @@ import {
   DragPreview,
   IconAction,
   MappingHelpPopover,
+  Motion,
   WorkingSeparator,
   motionEase,
   type PointerFeed,
 } from "./components"
-import { HostPanel, RowMotionContext } from "./layer-tree"
+import { createTreePointer, HostPanel, RowMotionContext } from "./layer-tree"
 
 export function BridgeApp({
   session: initialSession,
@@ -57,10 +58,9 @@ export function BridgeApp({
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const press = useRef<{ id: string; x: number; y: number } | null>(null)
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const selectionAnchor = useRef<string | null>(null)
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [treePointer] = useState(createTreePointer)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
@@ -69,11 +69,6 @@ export function BridgeApp({
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
   const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, returnTo: null })
-  const trackPointer = (event: EventPayload) => {
-    pointer.current.x = event.x ?? pointer.current.x
-    pointer.current.y = event.y ?? pointer.current.y
-    pointer.current.follow?.(pointer.current.x, pointer.current.y)
-  }
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
@@ -140,8 +135,8 @@ export function BridgeApp({
       ? { x: press.current.x, y: press.current.y }
       : null
     press.current = null
-    setDraggingId(null)
-    setDropTargetId(null)
+    if (draggingId !== null) setDraggingId(null)
+    treePointer.set({ dropTargetId: null })
   }
 
   const startDrag = (id: string, event: EventPayload) => {
@@ -158,12 +153,15 @@ export function BridgeApp({
     setSelectedIds(next)
     if (!modifiers.range) selectionAnchor.current = id
     press.current = next.has(id) ? { id, x: event.x ?? 0, y: event.y ?? 0 } : null
-    setDraggingId(null)
-    setDropTargetId(null)
+    if (draggingId !== null) setDraggingId(null)
+    treePointer.set({ dropTargetId: null })
   }
 
   const movePointer = (event: EventPayload, rowId?: string) => {
-    if (event.pressedButton !== 0 || pending.current) { endDrag(); return }
+    if (event.pressedButton !== 0 || pending.current) {
+      if (press.current || draggingId) endDrag()
+      return
+    }
     const start = press.current
     if (!start) return
     // A press is selection, not a drag. Native child controls can consume mouse-up,
@@ -171,9 +169,11 @@ export function BridgeApp({
     if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
     const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
     const target = rowId ? findNode(bridge.photoshop, rowId) ?? findNode(bridge.painter, rowId) : null
-    setDraggingId(start.id)
+    if (draggingId !== start.id) setDraggingId(start.id)
     const targetHost = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
-    setDropTargetId(target && target.ref.host === targetHost && source?.ref.host !== targetHost ? rowId! : null)
+    treePointer.set({
+      dropTargetId: target && target.ref.host === targetHost && source?.ref.host !== targetHost ? rowId! : null,
+    })
   }
 
   const drop = (targetId: string) => {
@@ -220,7 +220,7 @@ export function BridgeApp({
     if (JSON.stringify(next) === JSON.stringify(bridge)) return
     mutate(next, "Mapping reset")
     setDraggingId(null)
-    setDropTargetId(null)
+    treePointer.set({ dropTargetId: null })
     setExpanded(collectExpandedIds(next))
     setStatus("Mapping reset")
     setFailed(false)
@@ -244,7 +244,7 @@ export function BridgeApp({
     setHistory([])
     setRedoStack([])
     setDraggingId(null)
-    setDropTargetId(null)
+    treePointer.set({ dropTargetId: null })
     setExpanded(collectExpandedIds(next))
     setStatus(`Target changed · ${context.subtitle}`)
     setFailed(false)
@@ -350,6 +350,27 @@ export function BridgeApp({
       return next
     })
   }
+
+  // Rows are memoized, so the tree receives handlers that never change and
+  // reach the latest state through this ref.
+  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, removeSource })
+  latest.current = { toggle, startDrag, movePointer, endDrag, drop, removeSource }
+  const tree = useMemo(() => ({
+    pointer: treePointer,
+    onToggle: (id: string) => latest.current.toggle(id),
+    onDragStart: (id: string, event: EventPayload) => latest.current.startDrag(id, event),
+    onPointerMove: (event: EventPayload, rowId?: string) => latest.current.movePointer(event, rowId),
+    onDragEnd: () => latest.current.endDrag(),
+    onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
+    onDrop: (id: string) => latest.current.drop(id),
+    onTrackPointer: (event: EventPayload) => {
+      pointer.current.x = event.x ?? pointer.current.x
+      pointer.current.y = event.y ?? pointer.current.y
+      pointer.current.follow?.(pointer.current.x, pointer.current.y)
+    },
+  }), [treePointer])
+  const removePhotoshop = useMemo(() => (id: string) => latest.current.removeSource("photoshop", id), [])
+  const removePainter = useMemo(() => (id: string) => latest.current.removeSource("substance_painter", id), [])
 
   return (
     <TooltipProvider delayDuration={320} skipDelayDuration={250} disableHoverableContent>
@@ -481,20 +502,13 @@ export function BridgeApp({
                 </div>
               )
             }
+            {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} pendingNotes={pendingNotes}
+            pendingNotes={pendingNotes}
             draggingId={draggingId}
             draggingHost={draggingHost}
-            dropTargetId={dropTargetId}
             expanded={expanded}
-            onToggle={toggle}
-            onDragStart={startDrag}
-            onPointerMove={movePointer}
-            onDragEnd={() => endDrag()}
-            onHover={setHoveredId}
-            onDrop={drop}
-            onRemove={(id) => removeSource("photoshop", id)}
-            onTrackPointer={trackPointer}
+            onRemove={removePhotoshop}
             contentKey={session.photoshop?.path ?? ""}
           />
           {/* Mapping help explains both panes, while the toolbar remains reserved for real commands. */}
@@ -505,31 +519,26 @@ export function BridgeApp({
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
+            {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            hoveredId={hoveredId} pendingNotes={pendingNotes}
+            pendingNotes={pendingNotes}
             draggingId={draggingId}
             draggingHost={draggingHost}
-            dropTargetId={dropTargetId}
             expanded={expanded}
-            onToggle={toggle}
-            onDragStart={startDrag}
-            onPointerMove={movePointer}
-            onDragEnd={() => endDrag()}
-            onHover={setHoveredId}
-            onDrop={drop}
-            onRemove={(id) => removeSource("substance_painter", id)}
-            onTrackPointer={trackPointer}
+            onRemove={removePainter}
             contentKey={activePainterContextId}
           />
         </div>
         {/* The status line keeps its space while idle so the first click does
             not shrink both panels; it only fades. */}
-        <motion.div
+        <Motion
+          testId="bridge-status"
+          role="status"
           initial={false}
           animate={{ opacity: status !== session.status || !activePainterContext || selectedIds.size > 0 ? 1 : 0 }}
           transition={{ duration: 0.14, ease: motionEase }}
           style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}
-        ><div testId="bridge-status" role="status">
+        >
             <text style={{
               color: failed ? colors.danger : colors.secondary,
               fontSize: typography.secondarySize,
@@ -539,7 +548,7 @@ export function BridgeApp({
               selectedIds.size ? `${selectedIds.size} selected` : "",
               bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
             ].filter(Boolean).join(" · ") || status}</text>
-        </div></motion.div>
+        </Motion>
         </motion.div>
         </RowMotionContext.Provider>
         <AnimatePresence>
