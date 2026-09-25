@@ -15,7 +15,6 @@ import {
 } from "./transport"
 
 registerBundledFonts()
-const painterLink = createPainterLink(process.stdin, (line) => process.stdout.write(line))
 
 let session: BridgeSession
 try {
@@ -23,6 +22,10 @@ try {
 } catch (error) {
   session = failedBridgeSession(error)
 }
+
+// Keep stdin buffered during asynchronous file loading. Starting its flow
+// earlier loses the automation handshake before GPUiX subscribes in render().
+const painterLink = createPainterLink(process.stdin, (line) => process.stdout.write(line))
 
 // Painter releases the dock action on process exit, not window disappearance.
 // Keep GPUiX's native last-window-close shutdown (requires 0.9.0 on Windows).
