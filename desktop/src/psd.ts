@@ -89,18 +89,19 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
 }
 
 function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: string, parentIndex: number[]): LayerNode[] {
-  // ag-psd lists siblings top to bottom; a clipped layer belongs to the nearest
-  // unclipped layer below it, so walk bottom-up to find each clipping base.
+  // ag-psd keeps the file's order, bottom to top. The mapper, Painter and
+  // Photoshop scripting (document.layers, which index_path walks) all read
+  // top to bottom, so siblings flip here and nowhere else. A clipped layer
+  // belongs to the nearest unclipped layer below it: the one before it here.
   const bases = new Map<Layer, Layer>()
   let base: Layer | null = null
-  for (let index = layers.length - 1; index >= 0; index -= 1) {
-    const layer = layers[index]
+  for (const layer of layers) {
     if (layer.clipping && base) bases.set(layer, base)
     else base = layer
   }
 
-  const nodes = layers.map((layer, index) => {
-    const name = layer.name || `Layer ${index + 1}`
+  const nodes = [...layers].reverse().map((layer, index) => {
+    const name = layer.name || `Layer ${layers.length - index}`
     const layerPath = parentPath ? `${parentPath}/${name}` : name
     const indexPath = [...parentIndex, index]
     // Many production PSDs carry no persistent layer id ("lyid"). Their layers

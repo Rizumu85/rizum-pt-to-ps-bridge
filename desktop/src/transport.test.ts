@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream"
 import { describe, expect, it, vi } from "vitest"
 
 import { inflateSync } from "node:zlib"
+import { writePsdBuffer } from "ag-psd"
 
 import { findNode, transferBetweenHosts } from "./model"
 import { writeFeaturePsd } from "./test-psd"
@@ -164,6 +165,27 @@ describe("desktop file transport", () => {
     expect(tint.note).toBe("Colour fill")
     expect(ramp.locked).toBe("Gradient or pattern fill · not supported")
     expect(transferBetweenHosts(session.state, clipped.id, "substance_painter:sp-working")).toBe(session.state)
+  })
+
+  it("shows a PSD's file order top-down and addresses rows the way Photoshop's layers do", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-order-"))
+    const file = path.join(directory, "order.psd")
+    const pixels = { width: 2, height: 2, data: new Uint8ClampedArray(16).fill(255) }
+    // Raw file order, bottom first, exactly as Photoshop saves siblings.
+    await writeFile(file, writePsdBuffer({
+      width: 2, height: 2, children: [
+        { name: "Bottom", top: 0, left: 0, imageData: pixels },
+        { name: "Shade", clipping: true, top: 0, left: 0, imageData: pixels },
+        { name: "Top", top: 0, left: 0, imageData: pixels },
+      ],
+    }, { generateThumbnail: false, noBackground: true }))
+    const session = await loadBridgeSession({
+      photoshopDocument: file,
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    expect(session.state.photoshop.map(node => node.name)).toEqual(["Top", "Shade", "Bottom"])
+    expect(session.state.photoshop.map(node => node.ref.indexPath)).toEqual([[0], [1], [2]])
+    expect(session.state.photoshop[1].locked).toBe("Clipped · merges into Bottom")
   })
 
   it("sends a colour fill as its colour and mask instead of a bitmap", async () => {

@@ -2,9 +2,18 @@ import { mkdtemp, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { writePsdBuffer } from "ag-psd"
+import { writePsdBuffer, type Layer } from "ag-psd"
 
 import "./psd"
+
+/**
+ * Fixtures are written in reading order, top to bottom like the Layers panel.
+ * A PSD stores siblings bottom to top, so they flip before writing; otherwise
+ * the fixtures describe stacks Photoshop never saves and hide order bugs.
+ */
+export function fileOrder(layers: Layer[]): Layer[] {
+  return [...layers].reverse().map(layer => layer.children ? { ...layer, children: fileOrder(layer.children) } : layer)
+}
 
 /** A PSD exercising clipping, styles, adjustment and fill layers. */
 export async function writeFeaturePsd(): Promise<string> {
@@ -19,7 +28,7 @@ export async function writeFeaturePsd(): Promise<string> {
   await writeFile(file, writePsdBuffer({
     width: size,
     height: size,
-    children: [
+    children: fileOrder([
       {
         id: 10, name: "Paint", blendMode: "pass through", children: [
           { id: 12, name: "Shade", blendMode: "multiply", clipping: true, top: 0, left: 0, imageData: fill([128, 128, 128, 255]) },
@@ -40,7 +49,7 @@ export async function writeFeaturePsd(): Promise<string> {
           type: "solid", name: "", style: "linear", colorStops: [], opacityStops: [],
         } as never,
       },
-    ],
+    ]),
   }, { generateThumbnail: false, noBackground: true }))
   return file
 }

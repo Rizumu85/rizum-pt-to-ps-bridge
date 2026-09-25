@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { writePsdBuffer, type Layer } from "ag-psd"
 
-import "../src/psd"
+import { fileOrder } from "../src/test-psd"
 
 // Regenerates test-fixtures/photoshop_document.psd, the connected document the
 // desktop tests and tools load: two masked/unmasked layers, a plain layer and
@@ -36,7 +36,7 @@ const children: Layer[] = [
 ]
 
 const buffer = writePsdBuffer(
-  { width: size, height: size, children },
+  { width: size, height: size, children: fileOrder(children) },
   { generateThumbnail: false, noBackground: true },
 )
 const output = path.resolve(import.meta.dir, "../test-fixtures/photoshop_document.psd")
