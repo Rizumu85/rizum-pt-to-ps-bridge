@@ -331,17 +331,18 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
         >
           <Icon name="x" size={12} color={colors.secondary} />
         </div> : null}
+        {/* Hover never lights folders, so a drop says where it lands on its own:
+            a framed folder takes the layers inside, a line marks above or below.
+            Drawn inside the header, after its content, so the marks share the
+            hover box exactly and its fill cannot cover them. */}
+        {dropAt === "inside" ? <div
+          testId={`drop-indicator:${node.id}`}
+          style={{
+            position: "absolute", left: 0, right: 0, top: 0, bottom: 0,
+            borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
+          }}
+        /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
       </div>
-      {/* Hover never lights folders, so a drop says where it lands on its own:
-          a framed folder takes the layers inside, a line marks above or below.
-          Drawn after the header so its hover fill cannot cover the mark. */}
-      {dropAt === "inside" ? <div
-        testId={`drop-indicator:${node.id}`}
-        style={{
-          position: "absolute", left: depth * metrics.treeIndent, right: 0, top: 0, height: metrics.rowHeight,
-          borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
-        }}
-      /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} left={depth * metrics.treeIndent + 2} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
     </Motion>
   )
 }, (previous, next) => {
@@ -354,11 +355,14 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
     && (Object.keys(rest) as (keyof typeof rest)[]).every(key => rest[key] === nextRest[key])
 })
 
-/** A 2px insertion line with a dot at its start, inside the row so its clip never hides it. */
-function DropLine({ testId, top, left }: { testId: string; top: number; left: number }) {
+/**
+ * A 2px insertion line with a dot at its start, inside the row header so it
+ * spans exactly the hover box, like the folder frame.
+ */
+function DropLine({ testId, top }: { testId: string; top: number }) {
   return (
     <div testId={testId} style={{
-      position: "absolute", left, right: 4, top, height: 6, pointerEvents: "none",
+      position: "absolute", left: 0, right: 0, top, height: 6, pointerEvents: "none",
       display: "flex", flexDirection: "row", alignItems: "center",
     }}>
       <div style={{ width: 6, height: 6, flexShrink: 0, borderRadius: 3, borderWidth: 1.5, borderColor: colors.drop }} />
