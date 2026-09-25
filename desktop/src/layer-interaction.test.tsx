@@ -26,9 +26,10 @@ async function setup(nested = false, childCount = 0) {
   }
   const root = createTestRoot({ width: 700, height: 560 })
   const app = await connectTest(root.renderer)
-  root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })} onConnectPhotoshop={async () => null} />)
+  const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))
+  root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
   root.renderer.flush()
-  return { root, app, close: async () => { root.unmount(); await app.close() } }
+  return { root, app, apply, close: async () => { root.unmount(); await app.close() } }
 }
 
 function dropMarks(node: TreeNode | null): number {
@@ -38,6 +39,33 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it.each([
+    ["Paint edit", "Working", "Locator", "substance_painter:sp-locator", "layer"],
+    ["Retouch group", "Working", "Locator", "substance_painter:sp-locator", "group"],
+    ["MaskOut", "Retouch group", "Paint edit", "photoshop:ps:100", "PaintLayer"],
+    ["Working", "Retouch group", "Paint edit", "photoshop:ps:100", "GroupLayer"],
+  ])("repositions staged %s on the destination side without duplicating its mapping", async (source, first, second, targetId, kind) => {
+    const { app, root, apply, close } = await setup()
+    try {
+      for (const target of [first, second]) {
+        await app.mouse.down(app.getByText(source))
+        await app.mouse.move(app.getByText(target), { pressedButton: 0 })
+        expect(dropMarks((await app.call("getTree", {})).tree)).toBe(1)
+        await app.mouse.up(app.getByText(target))
+        await app.clock.fastForward(400)
+        root.renderer.flush()
+        root.renderer.dispatchNativeEvents()
+        await vi.waitFor(async () => expect(await app.getByTestId("drag-preview").count()).toBe(0))
+        expect(await app.getByText(source).count()).toBe(1)
+      }
+      await app.getByTestId("apply-mapping").click()
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      const state = apply.mock.calls[0][0]
+      expect(state.mappings).toHaveLength(1)
+      expect(state.mappings[0]).toMatchObject({ targetId, placement: "after", source: { kind } })
+    } finally { await close() }
+  })
+
   it("culls descendants inside large folders and restores compact layout after collapse", async () => {
     const { app, root, close } = await setup(false, 160)
     try {
