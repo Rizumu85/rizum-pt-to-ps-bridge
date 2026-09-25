@@ -179,23 +179,42 @@ export function removeFromHost(
   return removed ? { ...state, [collection]: nodes } : state
 }
 
+/** The selected rows a drop carries: topmost selected nodes of the source host, top to bottom. */
+export function selectionRoots(state: BridgeState, sourceHost: HostId, sourceIds: ReadonlySet<string>): LayerNode[] {
+  const roots: LayerNode[] = []
+  const visit = (nodes: LayerNode[]) => {
+    for (const node of nodes) {
+      if (node.ref.host === sourceHost && sourceIds.has(node.id)) roots.push(node)
+      else if (node.children) visit(node.children)
+    }
+  }
+  const targetHost = sourceHost === "photoshop" ? "substance_painter" : "photoshop"
+  visit(state[hostCollection(sourceHost)])
+  visit(state[hostCollection(targetHost)])
+  return roots
+}
+
 export function transferSelection(state: BridgeState, sourceIds: Set<string>, targetId: string): BridgeState {
   const target = findNode(state.photoshop, targetId) ?? findNode(state.painter, targetId)
   if (!target) return state
   const sourceHost = target.ref.host === "photoshop" ? "substance_painter" : "photoshop"
-  const roots: string[] = []
-  const visit = (nodes: LayerNode[]) => {
-    for (const node of nodes) {
-      if (node.ref.host === sourceHost && sourceIds.has(node.id)) roots.push(node.id)
-      else if (node.children) visit(node.children)
-    }
-  }
-  visit(state[hostCollection(sourceHost)])
-  visit(state[hostCollection(target.ref.host)])
+  const roots = selectionRoots(state, sourceHost, sourceIds).map(node => node.id)
   // After-drops insert against the same anchor; replay bottom-up to preserve
   // the user's top-to-bottom selection order as one undoable batch.
   if (target.kind === "layer") roots.reverse()
   return roots.reduce((next, id) => transferBetweenHosts(next, id, targetId), state)
+}
+
+/** Folder ids enclosing a node, outermost first; null when the node is absent. */
+export function ancestorIds(nodes: LayerNode[], id: string, trail: string[] = []): string[] | null {
+  for (const node of nodes) {
+    if (node.id === id) return trail
+    if (node.children) {
+      const found = ancestorIds(node.children, id, [...trail, node.id])
+      if (found) return found
+    }
+  }
+  return null
 }
 
 export function visibleSourceIds(nodes: LayerNode[], host: HostId, expanded: Set<string>): string[] {

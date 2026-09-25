@@ -25,10 +25,10 @@ async function setup(nested = false) {
   return { root, app, close: async () => { root.unmount(); await app.close() } }
 }
 
-function insertionLines(node: TreeNode | null): number {
+function dropMarks(node: TreeNode | null): number {
   if (!node) return 0
-  return Number(node.testId?.startsWith("drop-indicator:") ?? false)
-    + (node.children ?? []).reduce((sum, child) => sum + insertionLines(child), 0)
+  return Number((node.testId?.startsWith("drop-indicator:") || node.testId === "drop-gap") ?? false)
+    + (node.children ?? []).reduce((sum, child) => sum + dropMarks(child), 0)
 }
 
 describe("layer tree interaction", () => {
@@ -37,13 +37,13 @@ describe("layer tree interaction", () => {
     try {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
-      expect(insertionLines((await app.call("getTree", {})).tree)).toBe(1)
-      expect(await app.getByTestId("drop-indicator:substance_painter:sp-lighten").count()).toBe(1)
+      expect(dropMarks((await app.call("getTree", {})).tree)).toBe(1)
+      expect(await app.getByTestId("drop-gap").count()).toBe(1)
       expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.opacity).toBe(0.65)
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
       root.renderer.flush()
-      expect(insertionLines((await app.call("getTree", {})).tree)).toBe(0)
+      expect(dropMarks((await app.call("getTree", {})).tree)).toBe(0)
       await app.mouse.up(app.getByText("Lighten"))
       expect(await app.getByText("Pending").count()).toBe(0)
     } finally { await close() }
@@ -61,16 +61,38 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
-  it("frames a folder drop target and draws a line for a layer target", async () => {
+  it("frames a folder target and opens a gap the size of the carried rows where they will land", async () => {
     const { app, root, close } = await setup()
     try {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
       expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-working")?.style.borderWidth).toBe(1)
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
-      expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-lighten")?.style.height).toBe(2)
+      expect(await app.getByTestId("drop-indicator:substance_painter:sp-lighten").count()).toBe(0)
+      expect(root.renderer.findByTestId("drop-gap")?.style.height).toBe(metrics.rowHeight)
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
+      const gap = await app.getByTestId("drop-gap").bounds()
+      expect(Math.abs(gap.y - (lighten.y + lighten.height))).toBeLessThan(2)
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
+    } finally { await close() }
+  })
+
+  it("lands dropped rows in the gap without moving the rows below it", async () => {
+    const { app, root, close } = await setup()
+    try {
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      const below = await app.getByText("LC_BaseTextures").bounds()
+      await app.mouse.up(app.getByText("Lighten"))
+      root.renderer.flush()
+      expect((await app.getByText("LC_BaseTextures").bounds()).y).toBeCloseTo(below.y, 0)
+      expect(await app.getByTestId("drop-gap").count()).toBe(0)
+      expect(await app.getByText("Pending").count()).toBe(1)
     } finally { await close() }
   })
 
@@ -81,11 +103,11 @@ describe("layer tree interaction", () => {
       expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.opacity ?? 1).toBe(1)
       await app.mouse.up(app.getByText("Paint edit"))
       await app.getByText("Working").hover()
-      expect(insertionLines((await app.call("getTree", {})).tree)).toBe(0)
+      expect(dropMarks((await app.call("getTree", {})).tree)).toBe(0)
       await app.getByTestId("layer-toggle:substance_painter:sp-working").click()
       expect(root.renderer.findByTestId("layer-row:substance_painter:sp-working")?.style.opacity ?? 1).toBe(1)
       await app.getByText("Retouch group").hover()
-      expect(insertionLines((await app.call("getTree", {})).tree)).toBe(0)
+      expect(dropMarks((await app.call("getTree", {})).tree)).toBe(0)
     } finally { await close() }
   })
 
@@ -96,7 +118,8 @@ describe("layer tree interaction", () => {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       expect(await app.getByTestId("drag-preview").count()).toBe(1)
-      expect(await app.getByText("Paint edit").count()).toBe(2)
+      // The source row, the carried card and its copy in the drop gap.
+      expect(await app.getByText("Paint edit").count()).toBe(3)
       const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
       const chip = await app.getByTestId("drag-preview").bounds()
       expect(chip.y).toBeGreaterThan(lighten.y)
@@ -110,10 +133,10 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
-  it("flies the chip back to its row when a drag does not land", async () => {
+  it("settles the cards back into their row when a drag does not land", async () => {
     const { app, root, close } = await setup()
     try {
-      const home = await app.getByText("Paint edit").center()
+      const home = await app.getByTestId("layer-row:photoshop:ps:100").bounds()
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Mask cleanup"), { pressedButton: 0 })
       const carried = await app.getByTestId("drag-preview").bounds()
@@ -122,7 +145,8 @@ describe("layer tree interaction", () => {
       root.renderer.flush()
       const settled = await app.getByTestId("drag-preview").bounds()
       expect(Math.abs(settled.y - home.y)).toBeLessThan(Math.abs(carried.y - home.y))
-      expect(Math.abs(settled.y - (home.y + 10))).toBeLessThan(20)
+      expect(Math.abs(settled.y - home.y)).toBeLessThan(4)
+      expect(settled.width).toBeGreaterThan(carried.width)
       root.renderer.dispatchNativeEvents()
       expect(await app.getByTestId("drag-preview").count()).toBe(0)
       expect(await app.getByText("Pending").count()).toBe(0)

@@ -653,59 +653,109 @@ export function MappingHelpPopover() {
 }
 
 
+type Bounds = { x: number; y: number; width: number; height: number }
+
 /**
- * The layer the pointer is carrying. It follows the pointer through its own
- * state so a drag re-renders one chip per move, not both layer trees.
+ * The layers the pointer is carrying. It follows the pointer through its own
+ * state so a drag re-renders one preview per move, not both layer trees.
  */
 export type PointerFeed = {
   x: number
   y: number
   follow: ((x: number, y: number) => void) | null
-  /** Where a drag that did not land began; the chip travels back there. */
-  returnTo: { x: number; y: number } | null
+  /** The pressed row: the cards lift off it. */
+  origin: Bounds | null
+  /** Where a drag that did not land began; the cards settle back into it. */
+  returnTo: Bounds | null
 }
 
-export function DragPreview({ label, pointer }: { label: string; pointer: { current: PointerFeed } }) {
-  const [position, setPosition] = useState(() => ({ x: pointer.current.x, y: pointer.current.y }))
+const cardWidth = 200
+const cardHeight = 30
+
+/**
+ * The carried layers as a small stack of cards. They lift off the pressed row
+ * and shrink to the pointer's lower right, so the rows being aimed at stay
+ * visible. A cancelled drag settles them back into their row; a landed one
+ * fades in place, because the drop gap already shows the rows arriving.
+ */
+export function DragPreview({ items, pointer }: {
+  items: readonly { id: string; name: string; thumbnailPath?: string | null }[]
+  pointer: { current: PointerFeed }
+}) {
+  const renderer = useGpuixRequired()
+  // Near the window's right or bottom edge the stack stops at the edge instead
+  // of leaving the window; its offset from the pointer never changes, so no
+  // move restarts its motion.
+  const [bounds] = useState(() => renderer.getWindowSize?.() ?? null)
+  const anchor = (x: number, y: number) => bounds
+    ? { x: Math.min(x, bounds.width - 14 - cardWidth - 12), y: Math.min(y, bounds.height - 10 - cardHeight - 12) }
+    : { x, y }
+  const [position, setPosition] = useState(() => anchor(pointer.current.x, pointer.current.y))
+  const [start] = useState(() => ({ ...anchor(pointer.current.x, pointer.current.y), origin: pointer.current.origin }))
   const present = useIsPresent()
   useLayoutEffect(() => {
-    // A leaving chip stops following, so the pointer cannot fight its exit.
+    // A leaving stack stops following, so the pointer cannot fight its exit.
     if (!present) return
-    const follow = (x: number, y: number) => setPosition({ x, y })
+    const follow = (x: number, y: number) => setPosition(anchor(x, y))
     pointer.current.follow = follow
     // A preview still leaving must not detach the next drag's preview.
     return () => { if (pointer.current.follow === follow) pointer.current.follow = null }
   }, [pointer, present])
-  // A landed drop fades where it was released, since the row now grows in at
-  // the target. A cancelled one flies home so the layer visibly stays put.
   const home = present ? null : pointer.current.returnTo
+  const depth = Math.min(items.length, 3)
+  const first = items[0]
+  const card = (layer: number) => {
+    const offset = layer * 4
+    const carried = { left: 14 + offset, top: 10 + offset, width: cardWidth, height: cardHeight, opacity: [1, 0.7, 0.45][layer] }
+    const rowAt = (bounds: Bounds, x: number, y: number) => ({
+      left: bounds.x - x, top: bounds.y - y, width: bounds.width, height: bounds.height,
+    })
+    return {
+      initial: start.origin ? { ...rowAt(start.origin, start.x, start.y), opacity: layer === 0 ? 1 : 0 } : { ...carried, opacity: 0 },
+      animate: carried,
+      exit: home ? { ...rowAt(home, position.x, position.y), opacity: 0 } : { ...carried, opacity: 0 },
+      transition: home || present ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase },
+    }
+  }
+  const cardStyle = {
+    position: "absolute" as const,
+    borderRadius: metrics.rowRadius,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.control,
+    boxShadow: { offsetX: 0, offsetY: 6, blurRadius: 16, spreadRadius: 0, color: "#00000073" },
+    pointerEvents: "none" as const,
+  }
   return (
-    <Motion
-      testId="drag-preview"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={home ? { opacity: 0, left: home.x + 14, top: home.y + 10 } : { opacity: 0 }}
-      transition={home ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase }}
-      style={{
-        position: "absolute",
-        left: position.x + 14,
-        top: position.y + 10,
-        maxWidth: 220,
-        height: 26,
-        paddingLeft: 9,
-        paddingRight: 9,
-        display: "flex",
-        alignItems: "center",
-        borderRadius: metrics.rowRadius,
-        borderWidth: 1,
-        borderColor: colors.line,
-        backgroundColor: colors.control,
-        boxShadow: { offsetX: 0, offsetY: 4, blurRadius: 12, spreadRadius: 0, color: "#00000066" },
-        // The chip rides under the pointer; it must never become the hit target.
-        pointerEvents: "none",
-      }}
-    >
-      <PrimaryText>{label}</PrimaryText>
-    </Motion>
+    // The stack rides with the pointer; it must never become the hit target.
+    <div style={{ position: "absolute", left: position.x, top: position.y, width: 0, height: 0, pointerEvents: "none" }}>
+      {Array.from({ length: depth - 1 }, (_, index) => depth - 1 - index).map(layer => (
+        <motion.div key={layer} {...card(layer)} style={cardStyle} />
+      ))}
+      <Motion
+        testId="drag-preview"
+        {...card(0)}
+        style={{
+          ...cardStyle, overflow: "hidden", paddingLeft: 8, paddingRight: 8,
+          display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
+        }}
+      >
+        {first.thumbnailPath ? <img
+          src={first.thumbnailPath}
+          alt=""
+          objectFit="cover"
+          style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 3, pointerEvents: "none" }}
+        /> : null}
+        <div style={{ minWidth: 0, flexGrow: 1 }}><PrimaryText>{first.name}</PrimaryText></div>
+        {items.length > 1 ? <div style={{
+          height: 16, minWidth: 16, paddingLeft: 5, paddingRight: 5, flexShrink: 0, borderRadius: 8,
+          display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: colors.text,
+        }}>
+          <text style={{ color: colors.canvas, fontFamily: typography.family, fontSize: 11, fontWeight: 600 }}>
+            {items.length}
+          </text>
+        </div> : null}
+      </Motion>
+    </div>
   )
 }

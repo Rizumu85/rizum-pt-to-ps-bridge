@@ -14,6 +14,8 @@ export const colors = {
   tertiary: "#666666",
   danger: "#FF453A",
   drop: "#E0E0E0",
+  dropGhost: "#FFFFFF08",
+  dropGhostBorder: "#E0E0E059",
   thumbnail: "#505050",
   thumbnailBorder: "#737373",
   maskDark: "#202020",
