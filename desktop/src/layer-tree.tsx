@@ -1,7 +1,6 @@
 import { createContext, memo, useContext, useMemo, useRef, useSyncExternalStore } from "react"
 import { LayerScroll } from "./layer-scroll"
 import {
-  AnimatePresence,
   motion,
   useGpuixRequired,
   useIsPresent,
@@ -122,13 +121,15 @@ function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
  * motion to GPUiX, which made pointer feedback lag behind the cursor.
  */
 export type TreePointer = {
+  draggingId: string | null
+  draggingHost: HostId | null
   hoveredId: string | null
   dropTargetId: string | null
   dropPlacement: Placement | null
 }
 
 export function createTreePointer() {
-  let state: TreePointer = { hoveredId: null, dropTargetId: null, dropPlacement: null }
+  let state: TreePointer = { draggingId: null, draggingHost: null, hoveredId: null, dropTargetId: null, dropPlacement: null }
   const listeners = new Set<() => void>()
   return {
     get: () => state,
@@ -159,8 +160,6 @@ export type TreeInteraction = {
   selectedIds: Set<string>
   mappedIds: Set<string>
   pendingNotes: Map<string, string>
-  draggingId: string | null
-  draggingHost: HostId | null
   expanded: Set<string>
   onToggle: (id: string) => void
   onDragStart: (id: string, event: EventPayload) => void
@@ -171,14 +170,19 @@ export type TreeInteraction = {
   onRemove: (id: string) => void
 }
 
-const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInteraction & { node: LayerNode; depth: number }) {
+type LayerRowProps = TreeInteraction & { node: LayerNode; depth: number }
+
+const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRowProps) {
   const {
-    host, pointer, selectedIds, mappedIds, pendingNotes, draggingId,
-    draggingHost, expanded, onToggle, onDragStart, onPointerMove,
+    host, pointer, selectedIds, mappedIds, pendingNotes,
+    expanded, onToggle, onDragStart, onPointerMove,
     onDragEnd, onHover, onDrop, onRemove,
   } = interaction
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
+  const selected = selectedIds.has(node.id)
+  const draggingHost = usePointer(pointer, state => state.hoveredId === node.id || state.dropTargetId === node.id || selected ? state.draggingHost : null)
+  const dragging = draggingHost !== null
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
   const placement = usePointer(pointer, state => state.dropTargetId === node.id ? state.dropPlacement : null)
   const dropAt = acceptsDrop ? placement : null
@@ -186,11 +190,14 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInt
   const header = useRef<PublicInstance>(null)
   const mapped = mappedIds.has(node.id)
   const hovered = usePointer(pointer, state => state.hoveredId === node.id)
-  const selected = selectedIds.has(node.id)
   const present = useIsPresent()
   const animated = useContext(RowMotionContext).has(node.id)
   const height = metrics.rowHeight
-  const dragging = draggingId !== null
+  const release = () => {
+    const current = pointer.get()
+    if (nativeNode && current.draggingId && current.draggingHost !== host) onDrop(node.id)
+    onDragEnd()
+  }
   // Where in the row the pointer is decides where the drop lands. A layer's
   // upper part places above it, which is the only way to reach the top of a
   // list; its middle keeps meaning "below this layer". A folder's upper edge
@@ -228,15 +235,12 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInt
         // Only the header owns pointer events: a folder's descendants must not
         // replace the hovered row or its drop target through ancestor handlers.
         onMouseEnter={() => onHover(node.id)}
-        onMouseLeave={() => { if (hovered) onHover(null) }}
+        onMouseLeave={() => { if (pointer.get().hoveredId === node.id) onHover(null) }}
         onMouseMove={event => {
-          if (!hovered) onHover(node.id)
+          if (pointer.get().hoveredId !== node.id) onHover(node.id)
           onPointerMove(event, node.id, aim(event))
         }}
-        onMouseUp={() => {
-          if (acceptsDrop && draggingId) onDrop(node.id)
-          onDragEnd()
-        }}
+        onMouseUp={release}
         style={{
           position: "relative",
           height: metrics.rowHeight, flexShrink: 0,
@@ -265,8 +269,9 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInt
         </div>
         <div
           onMouseDown={event => { if (event.button === 0) onDragStart(node.id, event) }}
-          onMouseUp={() => { if (acceptsDrop && draggingId) onDrop(node.id); onDragEnd() }}
-          style={{ minWidth: 0, flexGrow: 1, height: "100%", display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}
+          onMouseUp={release}
+          style={{ minWidth: 0, flexGrow: 1, height: "100%", display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
+            active: node.locked ? undefined : { cursor: "grabbing" } }}
         >
           <LayerThumbnail node={node} />
           <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
@@ -303,6 +308,14 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInt
       /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} left={depth * metrics.treeIndent + 2} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
     </Motion>
   )
+}, (previous, next) => {
+  // Collection identity changes on every selection. Only this row's flags
+  // matter; drag feedback comes from the pointer store, not stale memo props.
+  const { selectedIds: a, mappedIds: b, pendingNotes: c, expanded: d, ...rest } = previous
+  const { selectedIds: e, mappedIds: f, pendingNotes: g, expanded: h, ...nextRest } = next
+  const id = next.node.id
+  return a.has(id) === e.has(id) && b.has(id) === f.has(id) && c.get(id) === g.get(id) && d.has(id) === h.has(id)
+    && (Object.keys(rest) as (keyof typeof rest)[]).every(key => rest[key] === nextRest[key])
 })
 
 /** A 2px insertion line with a dot at its start, inside the row so its clip never hides it. */
@@ -319,6 +332,7 @@ function DropLine({ testId, top, left }: { testId: string; top: number; left: nu
 }
 
 export function HostPanel({
+  dragging,
   panelId,
   title,
   subtitle,
@@ -329,6 +343,7 @@ export function HostPanel({
   contentKey,
   ...interaction
 }: {
+  dragging: boolean
   panelId: "photoshop" | "painter"
   title: string
   subtitle: string
@@ -354,7 +369,7 @@ export function HostPanel({
       onMouseMove={onTrackPointer}
       style={{
         // Rows that accept the drop override this; releasing anywhere else cancels.
-        cursor: interaction.draggingId ? "no-drop" : undefined,
+        cursor: dragging ? "no-drop" : undefined,
         flexGrow: 1,
         flexBasis: 0,
         minWidth: 0,
@@ -420,9 +435,9 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length}><AnimatePresence initial={false}>
+      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length}>
           {rows.map(({ node, depth }) => <LayerRow key={node.id} node={node} depth={depth} {...interaction} />)}
-      </AnimatePresence></LayerScroll></motion.div>}
+      </LayerScroll></motion.div>}
     </div>
   )
 }

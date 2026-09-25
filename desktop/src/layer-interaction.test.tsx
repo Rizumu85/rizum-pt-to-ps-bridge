@@ -39,6 +39,22 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it.each(["photoshop:ps:100", "photoshop:ps:103"])("picks up %s on the first threshold-crossing move without waiting for animation", async id => {
+    const { app, root, close } = await setup()
+    try {
+      const box = await app.getByTestId(`layer-thumbnail:${id}`).bounds()
+      const x = box.x + box.width / 2, y = box.y + box.height / 2
+      root.renderer.nativeSimulateMouseDown(x, y)
+      expect(await app.getByTestId("drag-preview").count()).toBe(0)
+      root.renderer.dispatchMouseMove(x + metrics.dragThreshold + 1, y, 0)
+      root.renderer.flush()
+      const pickedUp = await app.getByTestId("drag-preview").bounds()
+      expect(pickedUp.x).toBeGreaterThan(x + metrics.dragThreshold)
+      expect(pickedUp.y).toBeGreaterThan(y)
+      expect(root.renderer.findByTestId(`layer-row:${id}`)?.style.opacity).toBe(0.65)
+    } finally { await close() }
+  })
+
   it.each([
     ["Paint edit", "Working", "Locator", "substance_painter:sp-locator", "layer"],
     ["Retouch group", "Working", "Locator", "substance_painter:sp-locator", "group"],
@@ -71,15 +87,20 @@ describe("layer tree interaction", () => {
     try {
       await new Promise(resolve => setTimeout(resolve, 300))
       const list = root.renderer.findByTestId("layer-scroll:painter")!.id
-      const last = root.renderer.findByTestId("layer-row:large-child-159")!.id
-      expect(root.renderer.getElementBounds(last)).toBeNull()
+      expect(root.renderer.findByTestId("layer-row:large-child-159")).toBeUndefined()
       root.renderer.scrollToItem(list, 162)
       root.renderer.flush()
       root.renderer.dispatchNativeEvents()
-      expect(root.renderer.getElementBounds(last)).not.toBeNull()
+      await vi.waitFor(() => {
+        root.renderer.flush()
+        root.renderer.dispatchNativeEvents()
+        const last = root.renderer.findByTestId("layer-row:large-child-159")
+        expect(last && root.renderer.getElementBounds(last.id)).toBeTruthy()
+      })
       root.renderer.scrollToItem(list, 0)
       root.renderer.flush()
       root.renderer.dispatchNativeEvents()
+      await vi.waitFor(async () => expect(await app.getByTestId("layer-toggle:substance_painter:sp-working").count()).toBe(1))
       await app.getByTestId("layer-toggle:substance_painter:sp-working").click()
       await app.clock.fastForward(400)
       root.renderer.flush()
@@ -95,7 +116,12 @@ describe("layer tree interaction", () => {
       expect(await app.getByTestId("layer-row:large-child-0").count()).toBe(1)
       root.renderer.scrollToItem(list, 162)
       root.renderer.flush()
-      expect(root.renderer.getElementBounds(root.renderer.findByTestId("layer-row:large-child-159")!.id)).not.toBeNull()
+      await vi.waitFor(() => {
+        root.renderer.flush()
+        root.renderer.dispatchNativeEvents()
+        const last = root.renderer.findByTestId("layer-row:large-child-159")
+        expect(last && root.renderer.getElementBounds(last.id)).toBeTruthy()
+      })
     } finally { await close() }
   })
   it("shows only the actual drag target and clears it on Escape", async () => {
@@ -198,7 +224,9 @@ describe("layer tree interaction", () => {
       const chip = await app.getByTestId("drag-preview").bounds()
       expect(chip.y).toBeGreaterThan(lighten.y)
       expect(root.renderer.findByTestId("layer-row:substance_painter:sp-lighten")?.style.cursor).toBe("grabbing")
+      await app.mouse.move(app.getByText("Color pass"), { pressedButton: 0 })
       expect(root.renderer.findByTestId("layer-row:photoshop:ps:101")?.style.cursor).toBe("no-drop")
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       await app.mouse.up(app.getByText("Lighten"))
       await app.clock.fastForward(400)
       root.renderer.flush()

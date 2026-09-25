@@ -672,8 +672,6 @@ export type PointerFeed = {
   x: number
   y: number
   follow: ((x: number, y: number) => void) | null
-  /** The pressed row: the cards lift off it. */
-  origin: Bounds | null
   /** Where a drag that did not land began; the cards settle back into it. */
   returnTo: Bounds | null
 }
@@ -682,9 +680,8 @@ const cardWidth = 200
 const cardHeight = 30
 
 /**
- * The carried layers as a small stack of cards. They lift off the pressed row
- * and shrink to the pointer's lower right, so the rows being aimed at stay
- * visible. A cancelled drag settles them back into their row; a landed one
+ * Carried layers follow the pointer immediately, leaving the target visible.
+ * A cancelled drag settles them back into their row; a landed one
  * fades in place, because the drop gap already shows the rows arriving.
  */
 export function DragPreview({ items, pointer }: {
@@ -700,7 +697,6 @@ export function DragPreview({ items, pointer }: {
     ? { x: Math.min(x, bounds.width - 14 - cardWidth - 12), y: Math.min(y, bounds.height - 10 - cardHeight - 12) }
     : { x, y }
   const [position, setPosition] = useState(() => anchor(pointer.current.x, pointer.current.y))
-  const [start] = useState(() => ({ ...anchor(pointer.current.x, pointer.current.y), origin: pointer.current.origin }))
   const present = useIsPresent()
   useLayoutEffect(() => {
     // A leaving stack stops following, so the pointer cannot fight its exit.
@@ -720,7 +716,9 @@ export function DragPreview({ items, pointer }: {
       left: bounds.x - x, top: bounds.y - y, width: bounds.width, height: bounds.height,
     })
     return {
-      initial: start.origin ? { ...rowAt(start.origin, start.x, start.y), opacity: layer === 0 ? 1 : 0 } : { ...carried, opacity: 0 },
+      // Pickup is continuous input, not an entrance to wait for. Only a
+      // cancelled drop animates home; the carried card starts at the pointer.
+      initial: carried,
       animate: carried,
       exit: home ? { ...rowAt(home, position.x, position.y), opacity: 0 } : { ...carried, opacity: 0 },
       transition: home || present ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase },

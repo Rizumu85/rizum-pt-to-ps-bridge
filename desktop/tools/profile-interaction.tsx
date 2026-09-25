@@ -29,6 +29,17 @@ for (const size of sizes.length ? sizes : [32, 160]) {
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     }
     const targets = Array.from({ length: 8 }, (_, i) => point(`layer-row:perf-${i}`))
+    const source = point("layer-thumbnail:photoshop:ps:100")
+    const pressed = performance.now()
+    root.renderer.nativeSimulateMouseDown(source.x, source.y)
+    const moved = performance.now()
+    root.renderer.dispatchMouseMove(source.x + 8, source.y, 0)
+    root.renderer.flush()
+    console.log(JSON.stringify({ rows: size, phase: "pickup", pressMs: Number((moved - pressed).toFixed(2)),
+      firstMoveMs: Number((performance.now() - moved).toFixed(2)) }))
+    root.renderer.nativeSimulateMouseUp(source.x + 8, source.y)
+    root.renderer.clockFastForward(400)
+    root.renderer.dispatchNativeEvents()
     for (const phase of ["hover", "drag", "scroll"] as const) {
       if (phase === "drag") {
         const source = point("layer-thumbnail:photoshop:ps:100")

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   AnimatePresence,
   motion,
@@ -61,11 +61,12 @@ export function BridgeApp({
   const [history, setHistory] = useState<BridgeState[]>([])
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
-  const [draggingId, setDraggingId] = useState<string | null>(null)
   const press = useRef<{ id: string; x: number; y: number; bounds: ElementBounds | null } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const selectionAnchor = useRef<string | null>(null)
   const [treePointer] = useState(createTreePointer)
+  const draggingId = useSyncExternalStore(treePointer.subscribe, () => treePointer.get().draggingId)
+  const draggingHost = useSyncExternalStore(treePointer.subscribe, () => treePointer.get().draggingHost)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
@@ -74,7 +75,7 @@ export function BridgeApp({
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
-  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, origin: null, returnTo: null })
+  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, returnTo: null })
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
@@ -87,11 +88,6 @@ export function BridgeApp({
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
-  const draggingHost = useMemo(() => {
-    if (!draggingId) return null
-    const node = findNode(bridge.photoshop, draggingId) ?? findNode(bridge.painter, draggingId)
-    return node?.ref.host ?? null
-  }, [bridge, draggingId])
   const carried = useMemo(
     () => draggingHost ? selectionRoots(bridge, draggingHost, selectedIds) : [],
     [bridge, draggingHost, selectedIds],
@@ -138,8 +134,7 @@ export function BridgeApp({
   const endDrag = (landed = false) => {
     pointer.current.returnTo = !landed && draggingId ? press.current?.bounds ?? null : null
     press.current = null
-    if (draggingId !== null) setDraggingId(null)
-    treePointer.set({ dropTargetId: null, dropPlacement: null })
+    treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
   const startDrag = (id: string, event: EventPayload) => {
@@ -158,8 +153,7 @@ export function BridgeApp({
     press.current = next.has(id)
       ? { id, x: event.x ?? 0, y: event.y ?? 0, bounds: renderer.getElementBounds?.(event.elementId) ?? null }
       : null
-    if (draggingId !== null) setDraggingId(null)
-    treePointer.set({ dropTargetId: null, dropPlacement: null })
+    treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
   const movePointer = (event: EventPayload, rowId?: string, placement?: Placement) => {
@@ -175,8 +169,9 @@ export function BridgeApp({
     const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
     if (!source) return
     if (draggingId !== start.id) {
-      pointer.current.origin = start.bounds
-      setDraggingId(start.id)
+      pointer.current.x = event.x ?? start.x
+      pointer.current.y = event.y ?? start.y
+      treePointer.set({ draggingId: start.id, draggingHost: source.ref.host })
     }
     const targetHost: HostId = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
     const targetTree = targetHost === "photoshop" ? bridge.photoshop : bridge.painter
@@ -533,8 +528,7 @@ export function BridgeApp({
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
             pendingNotes={pendingNotes}
-            draggingId={draggingId}
-            draggingHost={draggingHost}
+            dragging={draggingId !== null}
             expanded={expanded}
             onRemove={removePhotoshop}
             contentKey={session.photoshop?.path ?? ""}
@@ -550,8 +544,7 @@ export function BridgeApp({
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
             pendingNotes={pendingNotes}
-            draggingId={draggingId}
-            draggingHost={draggingHost}
+            dragging={draggingId !== null}
             expanded={expanded}
             onRemove={removePainter}
             contentKey={activePainterContextId}

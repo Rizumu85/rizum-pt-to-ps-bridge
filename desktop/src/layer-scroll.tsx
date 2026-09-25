@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
+import { AnimatePresence, useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
 import { colors, metrics as themeMetrics } from "./theme"
 
-export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string; children: ReactNode; layoutKey: unknown; rowCount: number }) {
+export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string; children: ReactNode[]; layoutKey: unknown; rowCount: number }) {
   const renderer = useGpuixRequired()
   const windowSize = useWindowSize()
   const viewport = useRef<PublicInstance>(null)
   const track = useRef<PublicInstance>(null)
   const drag = useRef<{ y: number; offset: number } | null>(null)
   const [metrics, setMetrics] = useState({ height: 0, total: 0, offset: 0 })
+  const [range, setRange] = useState({ start: 0, end: 32 })
+  const start = Math.min(range.start, Math.max(0, rowCount - 1))
 
   const anchorOffset = (anchor: number[]) => Math.max(0, Math.min(
     Math.max(0, rowCount * themeMetrics.rowHeight - anchor[2]),
@@ -46,7 +48,10 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
 
   return <div
     style={{ display: "flex", flexDirection: "row", flexGrow: 1, flexBasis: 0, minHeight: 0 }}>
-    <virtual-list ref={viewport} testId={`layer-scroll:${id}`} estimatedItemHeight={themeMetrics.rowHeight} overdraw={64} onVisibleRange={() => {
+    <virtual-list ref={viewport} testId={`layer-scroll:${id}`} itemCount={rowCount} windowStart={start}
+      estimatedItemHeight={themeMetrics.rowHeight} overdraw={64} onVisibleRange={event => {
+      const next = { start: Math.max(0, (event.startIndex ?? 0) - 8), end: (event.endIndex ?? 24) + 8 }
+      setRange(previous => previous.start === next.start && previous.end === next.end ? previous : next)
       if (!viewport.current) return
       const anchor = renderer.getListScrollTop?.(viewport.current.id)
       if (!anchor) return
@@ -54,7 +59,9 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
       setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })
     }}
       style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, margin: 8 }}>
-        {children}
+        {/* Window changes are scrolling, not removals. Never animate recycled
+            rows out or replay pickup animations as they enter the viewport. */}
+        <AnimatePresence key={start} initial={false}>{children.slice(start, Math.max(start + 1, range.end))}</AnimatePresence>
     </virtual-list>
     <div ref={track} testId={`layer-scrollbar:${id}`}
       onMouseDown={event => {
