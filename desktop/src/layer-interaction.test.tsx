@@ -191,6 +191,26 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
+  it("ends a held drag when undo replaces its source tree", async () => {
+    const { app, root, close } = await setup()
+    try {
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      await app.mouse.up(app.getByText("Lighten"))
+      await app.clock.fastForward(400)
+      root.renderer.dispatchNativeEvents()
+      await app.mouse.down(app.getByText("Mask cleanup"))
+      await app.mouse.move(app.getByText("Recolor"), { pressedButton: 0 })
+      root.renderer.simulateKeystrokes("ctrl-z")
+      root.renderer.dispatchNativeEvents()
+      await app.clock.fastForward(400)
+      root.renderer.dispatchNativeEvents()
+      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      expect(dropMarks((await app.call("getTree", {})).tree)).toBe(0)
+      await vi.waitFor(async () => expect(await app.getByTestId("drag-preview").count()).toBe(0))
+    } finally { await close() }
+  })
+
   it("aligns sibling folders and layers and indents children exactly one step", async () => {
     const { app, close } = await setup()
     try {

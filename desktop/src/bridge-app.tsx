@@ -204,6 +204,9 @@ export function BridgeApp({
     if (pending.current) return
     const previous = history.at(-1)
     if (!previous) return
+    // A replaced tree invalidates the pressed row and its original geometry.
+    endDrag(true)
+    selectionAnchor.current = null
     setRedoStack((current) => [...current, cloneState(bridge)])
     setMotionIds(new Set())
     setBridge(previous)
@@ -217,6 +220,8 @@ export function BridgeApp({
     if (pending.current) return
     const next = redoStack.at(-1)
     if (!next) return
+    endDrag(true)
+    selectionAnchor.current = null
     setHistory((current) => [...current, cloneState(bridge)])
     setMotionIds(new Set())
     setBridge(next)
@@ -232,8 +237,8 @@ export function BridgeApp({
     // Reset is an edit to the staging area, not a destructive history boundary.
     if (JSON.stringify(next) === JSON.stringify(bridge)) return
     mutate(next, "Mapping reset")
-    setDraggingId(null)
-    treePointer.set({ dropTargetId: null })
+    endDrag(true)
+    selectionAnchor.current = null
     setExpanded(collectExpandedIds(next))
     setStatus("Mapping reset")
     setFailed(false)
@@ -256,8 +261,8 @@ export function BridgeApp({
     setSelectedIds(new Set())
     setHistory([])
     setRedoStack([])
-    setDraggingId(null)
-    treePointer.set({ dropTargetId: null })
+    endDrag(true)
+    selectionAnchor.current = null
     setExpanded(collectExpandedIds(next))
     setStatus(`Target changed · ${context.subtitle}`)
     setFailed(false)
@@ -275,6 +280,7 @@ export function BridgeApp({
 
   const apply = async () => {
     if (pending.current) return
+    endDrag(true)
     pending.current = true
     setBusy(true)
     setApplying(true)
@@ -298,6 +304,8 @@ export function BridgeApp({
   // Taking a new session keeps the Painter target the user chose; mappings
   // are always empty here, so nothing staged can land on the wrong document.
   const adoptSession = (next: BridgeSession, message: string) => {
+    endDrag(true)
+    selectionAnchor.current = null
     const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
       ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
       ?? null
@@ -328,6 +336,7 @@ export function BridgeApp({
     setBusy(true)
     setFailed(false)
     setStatus(working)
+    endDrag(true)
     try {
       const next = await load()
       if (next) adoptSession(next, next.status)
