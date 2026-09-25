@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { useGpuixRequired, type PublicInstance } from "@gpuix/react"
+import { useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
 import { colors } from "./theme"
 
-export function LayerScroll({ id, children }: { id: string; children: ReactNode }) {
+export function LayerScroll({ id, children, layoutKey }: { id: string; children: ReactNode; layoutKey: unknown }) {
   const renderer = useGpuixRequired()
+  const windowSize = useWindowSize()
   const viewport = useRef<PublicInstance>(null)
   const content = useRef<PublicInstance>(null)
   const track = useRef<PublicInstance>(null)
@@ -20,26 +21,13 @@ export function LayerScroll({ id, children }: { id: string; children: ReactNode 
     setMetrics(previous => previous.height === next.height && previous.total === next.total
       && previous.offset === next.offset ? previous : next)
   }
-  const lastPointerMeasure = useRef(0)
-
-  // Native layout and collapse animations change geometry outside React
-  // commits, so read the real bounds instead of estimating from layer counts.
-  // Measure on events only: a steady polling timer kept the idle mapper busy
-  // enough to compete with Painter. A commit starts a burst that outlasts the
-  // 200ms collapse animation; scroll and pointer movement cover the rest,
-  // including window resizes, which GPUiX reports no event for.
+  // Geometry belongs to structural changes, not pointer feedback. Measuring
+  // after every scrollbar commit creates extra native layouts while scrolling.
   useEffect(() => {
     measure()
     const timers = [60, 140, 260].map(delay => setTimeout(measure, delay))
     return () => timers.forEach(clearTimeout)
-  })
-
-  const measureOnPointer = () => {
-    const now = Date.now()
-    if (now - lastPointerMeasure.current < 100) return
-    lastPointerMeasure.current = now
-    measure()
-  }
+  }, [layoutKey, windowSize.width, windowSize.height])
 
   const maximum = Math.max(0, metrics.total - metrics.height)
   const thumb = Math.min(metrics.height, Math.max(28, metrics.height * metrics.height / Math.max(1, metrics.total)))
@@ -51,9 +39,13 @@ export function LayerScroll({ id, children }: { id: string; children: ReactNode 
     setMetrics(previous => ({ ...previous, offset: value }))
   }
 
-  return <div onMouseMove={measureOnPointer} onMouseEnter={measure}
+  return <div
     style={{ display: "flex", flexDirection: "row", flexGrow: 1, flexBasis: 0, minHeight: 0 }}>
-    <div ref={viewport} testId={`layer-scroll:${id}`} onScroll={measure}
+    <div ref={viewport} testId={`layer-scroll:${id}`} onScroll={() => {
+      if (!viewport.current) return
+      const offset = -(renderer.getScrollOffset?.(viewport.current.id)?.[1] ?? 0)
+      setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })
+    }}
       style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, overflowY: "scroll", overflowX: "hidden" }}>
       <div ref={content} style={{ display: "flex", flexDirection: "column", minHeight: "100%", padding: 8, flexShrink: 0 }}>
         {children}
@@ -61,6 +53,7 @@ export function LayerScroll({ id, children }: { id: string; children: ReactNode 
     </div>
     <div ref={track} testId={`layer-scrollbar:${id}`}
       onMouseDown={event => {
+        if (event.button !== 0) return
         const box = track.current && renderer.getElementBounds?.(track.current.id)
         if (!box || !maximum) return
         const y = (event.y ?? box.y) - box.y
@@ -71,6 +64,8 @@ export function LayerScroll({ id, children }: { id: string; children: ReactNode 
         drag.current = { y: event.y ?? 0, offset }
       }}
       onMouseMove={event => {
+        // Mouse-up can occur outside this track or even outside the window.
+        if (event.pressedButton !== 0) { drag.current = null; return }
         if (drag.current) scroll(drag.current.offset + ((event.y ?? 0) - drag.current.y) * maximum / Math.max(1, travel))
       }}
       onMouseUp={() => { drag.current = null }}

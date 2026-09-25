@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useRef, useSyncExternalStore } from "react"
+import { createContext, memo, useContext, useMemo, useRef, useSyncExternalStore } from "react"
 import { LayerScroll } from "./layer-scroll"
 import {
   AnimatePresence,
@@ -363,6 +363,7 @@ export function HostPanel({
   // read as a glitch. Reloads, Apply refreshes and the window's first frame
   // keep the key, so they stay instant.
   const shown = useRef({ key: contentKey, fade: false })
+  const layoutKey = useMemo(() => ({}), [nodes, interaction.expanded])
   if (shown.current.key !== contentKey) shown.current = { key: contentKey, fade: true }
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
@@ -438,7 +439,7 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId}><AnimatePresence initial={false}>
+      ><LayerScroll id={panelId} layoutKey={layoutKey}><AnimatePresence initial={false}>
           {nodes.map(node => <LayerRow key={node.id} node={node} {...interaction} />)}
       </AnimatePresence></LayerScroll></motion.div>}
     </div>
