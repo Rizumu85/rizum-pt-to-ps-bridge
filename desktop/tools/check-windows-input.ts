@@ -41,6 +41,23 @@ try {
   child.stdin.write(`${JSON.stringify({ type: "photoshop_connected", psd })}\n`)
   await app.getByText("Paint edit").waitFor({ timeoutMs: 5000 })
   if (child.exitCode !== null) throw new Error(`Connect closed the mapper: ${child.exitCode}`)
+  // Real Win32 moves over a row are handled inside the native list, unlike
+  // the synthetic moves unit tests send, so only this proves the carried
+  // card keeps up while the pointer sweeps across a row.
+  const source = await app.getByText("Paint edit").center()
+  const row = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
+  const sweepY = row.y + row.height * 0.7
+  const sweep = [`down:${source.x}:${source.y}:30`, `move:${source.x + 10}:${source.y}:30`]
+  for (let step = 0; step <= 12; step++) sweep.push(`move:${row.x + 30 + step * 10}:${sweepY}:12`)
+  const drag = Bun.spawn(["python", "tools/windows-drag.py", String(child.pid), ...sweep], { stdout: "inherit", stderr: "inherit" })
+  if (await drag.exited) throw new Error("Win32 drag failed")
+  await Bun.sleep(100)
+  const card = await app.getByTestId("drag-preview").bounds()
+  const lag = Math.abs(card.x + card.width / 2 - (row.x + 150))
+  if (lag > 20) throw new Error(`The carried card is ${lag.toFixed(0)}px behind the pointer over a row`)
+  const release = Bun.spawn(["python", "tools/windows-drag.py", String(child.pid), `up:${source.x}:${source.y}:30`])
+  await release.exited
+  await Bun.sleep(300)
   await app.mouse.down(app.getByText("Paint edit"))
   await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
   await app.mouse.up(app.getByText("Working"))

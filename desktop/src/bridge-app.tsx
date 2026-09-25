@@ -395,20 +395,29 @@ export function BridgeApp({
   // reach the latest state through this ref.
   const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, removeSource })
   latest.current = { toggle, startDrag, movePointer, endDrag, drop, removeSource }
+  // Real Win32 moves over a row stay with the row's handler inside the native
+  // list and do not reach the panel, so rows feed the carried card too;
+  // without it the card froze over every row. The follower drops repeated
+  // coordinates when both report the same move.
+  const carry = (event: EventPayload) => {
+    pointer.current.x = event.x ?? pointer.current.x
+    pointer.current.y = event.y ?? pointer.current.y
+    pointer.current.follow?.(pointer.current.x, pointer.current.y)
+  }
   const tree = useMemo(() => ({
     pointer: treePointer,
     onToggle: (id: string) => latest.current.toggle(id),
     onDragStart: (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => latest.current.startDrag(id, event, readBounds),
-    onPointerMove: (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) =>
-      latest.current.movePointer(event, rowId, readBounds),
+    onPointerMove: (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) => {
+      latest.current.movePointer(event, rowId, readBounds)
+      carry(event)
+    },
     onDragEnd: () => latest.current.endDrag(),
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
     onTrackPointer: (event: EventPayload) => {
       if (!treePointer.get().draggingId || event.pressedButton !== 0) latest.current.movePointer(event)
-      pointer.current.x = event.x ?? pointer.current.x
-      pointer.current.y = event.y ?? pointer.current.y
-      pointer.current.follow?.(pointer.current.x, pointer.current.y)
+      carry(event)
     },
   }), [treePointer])
   const removePhotoshop = useMemo(() => (id: string) => latest.current.removeSource("photoshop", id), [])

@@ -59,6 +59,26 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
+  it("keeps the carried card centred under the pointer across layer and folder rows", async () => {
+    const { app, root, close } = await setup()
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    try {
+      await app.mouse.down(app.getByText("Paint edit"))
+      for (const id of ["photoshop:ps:101", "substance_painter:sp-lighten", "substance_painter:sp-working", "substance_painter:sp-recolor"]) {
+        const row = await app.getByTestId(`layer-row:${id}`).bounds()
+        const x = row.x + row.width * 0.3, y = row.y + row.height * 0.7
+        await app.mouse.move({ x, y }, { pressedButton: 0 })
+        root.renderer.flush()
+        await wait(30)
+        root.renderer.flush()
+        const card = await app.getByTestId("drag-preview").bounds()
+        // Hung centred below the pointer, clear of the row being aimed at.
+        expect(Math.abs(card.x + card.width / 2 - x)).toBeLessThan(12)
+        expect(card.y).toBeGreaterThan(y + 16)
+      }
+    } finally { await close() }
+  })
+
   it.each(["photoshop:ps:100", "photoshop:ps:103"])("picks up %s when the first move lands in the panel gutter", async id => {
     const { app, root, close } = await setup()
     try {
@@ -86,8 +106,10 @@ describe("layer tree interaction", () => {
       root.renderer.dispatchMouseMove(x + metrics.dragThreshold + 1, y, 0)
       root.renderer.flush()
       const pickedUp = await app.getByTestId("drag-preview").bounds()
-      expect(pickedUp.x).toBeGreaterThan(x + metrics.dragThreshold)
+      // Below the pointer, and pushed right only as far as the window edge needs.
       expect(pickedUp.y).toBeGreaterThan(y)
+      expect(pickedUp.x).toBeGreaterThan(0)
+      expect(pickedUp.x).toBeLessThanOrEqual(x)
       expect(root.renderer.findByTestId(`layer-row:${id}`)?.style.opacity).toBe(0.65)
     } finally { await close() }
   })

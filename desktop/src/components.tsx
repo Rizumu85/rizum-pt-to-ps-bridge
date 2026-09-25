@@ -678,25 +678,32 @@ export type PointerFeed = {
   returnTo: Bounds | null
 }
 
-const cardWidth = 200
+const cardWidth = 180
 const cardHeight = 30
+// The stack hangs centred below the pointer, clear of the row being aimed at.
+const cardDrop = 24
 
 /**
  * Carried layers follow the pointer immediately, leaving the target visible.
- * A cancelled drag settles them back into their row; a landed one
- * fades in place, because the drop gap already shows the rows arriving.
+ * A cancelled drag settles them back into their row; a landed one fades in
+ * place while its rows fade in at the target.
  */
 export function DragPreview({ items, pointer }: {
   items: readonly { id: string; name: string; thumbnailPath?: string | null }[]
   pointer: { current: PointerFeed }
 }) {
   const renderer = useGpuixRequired()
-  // Near the window's right or bottom edge the stack stops at the edge instead
-  // of leaving the window; its offset from the pointer never changes, so no
-  // move restarts its motion.
+  // The stack stops at the window edge instead of leaving it. Centred under
+  // the pointer, it only stops in the outer half card width; hung to the
+  // pointer's right, it stopped across most of the right panel and looked
+  // frozen. Its offset from the pointer never changes, so no move restarts
+  // its motion.
   const [bounds] = useState(() => renderer.getWindowSize?.() ?? null)
   const anchor = (x: number, y: number) => bounds
-    ? { x: Math.min(x, bounds.width - 14 - cardWidth - 12), y: Math.min(y, bounds.height - 10 - cardHeight - 12) }
+    ? {
+      x: Math.max(12 + cardWidth / 2, Math.min(x, bounds.width - 12 - cardWidth / 2)),
+      y: Math.min(y, bounds.height - cardDrop - cardHeight - 12),
+    }
     : { x, y }
   const position = useRef(anchor(pointer.current.x, pointer.current.y))
   const carrier = useRef<PublicInstance>(null)
@@ -737,7 +744,10 @@ export function DragPreview({ items, pointer }: {
   const first = items[0]
   const card = (layer: number) => {
     const offset = layer * 4
-    const carried = { left: 14 + offset, top: 10 + offset, width: cardWidth, height: cardHeight, opacity: [1, 0.7, 0.45][layer] }
+    const carried = {
+      left: offset - cardWidth / 2, top: cardDrop + offset, width: cardWidth, height: cardHeight,
+      opacity: [1, 0.7, 0.45][layer],
+    }
     const rowAt = (bounds: Bounds, x: number, y: number) => ({
       left: bounds.x - x, top: bounds.y - y, width: bounds.width, height: bounds.height,
     })
