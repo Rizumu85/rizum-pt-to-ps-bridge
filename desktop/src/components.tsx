@@ -680,8 +680,8 @@ export type PointerFeed = {
 
 const cardWidth = 180
 const cardHeight = 30
-// The stack hangs centred below the pointer, clear of the row being aimed at.
-const cardDrop = 24
+// The stack hangs off the pointer's lower right, like a system drag image.
+const cardGap = { x: 14, y: 10 }
 
 /**
  * Carried layers follow the pointer immediately, leaving the target visible.
@@ -693,18 +693,23 @@ export function DragPreview({ items, pointer }: {
   pointer: { current: PointerFeed }
 }) {
   const renderer = useGpuixRequired()
-  // The stack stops at the window edge instead of leaving it. Centred under
-  // the pointer, it only stops in the outer half card width; hung to the
-  // pointer's right, it stopped across most of the right panel and looked
-  // frozen. Its offset from the pointer never changes, so no move restarts
-  // its motion.
+  // Where the lower right would leave the window, the stack moves to the
+  // pointer's lower left and keeps following. Pinning it to the edge instead
+  // froze it across most of the right panel, which read as the app hanging.
+  // The 40px band stops it flipping back and forth at the boundary. The flip
+  // moves the carrier, never the cards' offset, so no move restarts motion.
   const [bounds] = useState(() => renderer.getWindowSize?.() ?? null)
-  const anchor = (x: number, y: number) => bounds
-    ? {
-      x: Math.max(12 + cardWidth / 2, Math.min(x, bounds.width - 12 - cardWidth / 2)),
-      y: Math.min(y, bounds.height - cardDrop - cardHeight - 12),
+  const flipped = useRef(false)
+  const anchor = (x: number, y: number) => {
+    if (!bounds) return { x, y }
+    const room = bounds.width - 12 - (x + cardGap.x + cardWidth)
+    if (room < 0) flipped.current = true
+    else if (room > 40) flipped.current = false
+    return {
+      x: flipped.current ? Math.max(12 - cardGap.x, x - 2 * cardGap.x - cardWidth) : x,
+      y: Math.min(y, bounds.height - cardGap.y - cardHeight - 12),
     }
-    : { x, y }
+  }
   const position = useRef(anchor(pointer.current.x, pointer.current.y))
   const carrier = useRef<PublicInstance>(null)
   const carrierStyle = (point: { x: number; y: number }) => ({
@@ -745,7 +750,7 @@ export function DragPreview({ items, pointer }: {
   const card = (layer: number) => {
     const offset = layer * 4
     const carried = {
-      left: offset - cardWidth / 2, top: cardDrop + offset, width: cardWidth, height: cardHeight,
+      left: cardGap.x + offset, top: cardGap.y + offset, width: cardWidth, height: cardHeight,
       opacity: [1, 0.7, 0.45][layer],
     }
     const rowAt = (bounds: Bounds, x: number, y: number) => ({

@@ -53,7 +53,8 @@ try {
   if (await drag.exited) throw new Error("Win32 drag failed")
   await Bun.sleep(100)
   const card = await app.getByTestId("drag-preview").bounds()
-  const lag = Math.abs(card.x + card.width / 2 - (row.x + 150))
+  const pointerX = row.x + 150
+  const lag = Math.min(Math.abs(card.x - (pointerX + 14)), Math.abs(card.x + card.width - (pointerX - 14)))
   if (lag > 20) throw new Error(`The carried card is ${lag.toFixed(0)}px behind the pointer over a row`)
   const release = Bun.spawn(["python", "tools/windows-drag.py", String(child.pid), `up:${source.x}:${source.y}:30`])
   await release.exited
