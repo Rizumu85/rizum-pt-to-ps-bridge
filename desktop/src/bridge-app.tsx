@@ -61,7 +61,7 @@ export function BridgeApp({
   const [history, setHistory] = useState<BridgeState[]>([])
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
-  const press = useRef<{ id: string; x: number; y: number; bounds: ElementBounds | null } | null>(null)
+  const press = useRef<{ id: string; x: number; y: number; bounds: ElementBounds | null; selectedIds: Set<string> } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const selectionAnchor = useRef<string | null>(null)
   const [treePointer] = useState(createTreePointer)
@@ -132,7 +132,7 @@ export function BridgeApp({
   }
 
   const endDrag = (landed = false) => {
-    pointer.current.returnTo = !landed && draggingId ? press.current?.bounds ?? null : null
+    pointer.current.returnTo = !landed && treePointer.get().draggingId ? press.current?.bounds ?? null : null
     press.current = null
     treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
@@ -151,14 +151,14 @@ export function BridgeApp({
     setSelectedIds(next)
     if (!modifiers.range) selectionAnchor.current = id
     press.current = next.has(id)
-      ? { id, x: event.x ?? 0, y: event.y ?? 0, bounds: renderer.getElementBounds?.(event.elementId) ?? null }
+      ? { id, x: event.x ?? 0, y: event.y ?? 0, bounds: renderer.getElementBounds?.(event.elementId) ?? null, selectedIds: next }
       : null
     treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
   const movePointer = (event: EventPayload, rowId?: string, placement?: Placement) => {
     if (event.pressedButton !== 0 || pending.current) {
-      if (press.current || draggingId) endDrag()
+      if (press.current || treePointer.get().draggingId) endDrag()
       return
     }
     const start = press.current
@@ -168,7 +168,7 @@ export function BridgeApp({
     if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
     const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
     if (!source) return
-    if (draggingId !== start.id) {
+    if (treePointer.get().draggingId !== start.id) {
       pointer.current.x = event.x ?? start.x
       pointer.current.y = event.y ?? start.y
       treePointer.set({ draggingId: start.id, draggingHost: source.ref.host })
@@ -187,16 +187,19 @@ export function BridgeApp({
   }
 
   const drop = (targetId: string) => {
-    if (!draggingId) return
     const aimed = treePointer.get()
+    const gesture = press.current
+    // Windows can deliver pickup and release before React commits a frame.
+    // The gesture owns its selection; rendered feedback is not input state.
+    if (!aimed.draggingId || !gesture) return
     const next = transferSelection(
-      bridge, selectedIds, targetId, aimed.dropTargetId === targetId ? aimed.dropPlacement ?? undefined : undefined,
+      bridge, gesture.selectedIds, targetId, aimed.dropTargetId === targetId ? aimed.dropPlacement ?? undefined : undefined,
     )
     if (next === bridge) {
       setStatus("This target has pending transfers")
       setFailed(true)
     }
-    mutate(next, "Mapping updated", selectedIds)
+    mutate(next, "Mapping updated", gesture.selectedIds)
     endDrag(next !== bridge)
   }
 

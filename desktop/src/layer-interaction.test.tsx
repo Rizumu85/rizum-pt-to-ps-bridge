@@ -9,7 +9,7 @@ import type { BridgeState } from "./model"
 
 const fixtures = path.resolve(import.meta.dirname, "../test-fixtures")
 
-async function setup(nested = false, childCount = 0) {
+async function setup(nested = false, childCount = 0, synchronousInput = true) {
   const session = await loadBridgeSession({
     painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
     photoshopDocument: path.join(fixtures, "photoshop_document.psd"),
@@ -24,7 +24,7 @@ async function setup(nested = false, childCount = 0) {
     const group = session.state.painter.find(node => node.kind === "group")!
     group.children = [{ ...group, id: "nested", name: "Nested", children: group.children }]
   }
-  const root = createTestRoot({ width: 700, height: 560 })
+  const root = createTestRoot({ width: 700, height: 560 }, synchronousInput)
   const app = await connectTest(root.renderer)
   const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))
   root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
@@ -39,6 +39,26 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it.each([
+    ["Paint edit", "Working"],
+    ["Retouch group", "Working"],
+    ["MaskOut", "Retouch group"],
+    ["Working", "Retouch group"],
+  ])("commits %s to %s when native input arrives before a React frame", async (sourceName, targetName) => {
+    const { app, root, apply, close } = await setup(false, 0, false)
+    try {
+      const source = await app.getByText(sourceName).bounds()
+      const target = await app.getByText(targetName).bounds()
+      root.renderer.nativeSimulateMouseDown(source.x + 4, source.y + 4)
+      root.renderer.dispatchMouseMove(target.x + 4, target.y + 4, 0)
+      root.renderer.nativeSimulateMouseUp(target.x + 4, target.y + 4)
+      await vi.waitFor(async () => expect(await app.getByText("Pending").count()).toBe(1))
+      await app.getByTestId("apply-mapping").click()
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      expect(apply.mock.calls[0][0].mappings).toHaveLength(1)
+    } finally { await close() }
+  })
+
   it.each(["photoshop:ps:100", "photoshop:ps:103"])("picks up %s when the first move lands in the panel gutter", async id => {
     const { app, root, close } = await setup()
     try {
