@@ -1,7 +1,15 @@
 import { createContext, memo, useContext, useRef, useSyncExternalStore } from "react"
 import { LayerScroll } from "./layer-scroll"
-import { AnimatePresence, motion, useIsPresent, type EventPayload, type MotionTransition } from "@gpuix/react"
-import { type HostId, type LayerNode } from "./model"
+import {
+  AnimatePresence,
+  motion,
+  useGpuixRequired,
+  useIsPresent,
+  type EventPayload,
+  type MotionTransition,
+  type PublicInstance,
+} from "@gpuix/react"
+import { type HostId, type LayerNode, type Placement } from "./model"
 import { colors, metrics, typography } from "./theme"
 import {
   DisclosureIcon,
@@ -83,11 +91,10 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 }
 
 /**
- * Rows whose departure the pointer just caused: the source rows of a drop, or
- * a ×. Only these fold away; undo, reset and reloads swap rows instantly
- * because keyboard and bulk changes should read as immediate. Arrivals never
- * grow in: the drop gap already made their space. It is context, not a prop,
- * because a leaving row renders from its last props.
+ * Rows whose arrival or departure the pointer just caused: a drop or a ×.
+ * Only these grow in or fold away; undo, reset and reloads swap rows instantly
+ * because keyboard and bulk changes should read as immediate. It is context,
+ * not a prop, because a leaving row renders from its last props.
  */
 export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
 
@@ -97,11 +104,10 @@ export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
 const growDuration = 0.2
 const shrinkDuration = 0.14
 
-function useHeightTransition(height: number, instant: boolean): MotionTransition {
+function useHeightTransition(height: number): MotionTransition {
   const last = useRef({ height, duration: growDuration })
   if (last.current.height !== height) {
-    const duration = instant ? 0 : height < last.current.height ? shrinkDuration : growDuration
-    last.current = { height, duration }
+    last.current = { height, duration: height < last.current.height ? shrinkDuration : growDuration }
   }
   return { duration: last.current.duration, ease: motionEase }
 }
@@ -119,26 +125,14 @@ function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
  * flag flipped, not both trees: every re-rendered row resends its style and
  * motion to GPUiX, which made pointer feedback lag behind the cursor.
  */
-export type DropGhost = { id: string; name: string; depth: number; kind: LayerNode["kind"] }
-
 export type TreePointer = {
   hoveredId: string | null
   dropTargetId: string | null
-  /** The drop target and the folders enclosing it: every row whose height holds the gap. */
-  dropPath: ReadonlySet<string>
-  /** What the drop will insert, as the rows it will show; fixed for one drag. */
-  ghosts: readonly DropGhost[]
-  gapHeight: number
-  /** The gap is closing because its rows just landed in it, so it closes at once. */
-  landing: boolean
+  dropPlacement: Placement | null
 }
 
-export const noDropPath: ReadonlySet<string> = new Set()
-
 export function createTreePointer() {
-  let state: TreePointer = {
-    hoveredId: null, dropTargetId: null, dropPath: noDropPath, ghosts: [], gapHeight: 0, landing: false,
-  }
+  let state: TreePointer = { hoveredId: null, dropTargetId: null, dropPlacement: null }
   const listeners = new Set<() => void>()
   return {
     get: () => state,
@@ -174,7 +168,7 @@ export type TreeInteraction = {
   expanded: Set<string>
   onToggle: (id: string) => void
   onDragStart: (id: string, event: EventPayload) => void
-  onPointerMove: (event: EventPayload, rowId?: string) => void
+  onPointerMove: (event: EventPayload, rowId?: string, placement?: Placement) => void
   onDragEnd: () => void
   onHover: (id: string | null) => void
   onDrop: (id: string) => void
@@ -190,30 +184,39 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
-  const activeDrop = usePointer(pointer, state => state.dropTargetId === node.id) && acceptsDrop
-  const gap = usePointer(pointer, state => state.dropPath.has(node.id) ? state.gapHeight : 0)
-  const landing = usePointer(pointer, state => state.landing)
+  const placement = usePointer(pointer, state => state.dropTargetId === node.id ? state.dropPlacement : null)
+  const dropAt = acceptsDrop ? placement : null
+  const renderer = useGpuixRequired()
+  const header = useRef<PublicInstance>(null)
   const mapped = mappedIds.has(node.id)
   const hovered = usePointer(pointer, state => state.hoveredId === node.id)
   const selected = selectedIds.has(node.id)
   const children = node.children ?? []
   const present = useIsPresent()
   const animated = useContext(RowMotionContext).has(node.id)
-  const height = metrics.rowHeight + (open ? visibleNodesHeight(children, expanded) : 0) + gap
-  const heightTransition = useHeightTransition(height, landing)
+  const height = metrics.rowHeight + (open ? visibleNodesHeight(children, expanded) : 0)
+  const heightTransition = useHeightTransition(height)
   const dragging = draggingId !== null
-  // A group takes drops at the end of its layers, a layer right below itself.
-  const dropGap = activeDrop ? <DropGap
-    pointer={pointer}
-    indent={node.kind === "group"}
-    onPointerMove={event => onPointerMove(event, node.id)}
-    onRelease={() => { if (draggingId) onDrop(node.id); onDragEnd() }}
-  /> : null
+  // Where in the row the pointer is decides where the drop lands. A layer's
+  // upper part places above it, which is the only way to reach the top of a
+  // list; its middle keeps meaning "below this layer". A folder's upper edge
+  // places above it and the rest inside it.
+  const aim = (event: EventPayload): Placement | undefined => {
+    // Aim on every held-button move, not only once this row knows a drag is
+    // on: the move that starts a drag can also be the one it is released on.
+    const box = event.pressedButton === 0 && nativeNode && header.current
+      ? renderer.getElementBounds?.(header.current.id)
+      : null
+    if (!box || event.y === undefined) return undefined
+    const share = (event.y - box.y) / box.height
+    if (node.kind === "group") return share < 0.3 ? "before" : "inside"
+    return share < 0.4 ? "before" : "after"
+  }
 
   return (
     <Motion
       testId={`layer-group:${node.id}`}
-      initial={false}
+      initial={animated ? { height: 0, opacity: 0 } : false}
       animate={{ height, opacity: 1 }}
       exit={animated ? { height: 0, opacity: 0 } : undefined}
       transition={present ? heightTransition : { duration: shrinkDuration, ease: motionEase }}
@@ -223,16 +226,8 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
         pointerEvents: present ? undefined : "none",
       }}
     >
-      {/* Hover never lights folders, so a framed folder says the drop goes
-          inside it; the gap then shows exactly where the rows will land. */}
-      {activeDrop && node.kind === "group" ? <div
-        testId={`drop-indicator:${node.id}`}
-        style={{
-          position: "absolute", left: 0, right: 0, top: 0, height: metrics.rowHeight,
-          borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
-        }}
-      /> : null}
       <div
+        ref={header}
         testId={`layer-row:${node.id}`}
         aria-selected={selected}
         // Only the header owns pointer events: a folder's descendants must not
@@ -241,7 +236,7 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
         onMouseLeave={() => { if (hovered) onHover(null) }}
         onMouseMove={event => {
           if (!hovered) onHover(node.id)
-          onPointerMove(event, node.id)
+          onPointerMove(event, node.id, aim(event))
         }}
         onMouseUp={() => {
           if (acceptsDrop && draggingId) onDrop(node.id)
@@ -280,9 +275,10 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
         >
           <LayerThumbnail node={node} />
           <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
-            <PrimaryText>{node.name}</PrimaryText>
+            {/* Explicit line heights: the default leading stacked two lines taller than the row. */}
+            <PrimaryText lineHeight={16}>{node.name}</PrimaryText>
             {mapped || node.locked || node.note ? <text style={{
-              fontSize: typography.secondarySize, color: colors.secondary,
+              fontSize: typography.secondarySize, lineHeight: 14, color: colors.secondary,
               whiteSpace: "nowrap", textOverflow: "ellipsis",
             }}>{mapped ? pendingNotes.get(node.id) ?? "Pending" : node.locked ?? node.note}</text> : null}
           </div>
@@ -300,7 +296,16 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
           <Icon name="x" size={12} color={colors.secondary} />
         </div> : null}
       </div>
-      {open ? null : dropGap}
+      {/* Hover never lights folders, so a drop says where it lands on its own:
+          a framed folder takes the layers inside, a line marks above or below.
+          Drawn after the header so its hover fill cannot cover the mark. */}
+      {dropAt === "inside" ? <div
+        testId={`drop-indicator:${node.id}`}
+        style={{
+          position: "absolute", left: 0, right: 0, top: 0, height: metrics.rowHeight,
+          borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
+        }}
+      /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
       {/* The row wrapper owns the folder's height, so children only fade. */}
       {node.kind === "group" ? <motion.div
         initial={false}
@@ -316,56 +321,19 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
           {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
         </AnimatePresence>
       </motion.div> : null}
-      {open ? dropGap : null}
     </Motion>
   )
 })
 
-/**
- * The space a drop will fill, holding faint copies of the rows it inserts.
- * Its height equals those rows, so on release they land in it without the
- * tree moving. It keeps the drop target while the pointer is over it;
- * otherwise opening the gap would pull the target out from under the cursor.
- */
-function DropGap({ pointer, indent, onPointerMove, onRelease }: {
-  pointer: TreePointerStore
-  indent: boolean
-  onPointerMove: (event: EventPayload) => void
-  onRelease: () => void
-}) {
-  const ghosts = usePointer(pointer, state => state.ghosts)
-  const height = usePointer(pointer, state => state.gapHeight)
+/** A 2px insertion line with a dot at its start, inside the row so its clip never hides it. */
+function DropLine({ testId, top }: { testId: string; top: number }) {
   return (
-    <div
-      testId="drop-gap"
-      onMouseMove={onPointerMove}
-      onMouseUp={onRelease}
-      style={{
-        height, flexShrink: 0, marginLeft: indent ? metrics.treeIndent : 0,
-        display: "flex", flexDirection: "column",
-        borderRadius: metrics.rowRadius, borderWidth: 1, borderColor: colors.dropGhostBorder,
-        backgroundColor: colors.dropGhost, overflow: "hidden", cursor: "grabbing",
-      }}
-    >
-      {ghosts.map(ghost => (
-        <div
-          key={ghost.id}
-          style={{
-            height: metrics.rowHeight, flexShrink: 0, display: "flex", flexDirection: "row",
-            alignItems: "center", gap: 8, paddingLeft: 8 + 22 + ghost.depth * metrics.treeIndent,
-            paddingRight: 8, opacity: 0.6, pointerEvents: "none",
-          }}
-        >
-          {ghost.kind === "group" ? <Icon name="folder" size={14} /> : <div style={{
-            width: 14, height: 14, flexShrink: 0, borderRadius: 3,
-            borderWidth: 1, borderColor: colors.thumbnailBorder,
-          }} />}
-          <text style={{
-            color: colors.secondary, fontFamily: typography.family, fontSize: typography.primarySize,
-            whiteSpace: "nowrap", textOverflow: "ellipsis",
-          }}>{ghost.name}</text>
-        </div>
-      ))}
+    <div testId={testId} style={{
+      position: "absolute", left: 2, right: 4, top, height: 6, pointerEvents: "none",
+      display: "flex", flexDirection: "row", alignItems: "center",
+    }}>
+      <div style={{ width: 6, height: 6, flexShrink: 0, borderRadius: 3, borderWidth: 1.5, borderColor: colors.drop }} />
+      <div style={{ flexGrow: 1, height: 2, backgroundColor: colors.drop }} />
     </div>
   )
 }

@@ -27,7 +27,7 @@ async function setup(nested = false) {
 
 function dropMarks(node: TreeNode | null): number {
   if (!node) return 0
-  return Number((node.testId?.startsWith("drop-indicator:") || node.testId === "drop-gap") ?? false)
+  return Number(node.testId?.startsWith("drop-indicator:") ?? false)
     + (node.children ?? []).reduce((sum, child) => sum + dropMarks(child), 0)
 }
 
@@ -38,7 +38,7 @@ describe("layer tree interaction", () => {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       expect(dropMarks((await app.call("getTree", {})).tree)).toBe(1)
-      expect(await app.getByTestId("drop-gap").count()).toBe(1)
+      expect(await app.getByTestId("drop-indicator:substance_painter:sp-lighten").count()).toBe(1)
       expect(root.renderer.findByTestId("layer-row:photoshop:ps:100")?.style.opacity).toBe(0.65)
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
@@ -61,37 +61,45 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
-  it("frames a folder target and opens a gap the size of the carried rows where they will land", async () => {
+  it("aims by position: a folder's upper edge places above it, its body inside, a layer's halves above or below", async () => {
     const { app, root, close } = await setup()
+    const at = async (testId: string, share: number) => {
+      const box = await app.getByTestId(testId).bounds()
+      return { x: box.x + box.width / 2, y: box.y + box.height * share }
+    }
+    const line = async (testId: string) => (await app.getByTestId(testId).bounds()).y
     try {
       await app.mouse.down(app.getByText("Paint edit"))
-      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await app.mouse.move(await at("layer-row:substance_painter:sp-working", 0.7), { pressedButton: 0 })
       expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-working")?.style.borderWidth).toBe(1)
-      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
-      expect(await app.getByTestId("drop-indicator:substance_painter:sp-lighten").count()).toBe(0)
-      expect(root.renderer.findByTestId("drop-gap")?.style.height).toBe(metrics.rowHeight)
-      await app.clock.fastForward(400)
-      root.renderer.flush()
+      const working = await app.getByTestId("layer-row:substance_painter:sp-working").bounds()
+      await app.mouse.move(await at("layer-row:substance_painter:sp-working", 0.1), { pressedButton: 0 })
+      expect(root.renderer.findByTestId("drop-indicator:substance_painter:sp-working")?.style.borderWidth).toBeUndefined()
+      expect(Math.abs(await line("drop-indicator:substance_painter:sp-working") - working.y)).toBeLessThan(2)
       const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
-      const gap = await app.getByTestId("drop-gap").bounds()
-      expect(Math.abs(gap.y - (lighten.y + lighten.height))).toBeLessThan(2)
+      await app.mouse.move(await at("layer-row:substance_painter:sp-lighten", 0.2), { pressedButton: 0 })
+      expect(Math.abs(await line("drop-indicator:substance_painter:sp-lighten") - lighten.y)).toBeLessThan(2)
+      await app.mouse.move(await at("layer-row:substance_painter:sp-lighten", 0.75), { pressedButton: 0 })
+      expect(Math.abs(await line("drop-indicator:substance_painter:sp-lighten") - (lighten.y + lighten.height - 6))).toBeLessThan(2)
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
     } finally { await close() }
   })
 
-  it("lands dropped rows in the gap without moving the rows below it", async () => {
+  it("drops above the first row of a list, which only the upper half can reach", async () => {
     const { app, root, close } = await setup()
     try {
+      const top = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
       await app.mouse.down(app.getByText("Paint edit"))
-      await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
+      await app.mouse.move({ x: top.x + top.width / 2, y: top.y + top.height * 0.2 }, { pressedButton: 0 })
+      await app.mouse.up({ x: top.x + top.width / 2, y: top.y + top.height * 0.2 })
       await app.clock.fastForward(400)
       root.renderer.flush()
-      const below = await app.getByText("LC_BaseTextures").bounds()
-      await app.mouse.up(app.getByText("Lighten"))
-      root.renderer.flush()
-      expect((await app.getByText("LC_BaseTextures").bounds()).y).toBeCloseTo(below.y, 0)
-      expect(await app.getByTestId("drop-gap").count()).toBe(0)
+      root.renderer.dispatchNativeEvents()
+      const dropped = await app.getByTestId("layer-row:photoshop:ps:100").bounds()
+      const locator = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
+      expect(dropped.x).toBeGreaterThan(top.x - 1)
+      expect(dropped.y).toBeLessThan(locator.y)
       expect(await app.getByText("Pending").count()).toBe(1)
     } finally { await close() }
   })
@@ -118,8 +126,8 @@ describe("layer tree interaction", () => {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       expect(await app.getByTestId("drag-preview").count()).toBe(1)
-      // The source row, the carried card and its copy in the drop gap.
-      expect(await app.getByText("Paint edit").count()).toBe(3)
+      // The source row and the carried card.
+      expect(await app.getByText("Paint edit").count()).toBe(2)
       const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
       const chip = await app.getByTestId("drag-preview").bounds()
       expect(chip.y).toBeGreaterThan(lighten.y)

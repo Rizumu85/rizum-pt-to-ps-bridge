@@ -110,7 +110,7 @@ export function DisclosureIcon({ open }: { open: boolean }) {
   )
 }
 
-export function PrimaryText({ children }: { children: React.ReactNode }) {
+export function PrimaryText({ children, lineHeight }: { children: React.ReactNode; lineHeight?: number }) {
   return (
     <text
       style={{
@@ -118,6 +118,7 @@ export function PrimaryText({ children }: { children: React.ReactNode }) {
         fontFamily: typography.family,
         fontSize: typography.primarySize,
         fontWeight: typography.primaryWeight,
+        lineHeight,
         whiteSpace: "nowrap",
         textOverflow: "ellipsis",
       }}

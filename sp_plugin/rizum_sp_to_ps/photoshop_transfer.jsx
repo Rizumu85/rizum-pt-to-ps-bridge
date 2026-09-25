@@ -24,7 +24,7 @@
         for (var targetIndex = 0; targetIndex < request.layers.length; targetIndex += 1) {
             var mapped = request.layers[targetIndex];
             var destination = findTarget(document, mapped);
-            if (mapped.insertion !== "after" && mapped.insertion !== "inside") {
+            if (mapped.insertion !== "before" && mapped.insertion !== "after" && mapped.insertion !== "inside") {
                 throw new Error("Unsupported insertion: " + mapped.insertion);
             }
             if (mapped.insertion === "inside" && destination.typename !== "LayerSet") {
@@ -251,9 +251,11 @@
 
     function moveMappedLayer(layer, target, item) {
         // Replay each drop exactly as the desktop preview: group drops append;
-        // repeated drops on one layer insert immediately below that same layer.
+        // repeated drops on one layer insert right above or below that layer.
         if (item.insertion === "inside") {
             layer.move(target, ElementPlacement.PLACEATEND);
+        } else if (item.insertion === "before") {
+            layer.move(target, ElementPlacement.PLACEBEFORE);
         } else {
             layer.move(target, ElementPlacement.PLACEAFTER);
         }

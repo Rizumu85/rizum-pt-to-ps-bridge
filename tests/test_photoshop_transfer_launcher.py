@@ -52,7 +52,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
-    def test_mapped_painter_group_arrives_as_a_folder_of_its_layers(self):
+    def run_group_transfer(self, insertion, target_id, target_name):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -68,8 +68,8 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                 "document": {"path": str(root / "document.psd")},
                 "layers": [{
                     "order": 0, "name": "Working", "png": None, "mask_png": None,
-                    "target_layer_id": 3, "target_index_path": [1], "target_name": "Base",
-                    "target_kind": "layer", "insertion": "after",
+                    "target_layer_id": target_id, "target_index_path": [], "target_name": target_name,
+                    "target_kind": "layer", "insertion": insertion,
                     "blend_mode": "Passthrough", "opacity": 80.0, "visible": True,
                     "children": [
                         layer("Top", blend_mode="MULTIPLY", opacity=50.0),
@@ -86,15 +86,22 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                 capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            document = json.loads(completed.stdout)
             result = json.loads(launch.result_path.read_text(encoding="utf-8"))
+            self.assertTrue(result["success"], result["errors"])
+            return json.loads(completed.stdout)
 
-        self.assertTrue(result["success"], result["errors"])
-        self.assertTrue(document["saved"])
-        outline = lambda layers: [
-            (item["name"], outline(item["layers"])) if "layers" in item else item["name"] for item in layers
+    @staticmethod
+    def outline(layers):
+        return [
+            (item["name"], PhotoshopTransferLauncherTests.outline(item["layers"])) if "layers" in item else item["name"]
+            for item in layers
         ]
-        self.assertEqual(outline(document["layers"]), [
+
+    def test_mapped_painter_group_arrives_as_a_folder_of_its_layers(self):
+        document = self.run_group_transfer("after", 3, "Base")
+
+        self.assertTrue(document["saved"])
+        self.assertEqual(self.outline(document["layers"]), [
             ("Group", ["Detail"]), "Base", ("Working", ["Top", ("Sub", ["Deep"]), "Bottom"]),
         ])
         working = document["layers"][2]
@@ -103,6 +110,11 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         self.assertEqual((top["blendMode"], top["opacity"], top["rasterized"]), ("MULTIPLY", 50.0, True))
         self.assertEqual(sub["blendMode"], "PASSTHROUGH")
         self.assertFalse(bottom["visible"])
+
+    def test_before_places_above_the_target_including_the_topmost_layer(self):
+        document = self.run_group_transfer("before", 1, "Group")
+
+        self.assertEqual([item["name"] for item in document["layers"]], ["Working", "Group", "Base"])
 
 if __name__ == "__main__":
     unittest.main()

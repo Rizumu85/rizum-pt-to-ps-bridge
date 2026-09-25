@@ -393,7 +393,7 @@ def _transfer_item(value, fallback_order, manifest_dir):
         "kind",
         f"transfers[{fallback_order}].target",
     )
-    if insertion not in {"after", "inside"}:
+    if insertion not in {"before", "after", "inside"}:
         raise DesktopTransferError(
             f"Transfer {fallback_order + 1} uses unsupported insertion {insertion!r}."
         )
@@ -532,6 +532,8 @@ def _matching_channel_type(stack, expected):
 
 
 def _insertion_position(item, target_node, layerstack):
+    if item.insertion == "before":
+        return layerstack.InsertPosition.above_node(target_node)
     if item.insertion == "after":
         return layerstack.InsertPosition.below_node(target_node)
 

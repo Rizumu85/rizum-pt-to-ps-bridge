@@ -69,6 +69,13 @@ describe("transferBetweenHosts", () => {
     expect(moved?.children?.map(node => node.id)).toEqual(working.children?.map(node => node.id))
   })
 
+  it("drops a batch above a layer in selection order and records the placement", () => {
+    const first = fixture().painter[0].id
+    const next = transferSelection(fixture(), new Set(["photoshop:paint", "photoshop:color"]), first, "before")
+    expect(next.painter.map(node => node.id).slice(0, 3)).toEqual(["photoshop:paint", "photoshop:color", first])
+    expect(next.mappings.map(mapping => mapping.placement)).toEqual(["before", "before"])
+  })
+
   it("cannot transfer away a destination of another pending transfer", () => {
     const staged = transferBetweenHosts(fixture(), "photoshop:paint", "substance_painter:working")
     expect(transferBetweenHosts(staged, "substance_painter:working", "photoshop:cleanup")).toBe(staged)

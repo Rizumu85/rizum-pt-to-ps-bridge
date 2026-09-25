@@ -87,6 +87,7 @@ class _LayerStack:
         self.groups = []
         self.ScopedModification = _ScopedModification
         self.InsertPosition = SimpleNamespace(
+            above_node=lambda node: ("above", node),
             below_node=lambda node: ("below", node),
             inside_node=lambda node, stack: ("inside", node, stack),
         )
@@ -235,6 +236,26 @@ class DesktopTransferTests(unittest.TestCase):
             _ScopedModification.names[-1],
             "PT Bridge: import Photoshop layers",
         )
+
+    def test_before_inserts_above_the_target_so_a_list_top_is_reachable(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0]["insertion"] = "before"
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        target = _TargetNode(_Stack(_NamedValue("BaseColor")))
+        layerstack = _LayerStack(target)
+        painter = SimpleNamespace(
+            project=SimpleNamespace(
+                is_open=lambda: True,
+                is_in_edition_state=lambda: True,
+                get_uuid=lambda: "project-1",
+            ),
+            layerstack=layerstack,
+            resource=_Resource(),
+        )
+
+        apply_transfer_plan(load_transfer_plan(self.manifest), painter)
+
+        self.assertEqual(layerstack.fills[0].position, ("above", target))
 
     def test_inside_an_empty_folder_inserts_into_its_substack(self):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))

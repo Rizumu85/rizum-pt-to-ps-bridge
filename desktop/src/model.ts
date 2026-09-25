@@ -1,6 +1,11 @@
 export type LayerKind = "group" | "layer"
 export type HostId = "photoshop" | "substance_painter"
-export type Placement = "inside" | "after"
+export type Placement = "inside" | "before" | "after"
+
+/** A group takes drops inside it and a layer below it, unless the pointer aims elsewhere. */
+export function defaultPlacement(target: LayerNode): Placement {
+  return target.kind === "group" ? "inside" : "after"
+}
 export type TransferDirection = "photoshop_to_painter" | "painter_to_photoshop"
 
 export type HostLayerRef = {
@@ -99,22 +104,21 @@ export function insertAtTarget(
   nodes: LayerNode[],
   targetId: string,
   nodeToInsert: LayerNode,
+  placement: Placement,
 ): LayerNode[] {
   const next: LayerNode[] = []
 
   for (const node of nodes) {
     if (node.id === targetId) {
-      if (node.kind === "group") {
-        next.push({ ...node, children: [...(node.children ?? []), nodeToInsert] })
-      } else {
-        next.push(node, nodeToInsert)
-      }
+      if (placement === "inside") next.push({ ...node, children: [...(node.children ?? []), nodeToInsert] })
+      else if (placement === "before") next.push(nodeToInsert, node)
+      else next.push(node, nodeToInsert)
       continue
     }
 
     next.push(
       node.children
-        ? { ...node, children: insertAtTarget(node.children, targetId, nodeToInsert) }
+        ? { ...node, children: insertAtTarget(node.children, targetId, nodeToInsert, placement) }
         : node,
     )
   }
@@ -126,6 +130,7 @@ export function transferBetweenHosts(
   state: BridgeState,
   sourceId: string,
   targetId: string,
+  placement?: Placement,
 ): BridgeState {
   const source = findNode(state.photoshop, sourceId) ?? findNode(state.painter, sourceId)
   if (!source || source.locked) return state
@@ -135,6 +140,8 @@ export function transferBetweenHosts(
   const targetNodes = state[hostCollection(targetHost)]
   const target = findNode(targetNodes, targetId)
   if (!target || target.ref.host !== targetHost) return state
+  const place = placement ?? defaultPlacement(target)
+  if (place === "inside" && target.kind !== "group") return state
   const remapping = state.mappings.some(mapping => mapping.sourceId === sourceId)
   // A host target cannot also be moved out of the staging tree: its dependent
   // transfers would no longer have the destination shown in the preview.
@@ -144,7 +151,7 @@ export function transferBetweenHosts(
   if (!removed) return state
   // Groups cross in both directions as folders of their layers, which is the
   // hierarchy Apply creates and so the one the preview promises.
-  const nextTarget = insertAtTarget(remapping ? remaining : targetNodes, targetId, removed)
+  const nextTarget = insertAtTarget(remapping ? remaining : targetNodes, targetId, removed, place)
   const remainingSource = remapping ? sourceNodes : remaining
   const direction: TransferDirection =
     sourceHost === "photoshop" ? "photoshop_to_painter" : "painter_to_photoshop"
@@ -158,7 +165,7 @@ export function transferBetweenHosts(
         direction,
         sourceId,
         targetId,
-        placement: target.kind === "group" ? "inside" : "after",
+        placement: place,
         source: removed.ref,
         target: target.ref,
       },
@@ -194,27 +201,21 @@ export function selectionRoots(state: BridgeState, sourceHost: HostId, sourceIds
   return roots
 }
 
-export function transferSelection(state: BridgeState, sourceIds: Set<string>, targetId: string): BridgeState {
+export function transferSelection(
+  state: BridgeState,
+  sourceIds: Set<string>,
+  targetId: string,
+  placement?: Placement,
+): BridgeState {
   const target = findNode(state.photoshop, targetId) ?? findNode(state.painter, targetId)
   if (!target) return state
+  const place = placement ?? defaultPlacement(target)
   const sourceHost = target.ref.host === "photoshop" ? "substance_painter" : "photoshop"
   const roots = selectionRoots(state, sourceHost, sourceIds).map(node => node.id)
   // After-drops insert against the same anchor; replay bottom-up to preserve
   // the user's top-to-bottom selection order as one undoable batch.
-  if (target.kind === "layer") roots.reverse()
-  return roots.reduce((next, id) => transferBetweenHosts(next, id, targetId), state)
-}
-
-/** Folder ids enclosing a node, outermost first; null when the node is absent. */
-export function ancestorIds(nodes: LayerNode[], id: string, trail: string[] = []): string[] | null {
-  for (const node of nodes) {
-    if (node.id === id) return trail
-    if (node.children) {
-      const found = ancestorIds(node.children, id, [...trail, node.id])
-      if (found) return found
-    }
-  }
-  return null
+  if (place === "after") roots.reverse()
+  return roots.reduce((next, id) => transferBetweenHosts(next, id, targetId, place), state)
 }
 
 export function visibleSourceIds(nodes: LayerNode[], host: HostId, expanded: Set<string>): string[] {

@@ -11,7 +11,7 @@ import {
 import {
   cloneState,
   findNode,
-  ancestorIds,
+  defaultPlacement,
   removeFromHost,
   selectionRoots,
   transferSelection,
@@ -20,6 +20,7 @@ import {
   type BridgeState,
   type HostId,
   type LayerNode,
+  type Placement,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
 import { normalizedBlendMode, type ApplyOutcome, type BridgeSession, type PainterContext } from "./transport"
@@ -36,7 +37,7 @@ import {
   motionEase,
   type PointerFeed,
 } from "./components"
-import { createTreePointer, HostPanel, noDropPath, RowMotionContext, type DropGhost } from "./layer-tree"
+import { createTreePointer, HostPanel, RowMotionContext } from "./layer-tree"
 
 export function BridgeApp({
   session: initialSession,
@@ -136,10 +137,7 @@ export function BridgeApp({
     pointer.current.returnTo = !landed && draggingId ? press.current?.bounds ?? null : null
     press.current = null
     if (draggingId !== null) setDraggingId(null)
-    treePointer.set({ dropTargetId: null, dropPath: noDropPath, landing: landed })
-    // Only the render that lands the rows closes the gap at once; later
-    // height changes on those rows animate again.
-    if (landed) setTimeout(() => treePointer.set({ landing: false }), 0)
+    treePointer.set({ dropTargetId: null, dropPlacement: null })
   }
 
   const startDrag = (id: string, event: EventPayload) => {
@@ -159,10 +157,10 @@ export function BridgeApp({
       ? { id, x: event.x ?? 0, y: event.y ?? 0, bounds: renderer.getElementBounds?.(event.elementId) ?? null }
       : null
     if (draggingId !== null) setDraggingId(null)
-    treePointer.set({ dropTargetId: null, dropPath: noDropPath })
+    treePointer.set({ dropTargetId: null, dropPlacement: null })
   }
 
-  const movePointer = (event: EventPayload, rowId?: string) => {
+  const movePointer = (event: EventPayload, rowId?: string, placement?: Placement) => {
     if (event.pressedButton !== 0 || pending.current) {
       if (press.current || draggingId) endDrag()
       return
@@ -175,35 +173,31 @@ export function BridgeApp({
     const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
     if (!source) return
     if (draggingId !== start.id) {
-      // The gap a drop opens is sized once per drag, to the rows it will insert.
-      const roots = selectionRoots(bridge, source.ref.host, selectedIds)
       pointer.current.origin = start.bounds
       setDraggingId(start.id)
-      treePointer.set({ ghosts: dropGhosts(roots, expanded), gapHeight: visibleNodesHeight(roots, expanded), landing: false })
     }
     const targetHost: HostId = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
     const targetTree = targetHost === "photoshop" ? bridge.photoshop : bridge.painter
     const target = rowId ? findNode(targetTree, rowId) : null
     const dropTargetId = target && target.ref.host === targetHost && source.ref.host !== targetHost ? target.id : null
-    if (dropTargetId === treePointer.get().dropTargetId) return
     treePointer.set({
       dropTargetId,
-      dropPath: dropTargetId ? new Set([...ancestorIds(targetTree, dropTargetId) ?? [], dropTargetId]) : noDropPath,
+      dropPlacement: target && dropTargetId ? placement ?? defaultPlacement(target) : null,
     })
   }
 
   const drop = (targetId: string) => {
     if (!draggingId) return
-    const next = transferSelection(bridge, selectedIds, targetId)
+    const aimed = treePointer.get()
+    const next = transferSelection(
+      bridge, selectedIds, targetId, aimed.dropTargetId === targetId ? aimed.dropPlacement ?? undefined : undefined,
+    )
     if (next === bridge) {
       setStatus("This target has pending transfers")
       setFailed(true)
     }
     mutate(next, "Mapping updated", selectedIds)
-    // Rows dropped into a collapsed folder disappear inside it, so its gap
-    // closes as motion; anywhere else the rows take the gap's place exactly.
-    const target = findNode(bridge.photoshop, targetId) ?? findNode(bridge.painter, targetId)
-    endDrag(next !== bridge && !(target?.kind === "group" && !expanded.has(targetId)))
+    endDrag(next !== bridge)
   }
 
   const undo = () => {
@@ -378,7 +372,8 @@ export function BridgeApp({
     pointer: treePointer,
     onToggle: (id: string) => latest.current.toggle(id),
     onDragStart: (id: string, event: EventPayload) => latest.current.startDrag(id, event),
-    onPointerMove: (event: EventPayload, rowId?: string) => latest.current.movePointer(event, rowId),
+    onPointerMove: (event: EventPayload, rowId?: string, placement?: Placement) =>
+      latest.current.movePointer(event, rowId, placement),
     onDragEnd: () => latest.current.endDrag(),
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
@@ -602,14 +597,6 @@ function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string>
     if (parts.length > 1) notes.set(mapping.sourceId, parts.join(" · "))
   }
   return notes
-}
-
-/** The rows a drop will show, in order, as faint copies inside its gap. */
-function dropGhosts(nodes: LayerNode[], expanded: Set<string>, depth = 0): DropGhost[] {
-  return nodes.flatMap(node => [
-    { id: node.id, name: node.name, depth, kind: node.kind },
-    ...(node.kind === "group" && expanded.has(node.id) ? dropGhosts(node.children ?? [], expanded, depth + 1) : []),
-  ])
 }
 
 function collectExpandedIds(state: BridgeState): Set<string> {
