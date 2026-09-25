@@ -39,6 +39,23 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it.each(["photoshop:ps:100", "photoshop:ps:103"])("picks up %s when the first move lands in the panel gutter", async id => {
+    const { app, root, close } = await setup()
+    try {
+      const box = await app.getByTestId(`layer-thumbnail:${id}`).bounds()
+      root.renderer.nativeSimulateMouseDown(box.x + box.width / 2, box.y + box.height / 2)
+      root.renderer.dispatchMouseMove(350, 500, 0)
+      root.renderer.flush()
+      expect(await app.getByTestId("drag-preview").count()).toBe(1)
+      root.renderer.nativeSimulateMouseUp(350, 500)
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      await vi.waitFor(async () => expect(await app.getByTestId("drag-preview").count()).toBe(0))
+      expect(await app.getByText("Pending").count()).toBe(0)
+    } finally { await close() }
+  })
+
   it.each(["photoshop:ps:100", "photoshop:ps:103"])("picks up %s on the first threshold-crossing move without waiting for animation", async id => {
     const { app, root, close } = await setup()
     try {

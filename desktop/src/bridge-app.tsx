@@ -173,6 +173,9 @@ export function BridgeApp({
       pointer.current.y = event.y ?? start.y
       treePointer.set({ draggingId: start.id, draggingHost: source.ref.host })
     }
+    // Pickup belongs to the whole workspace, not a row hit target: a fast
+    // first move can already be in the gutter. Only row events choose a drop.
+    if (!rowId) return
     const targetHost: HostId = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
     const targetTree = targetHost === "photoshop" ? bridge.photoshop : bridge.painter
     const target = rowId ? findNode(targetTree, rowId) : null
@@ -387,6 +390,7 @@ export function BridgeApp({
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
     onTrackPointer: (event: EventPayload) => {
+      if (!treePointer.get().draggingId || event.pressedButton !== 0) latest.current.movePointer(event)
       pointer.current.x = event.x ?? pointer.current.x
       pointer.current.y = event.y ?? pointer.current.y
       pointer.current.follow?.(pointer.current.x, pointer.current.y)
@@ -474,6 +478,7 @@ export function BridgeApp({
         </div>
         <InsetSeparator />
         <div
+          onMouseMove={tree.onTrackPointer}
           onMouseUp={() => endDrag()}
           style={{
             flexGrow: 1,
