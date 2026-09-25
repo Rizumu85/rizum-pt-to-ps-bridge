@@ -267,7 +267,7 @@ def write_build_bundles(
     return written
 
 
-def export_desktop_nodes(output_dir, context, source_uids, settings=None):
+def export_desktop_nodes(output_dir, context, source_uids, settings=None, progress_callback=None):
     """Render mapped Painter nodes through the production export pipeline."""
     context = dict(context or {})
     source_uids = [str(uid).strip().lower() for uid in source_uids]
@@ -348,6 +348,13 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None):
                 build_request,
                 node_exporter=node_exporter,
                 geometry_baker=geometry_baker,
+                progress_callback=(
+                    lambda event: progress_callback({
+                        "message": event.get("text") or "Rendering Painter assets...",
+                        "completed": event.get("value"),
+                        "total": event.get("total"),
+                    })
+                ) if progress_callback else None,
             )
             node = _transfer_node(build_request["layers"][0], context["channel"])
             if node is None:

@@ -154,14 +154,17 @@ export function failedBridgeSession(error: unknown): BridgeSession {
 export const PAINTER_REQUEST_MARKER = "@ptbridge "
 
 export type PainterReply =
+  | ({ type: "apply_progress" } & ApplyProgress)
   | { type: "photoshop_connected"; psd: string }
   | { type: "photoshop_connect_cancelled" }
   | { type: "photoshop_connect_failed"; message: string }
   | { type: "applied" | "apply_failed"; message: string; snapshot: string | null }
 
 export type PainterLink = {
-  request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>) => Promise<PainterReply>
+  request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>, onProgress?: (progress: ApplyProgress) => void) => Promise<PainterReply>
 }
+
+export type ApplyProgress = { message: string; completed?: number; total?: number }
 
 export type ApplyOutcome = {
   /** The refreshed session, or null when Painter could not report its layers. */
@@ -174,7 +177,7 @@ export function createPainterLink(
   input: Readable,
   write: (line: string) => void,
 ): PainterLink {
-  let waiting: { resolve: (reply: PainterReply) => void; reject: (error: Error) => void } | null = null
+  let waiting: { resolve: (reply: PainterReply) => void; reject: (error: Error) => void; onProgress?: (progress: ApplyProgress) => void } | null = null
   let closed = false
   let buffer = ""
 
@@ -195,18 +198,24 @@ export function createPainterLink(
     for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
       const line = buffer.slice(0, newline).trim()
       buffer = buffer.slice(newline + 1)
-      if (line.startsWith("{")) settle(parsePainterReply(line))
+      if (line.startsWith("{")) {
+        const reply = parsePainterReply(line)
+        // Progress is not an acknowledgement: keep Apply pending until the
+        // host reports its final outcome, including partial failures.
+        if (!(reply instanceof Error) && reply.type === "apply_progress") waiting?.onProgress?.(reply)
+        else settle(reply)
+      }
     }
   })
   input.on("end", close)
   input.on("error", close)
 
   return {
-    request(type, fields = {}) {
+    request(type, fields = {}, onProgress) {
       if (closed) return Promise.reject(new Error("Painter closed the Bridge connection"))
       if (waiting) return Promise.reject(new Error("A Painter request is already pending"))
       return new Promise((resolve, reject) => {
-        waiting = { resolve, reject }
+        waiting = { resolve, reject, onProgress }
         write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type, ...fields })}\n`)
       })
     },
@@ -219,6 +228,12 @@ function parsePainterReply(line: string): PainterReply | Error {
     reply = objectValue(JSON.parse(line))
   } catch {
     return new Error("Painter sent an unreadable Bridge reply")
+  }
+  if (reply.type === "apply_progress") {
+    const total = typeof reply.total === "number" && Number.isFinite(reply.total) && reply.total > 0 ? reply.total : undefined
+    const completed = total && typeof reply.completed === "number" && Number.isFinite(reply.completed)
+      ? Math.max(0, Math.min(total, reply.completed)) : undefined
+    return { type: "apply_progress", message: textValue(reply.message) || "Applying changes...", completed, total }
   }
   if (reply.type === "photoshop_connected" && textValue(reply.psd)) {
     return { type: "photoshop_connected", psd: textValue(reply.psd) }
@@ -247,14 +262,17 @@ export async function applyTransfer(
   state: BridgeState,
   painterContextId: string,
   link: PainterLink,
+  onProgress?: (progress: ApplyProgress) => void,
 ): Promise<ApplyOutcome> {
-  const manifest = await writeTransferManifest(session, state, painterContextId)
-  const reply = await link.request("apply", { manifest })
+  const manifest = await writeTransferManifest(session, state, painterContextId, onProgress)
+  onProgress?.({ message: "Waiting for Painter..." })
+  const reply = await link.request("apply", { manifest }, onProgress)
   if (reply.type !== "applied" && reply.type !== "apply_failed") {
     throw new Error(`Painter sent an unexpected Apply reply: ${reply.type}`)
   }
   const failed = reply.type === "apply_failed"
   if (!reply.snapshot) return { session: null, message: reply.message, failed }
+  onProgress?.({ message: "Refreshing layer lists..." })
   const next = await loadBridgeSession({
     // Photoshop inserts are saved into the same file, so it is read again too.
     photoshopDocument: session.photoshop?.path,
@@ -284,6 +302,7 @@ export async function writeTransferManifest(
   session: BridgeSession,
   state: BridgeState,
   painterContextId: string,
+  onProgress?: (progress: ApplyProgress) => void,
 ): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
   if (state.mappings.length === 0) throw new Error("Map at least one layer before Apply")
@@ -298,6 +317,7 @@ export async function writeTransferManifest(
   const warnings: string[] = []
   const transfers = []
   for (const [order, mapping] of state.mappings.entries()) {
+    onProgress?.({ message: "Preparing mapped items...", completed: order, total: state.mappings.length })
     let source: unknown = manifestRef(mapping.source)
     if (mapping.direction === "photoshop_to_painter") {
       const node = findNode(state.painter, mapping.sourceId)
@@ -311,6 +331,7 @@ export async function writeTransferManifest(
       target: manifestRef(mapping.target),
       insertion: mapping.placement,
     })
+    onProgress?.({ message: "Preparing mapped items...", completed: order + 1, total: state.mappings.length })
   }
 
   const payload = {

@@ -216,6 +216,7 @@ class DesktopBridgeController:
         process.write((json.dumps(payload) + "\n").encode("utf-8"))
 
     def _start_photoshop_job(self, launch, label, transfer_result):
+        self._apply_progress({"message": "Opening Photoshop document..."})
         self._clear_photoshop_export()
         self._pending_transfer_result = transfer_result
         # Only Painter reads the script's progress receipts, so Painter shows
@@ -252,17 +253,24 @@ class DesktopBridgeController:
         dialog = self._photoshop_progress_dialog
         total = payload.get("total", 0)
         completed = payload.get("completed", 0)
-        if dialog is None or not isinstance(total, int) or not isinstance(completed, int):
+        if not isinstance(total, int) or not isinstance(completed, int):
             return
         if phase == "transferring_layers" and total > 0:
-            dialog.setRange(0, total)
-            dialog.setValue(max(0, min(completed, total)))
+            if dialog is not None:
+                dialog.setRange(0, total)
+                dialog.setValue(max(0, min(completed, total)))
             message = f"Inserting Photoshop layers: {completed} / {total}"
         elif phase == "saving_document":
             message = "Saving Photoshop document..."
         else:
             message = "Opening Photoshop document..."
-        dialog.setLabelText(message)
+        if dialog is not None:
+            if phase != "transferring_layers" or total <= 0:
+                dialog.setRange(0, 0)
+            dialog.setLabelText(message)
+        self._apply_progress({"message": message, **(
+            {"completed": completed, "total": total} if phase == "transferring_layers" and total > 0 else {}
+        )})
 
     def _photoshop_job_failed(self, message):
         self._trace("photoshop_job_failed", message)
@@ -419,9 +427,11 @@ class DesktopBridgeController:
         self._applying_transfer = True
         self._sync_button()
         try:
+            self._apply_progress({"message": "Preparing Painter transfer..."})
             result = desktop_transfer.apply_transfer_manifest(
                 manifest_path,
                 settings=self.panel.user_settings,
+                progress_callback=self._apply_progress,
             )
         except Exception as exc:
             self._finish_apply("apply_failed", str(exc))
@@ -436,6 +446,16 @@ class DesktopBridgeController:
         else:
             self._report_transfer_complete(result.imported_count, 0, result.warnings)
 
+    def _apply_progress(self, payload):
+        process = self._process
+        if process is None:
+            return
+        process.write((json.dumps({**payload, "type": "apply_progress"}) + "\n").encode("utf-8"))
+        # Painter work stays on its owning thread. Flush the pipe without
+        # pumping Qt events, which could re-enter a partially applied transfer.
+        if process.bytesToWrite():
+            process.waitForBytesWritten(100)
+
     def _finish_apply(self, reply_type, message):
         """Report an Apply to the open mapper with a fresh Painter snapshot."""
         if self._process is None:
@@ -446,6 +466,7 @@ class DesktopBridgeController:
             return
         reply = {"type": reply_type, "message": message}
         try:
+            self._apply_progress({"message": "Refreshing Painter layers..."})
             # The mapper stays open after Apply, so it needs Painter's new
             # layer tree to keep mapping against what is really there now.
             exporter.write_painter_snapshot(self._snapshot_path, self.panel.user_settings)

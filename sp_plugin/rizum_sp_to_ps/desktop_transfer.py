@@ -163,7 +163,7 @@ def load_transfer_plan(manifest_path):
     )
 
 
-def apply_transfer_manifest(manifest_path, settings=None, painter=None):
+def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress_callback=None):
     """Execute local Painter work and prepare any Photoshop-side handoff."""
     plan = load_transfer_plan(manifest_path)
     if painter is None:
@@ -174,8 +174,8 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None):
                 "Desktop transfers must be applied inside Substance 3D Painter."
             ) from exc
     _validate_project(plan, painter.project)
-    launcher = _prepare_photoshop_transfer(plan, settings or {})
-    result = apply_transfer_plan(plan, painter)
+    launcher = _prepare_photoshop_transfer(plan, settings or {}, progress_callback)
+    result = apply_transfer_plan(plan, painter, progress_callback)
     return TransferResult(
         imported_count=result.imported_count,
         exported_count=len(plan.photoshop_exports),
@@ -188,7 +188,7 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None):
     )
 
 
-def apply_transfer_plan(plan, painter):
+def apply_transfer_plan(plan, painter, progress_callback=None):
     """Apply only the Photoshop-to-Painter portion as one history entry."""
     _validate_project(plan, painter.project)
     resolved = [
@@ -197,10 +197,13 @@ def apply_transfer_plan(plan, painter):
     ]
 
     resources = {}
-    for item in plan.painter_imports:
-        for path in item.layer.assets():
-            if path not in resources:
-                resources[path] = _import_texture(path, painter.resource)
+    assets = list(dict.fromkeys(path for item in plan.painter_imports for path in item.layer.assets()))
+    for index, path in enumerate(assets):
+        if progress_callback:
+            progress_callback({"message": "Importing textures into Painter...", "completed": index, "total": len(assets)})
+        resources[path] = _import_texture(path, painter.resource)
+    if progress_callback and assets:
+        progress_callback({"message": "Importing textures into Painter...", "completed": len(assets), "total": len(assets)})
 
     warnings = []
     # The desktop Apply action is one user intent; grouping every layerstack edit
@@ -212,10 +215,16 @@ def apply_transfer_plan(plan, painter):
     else:
         modification = _NullContext()
     with modification:
-        for item, target_node, channel_type, channel_is_color in resolved:
+        for index, (item, target_node, channel_type, channel_is_color) in enumerate(resolved):
+            if progress_callback:
+                progress_callback({"message": f"Inserting mapped item: {item.name}", "completed": index, "total": len(resolved)})
             position = _insertion_position(item, target_node, painter.layerstack)
             target = _InsertTarget(painter, channel_type, channel_is_color, resources, warnings)
             _insert_photoshop_layer(item.layer, position, target)
+            if progress_callback:
+                progress_callback({"message": "Inserting mapped items into Painter...", "completed": index + 1, "total": len(resolved)})
+        if progress_callback and resolved:
+            progress_callback({"message": "Updating Painter stack..."})
 
     return TransferResult(
         imported_count=len(plan.painter_imports),
@@ -302,7 +311,7 @@ class _NullContext:
         return False
 
 
-def _prepare_photoshop_transfer(plan, settings):
+def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
     if not plan.photoshop_exports:
         return None
 
@@ -321,6 +330,7 @@ def _prepare_photoshop_transfer(plan, settings):
         context,
         [format(item.source_uid, "x") for item in plan.photoshop_exports],
         settings,
+        progress_callback=progress_callback,
     )
     if len(rendered) != len(plan.photoshop_exports):
         raise DesktopTransferError(

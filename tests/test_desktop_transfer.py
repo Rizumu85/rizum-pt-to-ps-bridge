@@ -219,7 +219,12 @@ class DesktopTransferTests(unittest.TestCase):
             resource=resource,
         )
 
-        result = apply_transfer_plan(plan, painter)
+        progress = []
+        result = apply_transfer_plan(plan, painter, progress_callback=progress.append)
+        self.assertEqual(progress[-2]["completed"], 1)
+        self.assertEqual(progress[-2]["total"], 1)
+        self.assertNotIn("total", progress[-1])
+        self.assertTrue(any(event["message"].startswith("Importing textures") for event in progress))
 
         self.assertEqual(result.count, 1)
         self.assertEqual(len(layerstack.fills), 2)

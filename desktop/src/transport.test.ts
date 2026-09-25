@@ -28,6 +28,23 @@ vi.mock("node:fs/promises", async importOriginal => {
 })
 
 describe("desktop file transport", () => {
+  it("streams Apply progress without settling the request until a final receipt", async () => {
+    const input = new PassThrough()
+    const progress = vi.fn()
+    const link = createPainterLink(input, () => {})
+    let settled = false
+    const pending = link.request("apply", {}, progress).then(reply => { settled = true; return reply })
+    input.write('{"type":"apply_progress","message":"Inserting","completed":1,"total":4}\n')
+    await Promise.resolve()
+    expect(progress).toHaveBeenCalledWith({ type: "apply_progress", message: "Inserting", completed: 1, total: 4 })
+    expect(settled).toBe(false)
+    input.write('{"type":"apply_progress","message":"Saving"}\n')
+    expect(progress.mock.calls.at(-1)?.[0].total).toBeUndefined()
+    input.write('{"type":"apply_failed","message":"Partial import","snapshot":null}\n')
+    expect(await pending).toMatchObject({ type: "apply_failed", message: "Partial import" })
+    input.destroy()
+  })
+
   it("writes apply when mkdir reports EEXIST for a verified directory", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-existing-"))
     const output = path.join(directory, "request.json")

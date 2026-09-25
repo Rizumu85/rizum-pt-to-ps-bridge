@@ -58,6 +58,14 @@ class _Panel:
 
 
 class DesktopBridgeSessionTests(unittest.TestCase):
+    def test_progress_flushes_to_mapper_without_pumping_painter_events(self):
+        process = SimpleNamespace(write=Mock(), bytesToWrite=Mock(return_value=40), waitForBytesWritten=Mock())
+        self.controller._process = process
+        self.controller._apply_progress({"message": "Inserting", "completed": 1, "total": 3})
+        reply = json.loads(process.write.call_args.args[0])
+        self.assertEqual(reply, {"type": "apply_progress", "message": "Inserting", "completed": 1, "total": 3})
+        process.waitForBytesWritten.assert_called_once_with(100)
+
     def setUp(self):
         _Settings.values = {}
         self.controller = DesktopBridgeController(_Panel(), lambda *_args: None)
