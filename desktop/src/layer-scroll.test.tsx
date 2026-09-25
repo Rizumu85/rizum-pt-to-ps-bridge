@@ -5,7 +5,7 @@ import { LayerScroll } from "./layer-scroll"
 async function setup() {
   const root = createTestRoot({ width: 400, height: 260 })
   root.render(<div style={{ height: 240, display: "flex", flexDirection: "column" }}>
-    <LayerScroll id="test" layoutKey="fixed">
+    <LayerScroll id="test" layoutKey="fixed" rowCount={30}>
       {Array.from({ length: 30 }, (_, i) => <div key={i} style={{ height: 32, flexShrink: 0 }}><text>Layer {i}</text></div>)}
     </LayerScroll>
   </div>)
@@ -36,10 +36,10 @@ describe("layer scrolling", () => {
       root.renderer.nativeSimulateMouseDown(x, track.y + 12)
       root.renderer.nativeSimulateMouseMove(x, track.y + 60, 0)
       root.renderer.nativeSimulateMouseUp(100, 100)
-      const before = root.renderer.getScrollOffset(viewport)![1]
+      const before = root.renderer.getListScrollTop(viewport)!
       root.renderer.nativeSimulateMouseMove(x, track.y + 150)
-      expect(root.renderer.getScrollOffset(viewport)![1]).toBe(before)
-      expect(before).toBeLessThan(0)
+      expect(root.renderer.getListScrollTop(viewport)).toEqual(before)
+      expect(before[0]).toBeGreaterThan(0)
     } finally { root.unmount() }
   })
 })

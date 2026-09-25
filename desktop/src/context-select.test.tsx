@@ -207,16 +207,19 @@ describe("Painter context selectors", () => {
         onConnectPhotoshop={async () => null} />)
       testRoot.renderer.flush()
       await new Promise(resolve => setTimeout(resolve, 450))
-      const before = await app.getByText("Long layer 0").bounds()
+      const list = testRoot.renderer.findByTestId("layer-scroll:painter")!.id
       const button = await app.getByTestId("connect-photoshop").bounds()
       await app.getByText("Long layer 0").hover()
       await app.getByText("Long layer 0").wheel(0, -160)
       testRoot.renderer.flush()
-      expect((await app.getByText("Long layer 0").bounds()).y).toBeLessThan(before.y - 20)
+      const before = testRoot.renderer.getListScrollTop(list)!
+      expect(before[0]).toBeGreaterThan(0)
+      // Offscreen rows intentionally have no painted bounds in the virtual list.
+      const first = testRoot.renderer.findByTestId("layer-row:long-0")!.id
+      expect(testRoot.renderer.getElementBounds(first)).toBeNull()
       await app.getByTestId("layer-scrollbar:painter").click()
       testRoot.renderer.flush()
-      const after = await app.getByText("Long layer 0").bounds()
-      expect(after.y).toBeLessThan(before.y - 100)
+      expect(testRoot.renderer.getListScrollTop(list)![0]).toBeGreaterThan(before[0])
       expect(await app.getByTestId("connect-photoshop").bounds()).toEqual(button)
     } finally {
       testRoot.unmount()

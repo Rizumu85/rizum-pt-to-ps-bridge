@@ -1,23 +1,28 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
-import { colors } from "./theme"
+import { colors, metrics as themeMetrics } from "./theme"
 
-export function LayerScroll({ id, children, layoutKey }: { id: string; children: ReactNode; layoutKey: unknown }) {
+export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string; children: ReactNode; layoutKey: unknown; rowCount: number }) {
   const renderer = useGpuixRequired()
   const windowSize = useWindowSize()
   const viewport = useRef<PublicInstance>(null)
-  const content = useRef<PublicInstance>(null)
   const track = useRef<PublicInstance>(null)
   const drag = useRef<{ y: number; offset: number } | null>(null)
   const [metrics, setMetrics] = useState({ height: 0, total: 0, offset: 0 })
 
+  const anchorOffset = (anchor: number[]) => Math.max(0, Math.min(
+    Math.max(0, rowCount * themeMetrics.rowHeight - anchor[2]),
+    anchor[0] * themeMetrics.rowHeight + anchor[1],
+  ))
+
   const measure = () => {
-    if (!viewport.current || !content.current) return
-    const box = renderer.getElementBounds?.(viewport.current.id)
-    const inner = renderer.getElementBounds?.(content.current.id)
-    if (!box || !inner) return
-    const offset = -(renderer.getScrollOffset?.(viewport.current.id)?.[1] ?? 0)
-    const next = { height: box.height, total: inner.height, offset }
+    if (!viewport.current) return
+    const anchor = renderer.getListScrollTop?.(viewport.current.id)
+    if (!anchor) return
+    // Virtual lists have no painted element bounds. Their native scroll anchor
+    // owns both viewport height and position, including the at-end sentinel.
+    const offset = anchorOffset(anchor)
+    const next = { height: anchor[2], total: rowCount * themeMetrics.rowHeight, offset }
     setMetrics(previous => previous.height === next.height && previous.total === next.total
       && previous.offset === next.offset ? previous : next)
   }
@@ -35,22 +40,22 @@ export function LayerScroll({ id, children, layoutKey }: { id: string; children:
   const scroll = (offset: number) => {
     if (!viewport.current) return
     const value = Math.max(0, Math.min(maximum, offset))
-    renderer.scrollTo?.(viewport.current.id, 0, -value)
+    renderer.scrollToItem?.(viewport.current.id, Math.floor(value / themeMetrics.rowHeight), value % themeMetrics.rowHeight)
     setMetrics(previous => ({ ...previous, offset: value }))
   }
 
   return <div
     style={{ display: "flex", flexDirection: "row", flexGrow: 1, flexBasis: 0, minHeight: 0 }}>
-    <div ref={viewport} testId={`layer-scroll:${id}`} onScroll={() => {
+    <virtual-list ref={viewport} testId={`layer-scroll:${id}`} estimatedItemHeight={themeMetrics.rowHeight} overdraw={64} onVisibleRange={() => {
       if (!viewport.current) return
-      const offset = -(renderer.getScrollOffset?.(viewport.current.id)?.[1] ?? 0)
+      const anchor = renderer.getListScrollTop?.(viewport.current.id)
+      if (!anchor) return
+      const offset = anchorOffset(anchor)
       setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })
     }}
-      style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, overflowY: "scroll", overflowX: "hidden" }}>
-      <div ref={content} style={{ display: "flex", flexDirection: "column", minHeight: "100%", padding: 8, flexShrink: 0 }}>
+      style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, margin: 8 }}>
         {children}
-      </div>
-    </div>
+    </virtual-list>
     <div ref={track} testId={`layer-scrollbar:${id}`}
       onMouseDown={event => {
         if (event.button !== 0) return
@@ -69,7 +74,7 @@ export function LayerScroll({ id, children, layoutKey }: { id: string; children:
         if (drag.current) scroll(drag.current.offset + ((event.y ?? 0) - drag.current.y) * maximum / Math.max(1, travel))
       }}
       onMouseUp={() => { drag.current = null }}
-      style={{ width: 12, flexShrink: 0, position: "relative", cursor: maximum ? "pointer" : "default" }}>
+      style={{ width: 12, marginTop: 8, marginBottom: 8, flexShrink: 0, position: "relative", cursor: maximum ? "pointer" : "default" }}>
       {maximum > 0 ? <div style={{ position: "absolute", left: 3, width: 6,
         top: Math.min(maximum, metrics.offset) / maximum * travel, height: thumb,
         borderRadius: 3, backgroundColor: colors.tertiary, pointerEvents: "none" }} /> : null}

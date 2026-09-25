@@ -6,7 +6,6 @@ import {
   useGpuixRequired,
   useIsPresent,
   type EventPayload,
-  type MotionTransition,
   type PublicInstance,
 } from "@gpuix/react"
 import { type HostId, type LayerNode, type Placement } from "./model"
@@ -21,7 +20,13 @@ import {
   Motion,
   motionEase,
 } from "./components"
-import { visibleNodesHeight } from "./bridge-app"
+
+// Native list items must be individual rows: a nested folder otherwise paints
+// all descendants as one item, defeating viewport culling for large stacks.
+export function visibleLayerRows(nodes: LayerNode[], expanded: ReadonlySet<string>, depth = 0): { node: LayerNode; depth: number }[] {
+  return nodes.flatMap(node => [{ node, depth }, ...(node.kind === "group" && expanded.has(node.id)
+    ? visibleLayerRows(node.children ?? [], expanded, depth + 1) : [])])
+}
 
 function LayerThumbnail({ node }: { node: LayerNode }) {
   const isGroup = node.kind === "group"
@@ -91,26 +96,17 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 }
 
 /**
- * Rows whose arrival or departure the pointer just caused: a drop or a ×.
+ * Rows whose arrival or departure the pointer caused: drop, removal or folding.
  * Only these grow in or fold away; undo, reset and reloads swap rows instantly
  * because keyboard and bulk changes should read as immediate. It is context,
  * not a prop, because a leaving row renders from its last props.
  */
 export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
 
-// Growth is the user watching something open; shrinking is dismissal, so it
-// is quicker. Every height in the tree uses this one rule, which keeps nested
-// folders and their ancestors moving as one surface.
+// Flattened descendants still arrive and depart together; dismissal remains
+// quicker than expansion without animating every ancestor's layout as well.
 const growDuration = 0.2
 const shrinkDuration = 0.14
-
-function useHeightTransition(height: number): MotionTransition {
-  const last = useRef({ height, duration: growDuration })
-  if (last.current.height !== height) {
-    last.current = { height, duration: height < last.current.height ? shrinkDuration : growDuration }
-  }
-  return { duration: last.current.duration, ease: motionEase }
-}
 
 function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
   if (node.ref.host !== "substance_painter") return null
@@ -175,7 +171,7 @@ export type TreeInteraction = {
   onRemove: (id: string) => void
 }
 
-const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteraction & { node: LayerNode }) {
+const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: TreeInteraction & { node: LayerNode; depth: number }) {
   const {
     host, pointer, selectedIds, mappedIds, pendingNotes, draggingId,
     draggingHost, expanded, onToggle, onDragStart, onPointerMove,
@@ -191,11 +187,9 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
   const mapped = mappedIds.has(node.id)
   const hovered = usePointer(pointer, state => state.hoveredId === node.id)
   const selected = selectedIds.has(node.id)
-  const children = node.children ?? []
   const present = useIsPresent()
   const animated = useContext(RowMotionContext).has(node.id)
-  const height = metrics.rowHeight + (open ? visibleNodesHeight(children, expanded) : 0)
-  const heightTransition = useHeightTransition(height)
+  const height = metrics.rowHeight
   const dragging = draggingId !== null
   // Where in the row the pointer is decides where the drop lands. A layer's
   // upper part places above it, which is the only way to reach the top of a
@@ -219,10 +213,11 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
       initial={animated ? { height: 0, opacity: 0 } : false}
       animate={{ height, opacity: 1 }}
       exit={animated ? { height: 0, opacity: 0 } : undefined}
-      transition={present ? heightTransition : { duration: shrinkDuration, ease: motionEase }}
+      transition={{ duration: present ? growDuration : shrinkDuration, ease: motionEase }}
       style={{
         position: "relative", display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0,
         overflow: "hidden", borderRadius: metrics.rowRadius,
+        width: "100%", paddingLeft: depth * metrics.treeIndent,
         pointerEvents: present ? undefined : "none",
       }}
     >
@@ -302,34 +297,19 @@ const LayerRow = memo(function LayerRow({ node, ...interaction }: TreeInteractio
       {dropAt === "inside" ? <div
         testId={`drop-indicator:${node.id}`}
         style={{
-          position: "absolute", left: 0, right: 0, top: 0, height: metrics.rowHeight,
+          position: "absolute", left: depth * metrics.treeIndent, right: 0, top: 0, height: metrics.rowHeight,
           borderWidth: 1, borderColor: colors.drop, borderRadius: metrics.rowRadius, pointerEvents: "none",
         }}
-      /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
-      {/* The row wrapper owns the folder's height, so children only fade. */}
-      {node.kind === "group" ? <motion.div
-        initial={false}
-        animate={{ opacity: open ? 1 : 0 }}
-        transition={heightTransition}
-        style={{
-          display: "flex", flexDirection: "column", flexShrink: 0,
-          // Depth has one owner; folder decoration must not shift sibling columns.
-          marginLeft: metrics.treeIndent, pointerEvents: open ? undefined : "none",
-        }}
-      >
-        <AnimatePresence initial={false}>
-          {children.map(child => <LayerRow key={child.id} node={child} {...interaction} />)}
-        </AnimatePresence>
-      </motion.div> : null}
+      /> : dropAt ? <DropLine testId={`drop-indicator:${node.id}`} left={depth * metrics.treeIndent + 2} top={dropAt === "before" ? 0 : metrics.rowHeight - 6} /> : null}
     </Motion>
   )
 })
 
 /** A 2px insertion line with a dot at its start, inside the row so its clip never hides it. */
-function DropLine({ testId, top }: { testId: string; top: number }) {
+function DropLine({ testId, top, left }: { testId: string; top: number; left: number }) {
   return (
     <div testId={testId} style={{
-      position: "absolute", left: 2, right: 4, top, height: 6, pointerEvents: "none",
+      position: "absolute", left, right: 4, top, height: 6, pointerEvents: "none",
       display: "flex", flexDirection: "row", alignItems: "center",
     }}>
       <div style={{ width: 6, height: 6, flexShrink: 0, borderRadius: 3, borderWidth: 1.5, borderColor: colors.drop }} />
@@ -364,6 +344,7 @@ export function HostPanel({
   // keep the key, so they stay instant.
   const shown = useRef({ key: contentKey, fade: false })
   const layoutKey = useMemo(() => ({}), [nodes, interaction.expanded])
+  const rows = useMemo(() => visibleLayerRows(nodes, interaction.expanded), [nodes, interaction.expanded])
   if (shown.current.key !== contentKey) shown.current = { key: contentKey, fade: true }
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
@@ -439,8 +420,8 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId} layoutKey={layoutKey}><AnimatePresence initial={false}>
-          {nodes.map(node => <LayerRow key={node.id} node={node} {...interaction} />)}
+      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length}><AnimatePresence initial={false}>
+          {rows.map(({ node, depth }) => <LayerRow key={node.id} node={node} depth={depth} {...interaction} />)}
       </AnimatePresence></LayerScroll></motion.div>}
     </div>
   )

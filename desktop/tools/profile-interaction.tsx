@@ -15,7 +15,8 @@ for (const size of sizes.length ? sizes : [32, 160]) {
   })
   const sample = session.state.painter[0]
   const nodes: LayerNode[] = Array.from({ length: size }, (_, i) => ({ ...sample, id: `perf-${i}`, name: `Layer ${i}` }))
-  session.state.painter = nodes
+  const nested = process.env.PROFILE_NESTED === "1"
+  session.state.painter = nested ? [{ ...sample, id: "perf-folder", kind: "group", name: "Large folder", children: nodes }] : nodes
   const root = createTestRoot({ width: 700, height: 580 })
   try {
     root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "", failed: false })} onConnectPhotoshop={async () => null} />)
@@ -44,7 +45,7 @@ for (const size of sizes.length ? sizes : [32, 160]) {
         const end = performance.now()
         if (i >= 8) { dispatch.push(updated - start); paint.push(end - updated); total.push(end - start) }
       }
-      console.log(JSON.stringify({ rows: size, phase, updateMs: quantile(dispatch, 0.5), paintMs: quantile(paint, 0.5), medianMs: quantile(total, 0.5), p95Ms: quantile(total, 0.95) }))
+      console.log(JSON.stringify({ rows: size, nested, phase, updateMs: quantile(dispatch, 0.5), paintMs: quantile(paint, 0.5), medianMs: quantile(total, 0.5), p95Ms: quantile(total, 0.95) }))
       root.renderer.simulateKeystrokes("escape")
       root.renderer.dispatchNativeEvents()
       root.renderer.flush()

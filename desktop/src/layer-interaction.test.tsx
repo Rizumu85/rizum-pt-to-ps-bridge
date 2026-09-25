@@ -9,11 +9,17 @@ import type { BridgeState } from "./model"
 
 const fixtures = path.resolve(import.meta.dirname, "../test-fixtures")
 
-async function setup(nested = false) {
+async function setup(nested = false, childCount = 0) {
   const session = await loadBridgeSession({
     painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
     photoshopDocument: path.join(fixtures, "photoshop_document.psd"),
   })
+  if (childCount) {
+    const group = session.state.painter.find(node => node.kind === "group")!
+    group.children = Array.from({ length: childCount }, (_, index) => ({
+      ...group.children![0], id: `large-child-${index}`, name: `Large child ${index}`,
+    }))
+  }
   if (nested) {
     const group = session.state.painter.find(node => node.kind === "group")!
     group.children = [{ ...group, id: "nested", name: "Nested", children: group.children }]
@@ -32,6 +38,38 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it("culls descendants inside large folders and restores compact layout after collapse", async () => {
+    const { app, root, close } = await setup(false, 160)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 300))
+      const list = root.renderer.findByTestId("layer-scroll:painter")!.id
+      const last = root.renderer.findByTestId("layer-row:large-child-159")!.id
+      expect(root.renderer.getElementBounds(last)).toBeNull()
+      root.renderer.scrollToItem(list, 162)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      expect(root.renderer.getElementBounds(last)).not.toBeNull()
+      root.renderer.scrollToItem(list, 0)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      await app.getByTestId("layer-toggle:substance_painter:sp-working").click()
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      await vi.waitFor(async () => expect(await app.getByTestId("layer-row:large-child-0").count()).toBe(0))
+      const folder = await app.getByTestId("layer-row:substance_painter:sp-working").bounds()
+      const following = await app.getByText("LC_BaseTextures").bounds()
+      expect(following.y - folder.y).toBeLessThan(folder.height * 2)
+      await app.getByTestId("layer-toggle:substance_painter:sp-working").click()
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      expect(await app.getByTestId("layer-row:large-child-0").count()).toBe(1)
+      root.renderer.scrollToItem(list, 162)
+      root.renderer.flush()
+      expect(root.renderer.getElementBounds(root.renderer.findByTestId("layer-row:large-child-159")!.id)).not.toBeNull()
+    } finally { await close() }
+  })
   it("shows only the actual drag target and clears it on Escape", async () => {
     const { app, root, close } = await setup()
     try {

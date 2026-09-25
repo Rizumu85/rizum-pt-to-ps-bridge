@@ -37,7 +37,7 @@ import {
   motionEase,
   type PointerFeed,
 } from "./components"
-import { createTreePointer, HostPanel, RowMotionContext } from "./layer-tree"
+import { createTreePointer, HostPanel, RowMotionContext, visibleLayerRows } from "./layer-tree"
 
 export function BridgeApp({
   session: initialSession,
@@ -365,6 +365,8 @@ export function BridgeApp({
   )
 
   const toggle = (id: string) => {
+    const folder = findNode(bridge.photoshop, id) ?? findNode(bridge.painter, id)
+    setMotionIds(new Set(visibleLayerRows(folder?.children ?? [], expanded).map(row => row.node.id)))
     setExpanded((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
