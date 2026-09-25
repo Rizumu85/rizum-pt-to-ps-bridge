@@ -15,8 +15,7 @@ import {
   type PublicInstance,
 } from "@gpuix/react"
 import { colors, metrics, typography } from "./theme"
-import { createPointerFollower, createTilt, tiltSteps } from "./drag-feedback"
-import { dragCard, dragCardSource } from "./drag-card"
+import { createPointerFollower } from "./drag-feedback"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
@@ -679,11 +678,13 @@ export type PointerFeed = {
   returnTo: Bounds | null
 }
 
+const cardWidth = 200
+const cardHeight = 30
 
 /**
- * Carried layers follow the pointer immediately, leaving the target visible,
- * and lean into horizontal motion like a held card. A cancelled drag settles
- * them back into their row; a landed one fades in place while its rows grow in.
+ * Carried layers follow the pointer immediately, leaving the target visible.
+ * A cancelled drag settles them back into their row; a landed one
+ * fades in place, because the drop gap already shows the rows arriving.
  */
 export function DragPreview({ items, pointer }: {
   items: readonly { id: string; name: string; thumbnailPath?: string | null }[]
@@ -695,7 +696,7 @@ export function DragPreview({ items, pointer }: {
   // move restarts its motion.
   const [bounds] = useState(() => renderer.getWindowSize?.() ?? null)
   const anchor = (x: number, y: number) => bounds
-    ? { x: Math.min(x, bounds.width - 14 - dragCard.width - 12), y: Math.min(y, bounds.height - 10 - dragCard.height - 12) }
+    ? { x: Math.min(x, bounds.width - 14 - cardWidth - 12), y: Math.min(y, bounds.height - 10 - cardHeight - 12) }
     : { x, y }
   const position = useRef(anchor(pointer.current.x, pointer.current.y))
   const carrier = useRef<PublicInstance>(null)
@@ -706,44 +707,14 @@ export function DragPreview({ items, pointer }: {
     position.current = point
     if (carrier.current) renderer.applyBatch(JSON.stringify([["setStyle", carrier.current.id, carrierStyle(point)]]))
   }
-  // Every tilt is decoded when the drag starts, so leaning only swaps which
-  // picture shows; decoding a new one mid-drag would blank the card.
-  const [pictures] = useState(() => tiltSteps.map(step => dragCardSource(items, step)))
-  const pictureNodes = useRef<(PublicInstance | null)[]>([])
-  const shownTilt = useRef(0)
-  const pictureStyle = (step: number) => ({
-    position: "absolute" as const, left: 0, top: 0, width: dragCard.pictureWidth, height: dragCard.pictureHeight,
-    opacity: step === shownTilt.current ? 1 : 0, pointerEvents: "none" as const,
-  })
-  const showTilt = (step: number) => {
-    const previous = shownTilt.current
-    shownTilt.current = step
-    const nodes = pictureNodes.current
-    const from = nodes[tiltSteps.indexOf(previous)]
-    const to = nodes[tiltSteps.indexOf(step)]
-    if (from && to && from !== to) {
-      renderer.applyBatch(JSON.stringify([
-        ["setStyle", from.id, pictureStyle(previous)],
-        ["setStyle", to.id, pictureStyle(step)],
-      ]))
-    }
-  }
   const present = useIsPresent()
   // GPUiX resends host styles on React commits. Restore the input-owned
   // position after those rare commits, so unrelated updates cannot snap it back.
   useLayoutEffect(() => writePosition(position.current))
   useLayoutEffect(() => {
-    // A leaving stack stops following and straightens, so the pointer cannot
-    // fight its exit.
-    if (!present) {
-      showTilt(0)
-      return
-    }
-    const tilt = createTilt(showTilt)
-    const follower = createPointerFollower(position.current, point => {
-      writePosition(point)
-      tilt.sample(point.x)
-    })
+    // A leaving stack stops following, so the pointer cannot fight its exit.
+    if (!present) return
+    const follower = createPointerFollower(position.current, writePosition)
     const follow = (x: number, y: number) => {
       const point = anchor(x, y)
       follower.move(point.x, point.y)
@@ -755,7 +726,6 @@ export function DragPreview({ items, pointer }: {
     // A preview still leaving must not detach the next drag's preview.
     return () => {
       follower.dispose()
-      tilt.dispose()
       if (pointer.current.follow === follow) {
         pointer.current.follow = null
         pointer.current.flush = null
@@ -763,38 +733,61 @@ export function DragPreview({ items, pointer }: {
     }
   }, [pointer, present, renderer])
   const home = present ? null : pointer.current.returnTo
-  const carried = { left: 14 - dragCard.insetX, top: 10 - dragCard.insetY, opacity: 1 }
+  const depth = Math.min(items.length, 3)
+  const first = items[0]
+  const card = (layer: number) => {
+    const offset = layer * 4
+    const carried = { left: 14 + offset, top: 10 + offset, width: cardWidth, height: cardHeight, opacity: [1, 0.7, 0.45][layer] }
+    const rowAt = (bounds: Bounds, x: number, y: number) => ({
+      left: bounds.x - x, top: bounds.y - y, width: bounds.width, height: bounds.height,
+    })
+    return {
+      // Pickup is continuous input, not an entrance to wait for. Only a
+      // cancelled drop animates home; the carried card starts at the pointer.
+      initial: carried,
+      animate: carried,
+      exit: home ? { ...rowAt(home, position.current.x, position.current.y), opacity: 0 } : { ...carried, opacity: 0 },
+      transition: home || present ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase },
+    }
+  }
+  const cardStyle = {
+    position: "absolute" as const,
+    borderRadius: metrics.rowRadius,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.control,
+    boxShadow: { offsetX: 0, offsetY: 6, blurRadius: 16, spreadRadius: 0, color: "#00000073" },
+    pointerEvents: "none" as const,
+  }
   return (
     // The stack rides with the pointer; it must never become the hit target.
     <div ref={carrier} testId="drag-carrier" style={carrierStyle(position.current)}>
+      {Array.from({ length: depth - 1 }, (_, index) => depth - 1 - index).map(layer => (
+        <motion.div key={layer} {...card(layer)} style={cardStyle} />
+      ))}
       <Motion
-        // Pickup is continuous input, not an entrance to wait for. Only a
-        // cancelled drop animates home; the carried card starts at the pointer.
-        initial={carried}
-        animate={carried}
-        exit={home ? {
-          left: home.x - position.current.x - dragCard.insetX,
-          top: home.y - position.current.y - dragCard.insetY,
-          opacity: 0,
-        } : { ...carried, opacity: 0 }}
-        transition={home || present ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase }}
+        testId="drag-preview"
+        {...card(0)}
         style={{
-          position: "absolute", width: dragCard.pictureWidth, height: dragCard.pictureHeight, pointerEvents: "none",
+          ...cardStyle, overflow: "hidden", paddingLeft: 8, paddingRight: 8,
+          display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
         }}
       >
-        {tiltSteps.map((step, index) => <img
-          key={step}
-          ref={node => { pictureNodes.current[index] = node }}
-          src={pictures[index]}
+        {first.thumbnailPath ? <img
+          src={first.thumbnailPath}
           alt=""
-          objectFit="fill"
-          style={pictureStyle(step)}
-        />)}
-        {/* The front card's box, for anything that needs where the card is. */}
-        <div testId="drag-preview" style={{
-          position: "absolute", left: dragCard.insetX, top: dragCard.insetY,
-          width: dragCard.width, height: dragCard.height, pointerEvents: "none",
-        }} />
+          objectFit="cover"
+          style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 3, pointerEvents: "none" }}
+        /> : null}
+        <div style={{ minWidth: 0, flexGrow: 1 }}><PrimaryText>{first.name}</PrimaryText></div>
+        {items.length > 1 ? <div style={{
+          height: 16, minWidth: 16, paddingLeft: 5, paddingRight: 5, flexShrink: 0, borderRadius: 8,
+          display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: colors.text,
+        }}>
+          <text style={{ color: colors.canvas, fontFamily: typography.family, fontSize: 11, fontWeight: 600 }}>
+            {items.length}
+          </text>
+        </div> : null}
       </Motion>
     </div>
   )

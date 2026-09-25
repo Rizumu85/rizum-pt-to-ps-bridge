@@ -255,8 +255,8 @@ describe("layer tree interaction", () => {
       await app.mouse.down(app.getByText("Paint edit"))
       await app.mouse.move(app.getByText("Lighten"), { pressedButton: 0 })
       expect(await app.getByTestId("drag-preview").count()).toBe(1)
-      // The carried card is a picture, so only the source row holds the name as text.
-      expect(await app.getByText("Paint edit").count()).toBe(1)
+      // The source row and the carried card.
+      expect(await app.getByText("Paint edit").count()).toBe(2)
       const lighten = await app.getByTestId("layer-row:substance_painter:sp-lighten").bounds()
       const chip = await app.getByTestId("drag-preview").bounds()
       expect(chip.y).toBeGreaterThan(lighten.y)
@@ -285,6 +285,7 @@ describe("layer tree interaction", () => {
       const settled = await app.getByTestId("drag-preview").bounds()
       expect(Math.abs(settled.y - home.y)).toBeLessThan(Math.abs(carried.y - home.y))
       expect(Math.abs(settled.y - home.y)).toBeLessThan(4)
+      expect(settled.width).toBeGreaterThan(carried.width)
       root.renderer.dispatchNativeEvents()
       expect(await app.getByTestId("drag-preview").count()).toBe(0)
       expect(await app.getByText("Pending").count()).toBe(0)

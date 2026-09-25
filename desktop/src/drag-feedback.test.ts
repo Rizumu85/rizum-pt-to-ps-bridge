@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createPointerFollower, createRowBoundsCache, createTilt } from "./drag-feedback"
+import { createPointerFollower, createRowBoundsCache } from "./drag-feedback"
 
 afterEach(() => vi.useRealTimers())
 
@@ -51,31 +51,5 @@ describe("drag feedback work bounds", () => {
     follow.move(150, 200)
     vi.runAllTimers()
     expect(write).toHaveBeenCalledTimes(1)
-  })
-
-  it("leans the cards into horizontal motion by whole degrees and straightens at rest", () => {
-    vi.useFakeTimers()
-    let now = 0
-    const shown: number[] = []
-    const tilt = createTilt(step => shown.push(step), () => now)
-    for (let i = 0; i < 20; i++) {
-      now += 8
-      tilt.sample(i * 16)
-      vi.advanceTimersByTime(8)
-    }
-    expect(Math.max(...shown)).toBe(6)
-    expect(shown.every((step, index) => index === 0 || Math.abs(step - shown[index - 1]) >= 1)).toBe(true)
-    const leaning = shown.length
-    now += 1000
-    vi.advanceTimersByTime(1000)
-    expect(shown.at(-1)).toBe(0)
-    expect(shown.length).toBeGreaterThan(leaning)
-    for (let i = 0; i < 20; i++) {
-      now += 8
-      tilt.sample(1000 - i * 16)
-      vi.advanceTimersByTime(8)
-    }
-    expect(Math.min(...shown)).toBe(-6)
-    tilt.dispose()
   })
 })
