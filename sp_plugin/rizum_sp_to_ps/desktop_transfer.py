@@ -337,6 +337,8 @@ def _prepare_photoshop_transfer(plan, settings):
                 "source_kind": item.source_kind,
                 "png": asset["png"],
                 "mask_png": asset.get("mask_png"),
+                # Children arrive top to bottom, the order Photoshop shows.
+                "children": asset.get("children") or [],
                 "target_layer_id": item.target_layer_id,
                 "target_index_path": list(item.target_index_path),
                 "target_name": item.target_name,

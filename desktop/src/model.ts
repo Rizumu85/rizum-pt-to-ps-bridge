@@ -142,13 +142,9 @@ export function transferBetweenHosts(
 
   const [remaining, removed] = removeNode(remapping ? targetNodes : sourceNodes, sourceId)
   if (!removed) return state
-  // A Photoshop group arrives in Painter as a folder of its layers, while a
-  // Painter group is rendered into Photoshop as one bitmap. The preview must
-  // promise exactly the hierarchy Apply creates.
-  const preview = removed.kind === "group" && sourceHost === "substance_painter"
-    ? { ...removed, kind: "layer" as const, children: undefined }
-    : removed
-  const nextTarget = insertAtTarget(remapping ? remaining : targetNodes, targetId, preview)
+  // Groups cross in both directions as folders of their layers, which is the
+  // hierarchy Apply creates and so the one the preview promises.
+  const nextTarget = insertAtTarget(remapping ? remaining : targetNodes, targetId, removed)
   const remainingSource = remapping ? sourceNodes : remaining
   const direction: TransferDirection =
     sourceHost === "photoshop" ? "photoshop_to_painter" : "painter_to_photoshop"

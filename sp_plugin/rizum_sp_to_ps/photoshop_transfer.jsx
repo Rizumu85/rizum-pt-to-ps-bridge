@@ -30,9 +30,7 @@
             if (mapped.insertion === "inside" && destination.typename !== "LayerSet") {
                 throw new Error("Mapped inside target is no longer a Photoshop group");
             }
-            if (!File(mapped.png).exists || (mapped.mask_png && !File(mapped.mask_png).exists)) {
-                throw new Error("Mapped PNG or mask is missing: " + mapped.name);
-            }
+            requireAssets(mapped);
             targets.push(destination);
         }
         publishProgress("transferring_layers", 0, request.layers.length);
@@ -41,16 +39,11 @@
             var item = request.layers[index];
             try {
                 var target = targets[index];
-                var placed = placePngLayer(item.png, document);
-                placed.name = String(item.name || "Painter Layer");
-                placed.visible = item.visible !== false;
-                placed.opacity = opacityPercent(item.opacity);
-                var blendMode = photoshopBlendMode(item.blend_mode);
-                if (blendMode !== null) {
-                    placed.blendMode = blendMode;
-                }
-                placed.rasterize(RasterizeType.ENTIRELAYER);
+                var placed = createLayer(document, document, item);
                 moveMappedLayer(placed, target, item);
+                // A mapped Painter folder stays a folder: its layers are placed
+                // only after the folder sits at its destination.
+                placeChildren(document, placed, item.children);
                 if (item.mask_png) {
                     applyMask(document, placed, item.mask_png);
                 }
@@ -211,6 +204,51 @@
         executeAction(charIDToTypeID("Plc "), descriptor, DialogModes.NO);
     }
 
+    function isGroup(item) {
+        return !!(item.children && item.children.length);
+    }
+
+    function requireAssets(item) {
+        if (isGroup(item)) {
+            for (var index = 0; index < item.children.length; index += 1) {
+                requireAssets(item.children[index]);
+            }
+        } else if (!item.png || !File(item.png).exists) {
+            throw new Error("Mapped PNG is missing: " + item.name);
+        }
+        if (item.mask_png && !File(item.mask_png).exists) {
+            throw new Error("Mapped mask is missing: " + item.name);
+        }
+    }
+
+    function createLayer(targetDocument, parent, item) {
+        var layer = isGroup(item) ? parent.layerSets.add() : placePngLayer(item.png, targetDocument);
+        layer.name = String(item.name || "Painter Layer");
+        layer.visible = item.visible !== false;
+        layer.opacity = opacityPercent(item.opacity);
+        var blendMode = photoshopBlendMode(item.blend_mode, isGroup(item));
+        if (blendMode !== null) {
+            layer.blendMode = blendMode;
+        }
+        if (!isGroup(item)) {
+            layer.rasterize(RasterizeType.ENTIRELAYER);
+        }
+        return layer;
+    }
+
+    function placeChildren(targetDocument, group, children) {
+        // Children arrive top to bottom; appending each keeps that order.
+        for (var index = 0; index < (children || []).length; index += 1) {
+            var child = children[index];
+            var layer = createLayer(targetDocument, group, child);
+            layer.move(group, ElementPlacement.PLACEATEND);
+            placeChildren(targetDocument, layer, child.children);
+            if (child.mask_png) {
+                applyMask(targetDocument, layer, child.mask_png);
+            }
+        }
+    }
+
     function moveMappedLayer(layer, target, item) {
         // Replay each drop exactly as the desktop preview: group drops append;
         // repeated drops on one layer insert immediately below that same layer.
@@ -230,9 +268,10 @@
         return Math.max(0, Math.min(100, opacity));
     }
 
-    function photoshopBlendMode(value) {
+    function photoshopBlendMode(value, allowPassThrough) {
         switch (String(value || "").toUpperCase()) {
         case "NORMAL": return BlendMode.NORMAL;
+        case "PASSTHROUGH": return allowPassThrough ? BlendMode.PASSTHROUGH : BlendMode.NORMAL;
         case "MULTIPLY": return BlendMode.MULTIPLY;
         case "SCREEN": return BlendMode.SCREEN;
         case "OVERLAY": return BlendMode.OVERLAY;

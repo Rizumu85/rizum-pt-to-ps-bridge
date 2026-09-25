@@ -504,6 +504,11 @@ from Photoshop's own renderer, the mapper treats layers this way:
   has no equivalent.
 - A Photoshop folder arrives in Painter as a folder of its layers. The mapper
   shows no group composite previews.
+- A Painter folder arrives in Photoshop as a folder of its layers too, built
+  like the regular PSD export: each layer keeps its blend mode, opacity,
+  visibility and mask, and a subfolder is flattened only where its channel
+  blend decision bakes it. (It used to cross as one flattened bitmap; users
+  map folders to keep working on their layers.)
 
 Only mapped layers are rendered to PNG, at Apply. The mapper reads the saved
 file, so unsaved Photoshop edits are not seen until the PSD is saved.

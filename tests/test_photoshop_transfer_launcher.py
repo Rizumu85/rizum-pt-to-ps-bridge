@@ -52,5 +52,57 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
+    def test_mapped_painter_group_arrives_as_a_folder_of_its_layers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            png = lambda name: str((root / f"{name}.png").resolve())
+            for name in ("top", "deep", "bottom"):
+                Path(png(name)).write_bytes(b"png")
+            layer = lambda name, **fields: {
+                "name": name, "kind": "layer", "png": png(name.lower()), "mask_png": None,
+                "blend_mode": "NORMAL", "opacity": 100.0, "visible": True, "children": [], **fields,
+            }
+            request = root / "photoshop_transfer.json"
+            request.write_text(json.dumps({
+                "request_type": "painter_to_photoshop_transfer",
+                "document": {"path": str(root / "document.psd")},
+                "layers": [{
+                    "order": 0, "name": "Working", "png": None, "mask_png": None,
+                    "target_layer_id": 3, "target_index_path": [1], "target_name": "Base",
+                    "target_kind": "layer", "insertion": "after",
+                    "blend_mode": "Passthrough", "opacity": 80.0, "visible": True,
+                    "children": [
+                        layer("Top", blend_mode="MULTIPLY", opacity=50.0),
+                        {**layer("Sub"), "kind": "group", "png": None, "blend_mode": "PASSTHROUGH",
+                         "children": [layer("Deep")]},
+                        layer("Bottom", visible=False),
+                    ],
+                }],
+            }), encoding="utf-8")
+            launch = write_photoshop_transfer_launcher(request)
+            host = Path(__file__).parent / "fixtures" / "photoshop_transfer_host.cjs"
+            completed = subprocess.run(
+                ["node", str(host), str(launch.launcher_path), str(request)],
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            document = json.loads(completed.stdout)
+            result = json.loads(launch.result_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(result["success"], result["errors"])
+        self.assertTrue(document["saved"])
+        outline = lambda layers: [
+            (item["name"], outline(item["layers"])) if "layers" in item else item["name"] for item in layers
+        ]
+        self.assertEqual(outline(document["layers"]), [
+            ("Group", ["Detail"]), "Base", ("Working", ["Top", ("Sub", ["Deep"]), "Bottom"]),
+        ])
+        working = document["layers"][2]
+        self.assertEqual((working["blendMode"], working["opacity"]), ("PASSTHROUGH", 80.0))
+        top, sub, bottom = working["layers"]
+        self.assertEqual((top["blendMode"], top["opacity"], top["rasterized"]), ("MULTIPLY", 50.0, True))
+        self.assertEqual(sub["blendMode"], "PASSTHROUGH")
+        self.assertFalse(bottom["visible"])
+
 if __name__ == "__main__":
     unittest.main()

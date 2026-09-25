@@ -324,13 +324,16 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None):
                 )
 
             selected = deepcopy(selected)
-            # A desktop mapping represents one dragged object. Groups therefore
-            # cross hosts as one visual object instead of leaking their full
-            # internal Painter implementation into the Photoshop target.
-            selected["bake_policy"] = "bake"
-            selected["children"] = []
-            selected["content_effects"] = []
-            selected["mask_effects"] = []
+            if not selected.get("children"):
+                # A mapped layer always crosses as its rendered pixels, even
+                # where the channel projection would leave it out.
+                selected["bake_policy"] = "bake"
+                selected["content_effects"] = []
+                selected["mask_effects"] = []
+            # A mapped group keeps the structure the regular PSD export gives
+            # it: a Photoshop folder of its layers, flattened only where the
+            # channel's blend decisions bake it. Users map folders to keep
+            # working on their layers in Photoshop.
 
             bundle = root / f"{order + 1:03d}_{_safe_filename(selected.get('name'))}"
             (bundle / "png").mkdir(parents=True, exist_ok=True)
@@ -346,31 +349,51 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None):
                 node_exporter=node_exporter,
                 geometry_baker=geometry_baker,
             )
-            rendered = build_request["layers"][0]
-            asset = rendered.get("asset")
-            if not asset or not Path(asset["path"]).is_file():
+            node = _transfer_node(build_request["layers"][0], context["channel"])
+            if node is None:
                 raise RuntimeError(
                     f"Painter rendered no visible pixels for {selected.get('name')!r}."
                 )
-            mask_asset = rendered.get("mask_asset")
-            exported.append(
-                {
-                    "uid": source_uid,
-                    "name": selected.get("name") or source_uid,
-                    "kind": selected.get("kind") or "layer",
-                    "png": str(Path(asset["path"]).resolve()),
-                    "mask_png": (
-                        str(Path(mask_asset["path"]).resolve())
-                        if mask_asset and Path(mask_asset["path"]).is_file()
-                        else None
-                    ),
-                }
-            )
+            exported.append({
+                "uid": source_uid,
+                "name": selected.get("name") or source_uid,
+                **node,
+            })
     finally:
         node_exporter.close()
         geometry_baker.close()
 
     return exported
+
+
+def _transfer_node(node, channel):
+    """One rendered build node as the Painter-to-Photoshop transfer tree."""
+    mask = node.get("mask_asset")
+    opacity = node.get("opacity")
+    if isinstance(opacity, dict):
+        opacity = opacity.get(channel, 1.0)
+    record = {
+        "name": node.get("name") or node.get("uid_hex") or "Painter Layer",
+        "blend_mode": node.get("ps_blend_mode") or "NORMAL",
+        "opacity": max(0.0, min(1.0, float(1.0 if opacity is None else opacity))) * 100.0,
+        "visible": node.get("visible", True) is not False,
+        "mask_png": (
+            str(Path(mask["path"]).resolve())
+            if mask and Path(mask["path"]).is_file()
+            else None
+        ),
+    }
+    asset = node.get("asset")
+    if asset and Path(asset["path"]).is_file():
+        return {**record, "kind": "layer", "png": str(Path(asset["path"]).resolve()), "children": []}
+    children = [
+        child
+        for child in (_transfer_node(item, channel) for item in node.get("children") or [])
+        if child is not None
+    ]
+    if not children:
+        return None
+    return {**record, "kind": "group", "png": None, "children": children}
 
 
 def build_request_from_preview(preview_request, bundle_dir, settings=None):

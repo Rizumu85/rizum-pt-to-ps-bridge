@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   cloneState,
+  findNode,
   removeFromHost,
   transferBetweenHosts,
   transferSelection,
@@ -56,13 +57,16 @@ describe("transferBetweenHosts", () => {
     expect(visibleSourceIds(staged.painter, "photoshop", new Set(["substance_painter:working"]))).toEqual([...ids])
   })
 
-  it("retargets a flattened Painter group and preserves its original source reference", () => {
+  it("retargets a Painter group as a folder of its layers and keeps its source reference", () => {
+    const working = findNode(fixture().painter, "substance_painter:working")!
     const staged = transferBetweenHosts(fixture(), "substance_painter:working", "photoshop:group")
     const next = transferBetweenHosts(staged, "substance_painter:working", "photoshop:cleanup")
     expect(next.mappings).toHaveLength(1)
     expect(next.mappings[0]).toMatchObject({ targetId: "photoshop:cleanup", source: { kind: "group" } })
-    expect(next.photoshop.at(-1)?.id).toBe("substance_painter:working")
-    expect(next.photoshop.at(-1)?.children).toBeUndefined()
+    const moved = next.photoshop.at(-1)
+    expect(moved?.id).toBe("substance_painter:working")
+    expect(moved?.kind).toBe("group")
+    expect(moved?.children?.map(node => node.id)).toEqual(working.children?.map(node => node.id))
   })
 
   it("cannot transfer away a destination of another pending transfer", () => {
