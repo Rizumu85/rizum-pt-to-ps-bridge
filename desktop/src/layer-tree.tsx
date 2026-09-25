@@ -1,9 +1,8 @@
 import { createContext, memo, useContext, useMemo, useRef, useSyncExternalStore } from "react"
-import { LayerScroll } from "./layer-scroll"
+import { LayerScroll, RowBoundsContext } from "./layer-scroll"
 import {
   motion,
-  useGpuixRequired,
-  useIsPresent,
+  type ElementBounds,
   type EventPayload,
   type PublicInstance,
 } from "@gpuix/react"
@@ -95,17 +94,11 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 }
 
 /**
- * Rows whose arrival or departure the pointer caused: drop, removal or folding.
- * Only these grow in or fold away; undo, reset and reloads swap rows instantly
- * because keyboard and bulk changes should read as immediate. It is context,
- * not a prop, because a leaving row renders from its last props.
+ * Pointer-driven arrivals fade in; undo and bulk changes remain immediate.
  */
 export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
 
-// Flattened descendants still arrive and depart together; dismissal remains
-// quicker than expansion without animating every ancestor's layout as well.
 const growDuration = 0.2
-const shrinkDuration = 0.14
 
 function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
   if (node.ref.host !== "substance_painter") return null
@@ -162,8 +155,8 @@ export type TreeInteraction = {
   pendingNotes: Map<string, string>
   expanded: Set<string>
   onToggle: (id: string) => void
-  onDragStart: (id: string, event: EventPayload) => void
-  onPointerMove: (event: EventPayload, rowId?: string, placement?: Placement) => void
+  onDragStart: (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => void
+  onPointerMove: (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) => void
   onDragEnd: () => void
   onHover: (id: string | null) => void
   onDrop: (id: string) => void
@@ -186,46 +179,37 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
   const placement = usePointer(pointer, state => state.dropTargetId === node.id ? state.dropPlacement : null)
   const dropAt = acceptsDrop ? placement : null
-  const renderer = useGpuixRequired()
+  const boundsCache = useContext(RowBoundsContext)!
   const header = useRef<PublicInstance>(null)
   const mapped = mappedIds.has(node.id)
   const hovered = usePointer(pointer, state => state.hoveredId === node.id)
-  const present = useIsPresent()
   const animated = useContext(RowMotionContext).has(node.id)
   const height = metrics.rowHeight
-  const release = () => {
+  const readBounds = (fresh = false) => header.current ? boundsCache.read(header.current.id, fresh) : null
+  const release = (event: EventPayload) => {
     const current = pointer.get()
-    if (nativeNode && current.draggingId && current.draggingHost !== host) onDrop(node.id)
+    if (nativeNode && current.draggingId && current.draggingHost !== host) {
+      // A wheel event or window resize can race the last move. The final drop
+      // uses fresh geometry, without forcing every intermediate move to read it.
+      onPointerMove({ ...event, pressedButton: 0 }, node.id, () => readBounds(true))
+      onDrop(node.id)
+    }
     onDragEnd()
-  }
-  // Where in the row the pointer is decides where the drop lands. A layer's
-  // upper part places above it, which is the only way to reach the top of a
-  // list; its middle keeps meaning "below this layer". A folder's upper edge
-  // places above it and the rest inside it.
-  const aim = (event: EventPayload): Placement | undefined => {
-    // Aim on every held-button move, not only once this row knows a drag is
-    // on: the move that starts a drag can also be the one it is released on.
-    const box = event.pressedButton === 0 && nativeNode && header.current
-      ? renderer.getElementBounds?.(header.current.id)
-      : null
-    if (!box || event.y === undefined) return undefined
-    const share = (event.y - box.y) / box.height
-    if (node.kind === "group") return share < 0.3 ? "before" : "inside"
-    return share < 0.4 ? "before" : "after"
   }
 
   return (
     <Motion
       testId={`layer-group:${node.id}`}
-      initial={animated ? { height: 0, opacity: 0 } : false}
-      animate={{ height, opacity: 1 }}
-      exit={animated ? { height: 0, opacity: 0 } : undefined}
-      transition={{ duration: present ? growDuration : shrinkDuration, ease: motionEase }}
+      initial={animated ? { opacity: 0 } : false}
+      animate={{ opacity: 1 }}
+      transition={{ duration: growDuration, ease: motionEase }}
       style={{
+        // Fixed row geometry keeps virtual-list indices and cached drop bounds
+        // valid; height exits would retain phantom items while recycling rows.
+        height,
         position: "relative", display: "flex", flexDirection: "column", minWidth: 0, flexShrink: 0,
         overflow: "hidden", borderRadius: metrics.rowRadius,
         width: "100%", paddingLeft: depth * metrics.treeIndent,
-        pointerEvents: present ? undefined : "none",
       }}
     >
       <div
@@ -238,7 +222,7 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
         onMouseLeave={() => { if (pointer.get().hoveredId === node.id) onHover(null) }}
         onMouseMove={event => {
           if (pointer.get().hoveredId !== node.id) onHover(node.id)
-          onPointerMove(event, node.id, aim(event))
+          onPointerMove(event, node.id, readBounds)
         }}
         onMouseUp={release}
         style={{
@@ -268,7 +252,8 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
           {node.kind === "group" ? <DisclosureIcon open={open} /> : null}
         </div>
         <div
-          onMouseDown={event => { if (event.button === 0) onDragStart(node.id, event) }}
+          testId={`layer-drag:${node.id}`}
+          onMouseDown={event => { if (event.button === 0) onDragStart(node.id, event, readBounds) }}
           onMouseUp={release}
           style={{ minWidth: 0, flexGrow: 1, height: "100%", display: "flex", flexDirection: "row", alignItems: "center", gap: 8,
             active: node.locked ? undefined : { cursor: "grabbing" } }}
@@ -332,7 +317,6 @@ function DropLine({ testId, top, left }: { testId: string; top: number; left: nu
 }
 
 export function HostPanel({
-  dragging,
   panelId,
   title,
   subtitle,
@@ -343,7 +327,6 @@ export function HostPanel({
   contentKey,
   ...interaction
 }: {
-  dragging: boolean
   panelId: "photoshop" | "painter"
   title: string
   subtitle: string
@@ -354,6 +337,7 @@ export function HostPanel({
   /** Names what the tree shows: a document or a Painter target. */
   contentKey: string
 } & TreeInteraction) {
+  const dragging = usePointer(interaction.pointer, state => state.draggingId !== null)
   // A different document or target fades its tree in so the swap does not
   // read as a glitch. Reloads, Apply refreshes and the window's first frame
   // keep the key, so they stay instant.
@@ -364,6 +348,7 @@ export function HostPanel({
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
     <div
+      testId={`layer-panel:${panelId}`}
       // GPUiX delivers pointer moves no higher than the host panels, so the
       // drag preview is fed here; drops only land inside a panel anyway.
       onMouseMove={onTrackPointer}
@@ -435,9 +420,10 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length}>
-          {rows.map(({ node, depth }) => <LayerRow key={node.id} node={node} depth={depth} {...interaction} />)}
-      </LayerScroll></motion.div>}
+      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length} renderRow={index => {
+        const { node, depth } = rows[index]
+        return <LayerRow key={node.id} node={node} depth={depth} {...interaction} />
+      }} /></motion.div>}
     </div>
   )
 }

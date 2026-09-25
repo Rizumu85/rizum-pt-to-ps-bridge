@@ -11,6 +11,7 @@ import {
 import {
   cloneState,
   findNode,
+  indexLayerTrees,
   defaultPlacement,
   removeFromHost,
   selectionRoots,
@@ -38,7 +39,7 @@ import {
   motionEase,
   type PointerFeed,
 } from "./components"
-import { createTreePointer, HostPanel, RowMotionContext, visibleLayerRows } from "./layer-tree"
+import { createTreePointer, HostPanel, RowMotionContext, visibleLayerRows, type TreePointerStore } from "./layer-tree"
 
 export function BridgeApp({
   session: initialSession,
@@ -61,12 +62,10 @@ export function BridgeApp({
   const [history, setHistory] = useState<BridgeState[]>([])
   // Preview parity only earns toolbar space for commands backed by real state changes.
   const [redoStack, setRedoStack] = useState<BridgeState[]>([])
-  const press = useRef<{ id: string; x: number; y: number; bounds: ElementBounds | null; selectedIds: Set<string> } | null>(null)
+  const press = useRef<{ node: LayerNode; x: number; y: number; bounds: ElementBounds | null; selectedIds: Set<string> } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const selectionAnchor = useRef<string | null>(null)
   const [treePointer] = useState(createTreePointer)
-  const draggingId = useSyncExternalStore(treePointer.subscribe, () => treePointer.get().draggingId)
-  const draggingHost = useSyncExternalStore(treePointer.subscribe, () => treePointer.get().draggingHost)
   const [expanded, setExpanded] = useState(() => collectExpandedIds(session.state))
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
@@ -75,7 +74,18 @@ export function BridgeApp({
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
-  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, returnTo: null })
+  const pointer = useRef<PointerFeed>({ x: 0, y: 0, follow: null, flush: null, returnTo: null })
+  const layerIndex = useMemo(() => indexLayerTrees(bridge), [bridge.photoshop, bridge.painter])
+  const visibleSelection = useMemo(() => ({
+    photoshop: {
+      photoshop: visibleSourceIds(bridge.photoshop, "photoshop", expanded),
+      substance_painter: visibleSourceIds(bridge.photoshop, "substance_painter", expanded),
+    },
+    substance_painter: {
+      photoshop: visibleSourceIds(bridge.painter, "photoshop", expanded),
+      substance_painter: visibleSourceIds(bridge.painter, "substance_painter", expanded),
+    },
+  }), [bridge.photoshop, bridge.painter, expanded])
 
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
@@ -87,10 +97,6 @@ export function BridgeApp({
   const mappedIds = useMemo(
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
-  )
-  const carried = useMemo(
-    () => draggingHost ? selectionRoots(bridge, draggingHost, selectedIds) : [],
-    [bridge, draggingHost, selectedIds],
   )
   const activePainterContext = useMemo(
     () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
@@ -132,31 +138,31 @@ export function BridgeApp({
   }
 
   const endDrag = (landed = false) => {
+    pointer.current.flush?.()
     pointer.current.returnTo = !landed && treePointer.get().draggingId ? press.current?.bounds ?? null : null
     press.current = null
     treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
-  const startDrag = (id: string, event: EventPayload) => {
+  const startDrag = (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => {
     if (pending.current) return
     // Native row presses do not bubble focus like DOM clicks; keep editing
     // shortcuts with the staging area without stealing focus from open menus.
     if (rootRef.current) renderer.focusElement?.(rootRef.current.id)
-    const nodes = findNode(bridge.photoshop, id) ? bridge.photoshop : bridge.painter
-    const source = findNode(nodes, id)
-    if (!source || source.locked) return
+    const source = layerIndex.get(id)
+    if (!source || source.node.locked) return
     const modifiers = { toggle: event.modifiers?.ctrl || event.modifiers?.cmd, range: event.modifiers?.shift }
-    const visible = visibleSourceIds(nodes, source.ref.host, expanded)
+    const visible = visibleSelection[source.host][source.node.ref.host]
     const next = selectLayerIds(selectedIds, selectionAnchor.current, id, visible, modifiers)
     setSelectedIds(next)
     if (!modifiers.range) selectionAnchor.current = id
     press.current = next.has(id)
-      ? { id, x: event.x ?? 0, y: event.y ?? 0, bounds: renderer.getElementBounds?.(event.elementId) ?? null, selectedIds: next }
+      ? { node: source.node, x: event.x ?? 0, y: event.y ?? 0, bounds: readBounds(), selectedIds: next }
       : null
     treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
-  const movePointer = (event: EventPayload, rowId?: string, placement?: Placement) => {
+  const movePointer = (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) => {
     if (event.pressedButton !== 0 || pending.current) {
       if (press.current || treePointer.get().draggingId) endDrag()
       return
@@ -165,24 +171,30 @@ export function BridgeApp({
     if (!start) return
     // A press is selection, not a drag. Native child controls can consume mouse-up,
     // so released-button movement also clears the gesture instead of leaving a ghost drop.
-    if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
-    const source = findNode(bridge.photoshop, start.id) ?? findNode(bridge.painter, start.id)
-    if (!source) return
-    if (treePointer.get().draggingId !== start.id) {
+    const source = start.node
+    if (!treePointer.get().draggingId) {
+      if (Math.hypot((event.x ?? start.x) - start.x, (event.y ?? start.y) - start.y) < metrics.dragThreshold) return
       pointer.current.x = event.x ?? start.x
       pointer.current.y = event.y ?? start.y
-      treePointer.set({ draggingId: start.id, draggingHost: source.ref.host })
+      treePointer.set({ draggingId: source.id, draggingHost: source.ref.host })
     }
     // Pickup belongs to the whole workspace, not a row hit target: a fast
     // first move can already be in the gutter. Only row events choose a drop.
     if (!rowId) return
-    const targetHost: HostId = rowId && findNode(bridge.photoshop, rowId) ? "photoshop" : "substance_painter"
-    const targetTree = targetHost === "photoshop" ? bridge.photoshop : bridge.painter
-    const target = rowId ? findNode(targetTree, rowId) : null
-    const dropTargetId = target && target.ref.host === targetHost && source.ref.host !== targetHost ? target.id : null
+    const target = layerIndex.get(rowId)
+    const dropTargetId = target && target.node.ref.host === target.host && source.ref.host !== target.host ? target.node.id : null
+    let placement: Placement | null = null
+    if (target && dropTargetId) {
+      placement = defaultPlacement(target.node)
+      const box = readBounds?.()
+      if (box && box.height > 0 && event.y !== undefined) {
+        const share = (event.y - box.y) / box.height
+        placement = target.node.kind === "group" ? share < 0.3 ? "before" : "inside" : share < 0.4 ? "before" : "after"
+      }
+    }
     treePointer.set({
       dropTargetId,
-      dropPlacement: target && dropTargetId ? placement ?? defaultPlacement(target) : null,
+      dropPlacement: placement,
     })
   }
 
@@ -386,9 +398,9 @@ export function BridgeApp({
   const tree = useMemo(() => ({
     pointer: treePointer,
     onToggle: (id: string) => latest.current.toggle(id),
-    onDragStart: (id: string, event: EventPayload) => latest.current.startDrag(id, event),
-    onPointerMove: (event: EventPayload, rowId?: string, placement?: Placement) =>
-      latest.current.movePointer(event, rowId, placement),
+    onDragStart: (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => latest.current.startDrag(id, event, readBounds),
+    onPointerMove: (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) =>
+      latest.current.movePointer(event, rowId, readBounds),
     onDragEnd: () => latest.current.endDrag(),
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
@@ -536,7 +548,6 @@ export function BridgeApp({
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
             pendingNotes={pendingNotes}
-            dragging={draggingId !== null}
             expanded={expanded}
             onRemove={removePhotoshop}
             contentKey={session.photoshop?.path ?? ""}
@@ -552,7 +563,6 @@ export function BridgeApp({
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
             pendingNotes={pendingNotes}
-            dragging={draggingId !== null}
             expanded={expanded}
             onRemove={removePainter}
             contentKey={activePainterContextId}
@@ -580,13 +590,28 @@ export function BridgeApp({
         </Motion>
         </motion.div>
         </RowMotionContext.Provider>
-        <AnimatePresence>
-          {draggingId && carried.length ? <DragPreview key="drag" items={carried} pointer={pointer} /> : null}
-        </AnimatePresence>
+        <DragOverlay bridge={bridge} gesture={press} pointer={pointer} store={treePointer} />
         {applying ? <ApplyProgressDialog progress={applyProgress} /> : null}
       </div>
     </TooltipProvider>
   )
+}
+
+function DragOverlay({ bridge, gesture, pointer, store }: {
+  bridge: BridgeState
+  gesture: { current: { node: LayerNode; selectedIds: Set<string> } | null }
+  pointer: { current: PointerFeed }
+  store: TreePointerStore
+}) {
+  // Pickup changes only the overlay and panel cursors, not the toolbar and
+  // both complete trees. The common single-row drag needs no tree traversal.
+  const id = useSyncExternalStore(store.subscribe, () => store.get().draggingId)
+  const source = gesture.current?.node
+  const selectedIds = gesture.current?.selectedIds
+  const carried = useMemo(() => {
+    return !id || !source || !selectedIds ? [] : selectedIds.size === 1 ? [source] : selectionRoots(bridge, source.ref.host, selectedIds)
+  }, [id, source, bridge, selectedIds])
+  return <AnimatePresence>{id && carried.length ? <DragPreview key="drag" items={carried} pointer={pointer} /> : null}</AnimatePresence>
 }
 
 function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string> | null): Map<string, string> {

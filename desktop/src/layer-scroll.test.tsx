@@ -5,9 +5,8 @@ import { LayerScroll } from "./layer-scroll"
 async function setup() {
   const root = createTestRoot({ width: 400, height: 260 })
   root.render(<div style={{ height: 240, display: "flex", flexDirection: "column" }}>
-    <LayerScroll id="test" layoutKey="fixed" rowCount={30}>
-      {Array.from({ length: 30 }, (_, i) => <div key={i} style={{ height: 32, flexShrink: 0 }}><text>Layer {i}</text></div>)}
-    </LayerScroll>
+    <LayerScroll id="test" layoutKey="fixed" rowCount={30}
+      renderRow={i => <div key={i} style={{ height: 32, flexShrink: 0 }}><text>Layer {i}</text></div>} />
   </div>)
   await new Promise(resolve => setTimeout(resolve, 300))
   root.renderer.flush()

@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { AnimatePresence, useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
+import { createContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
 import { colors, metrics as themeMetrics } from "./theme"
+import { createRowBoundsCache } from "./drag-feedback"
 
-export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string; children: ReactNode[]; layoutKey: unknown; rowCount: number }) {
+export const RowBoundsContext = createContext<ReturnType<typeof createRowBoundsCache> | null>(null)
+
+export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string; renderRow: (index: number) => ReactNode; layoutKey: unknown; rowCount: number }) {
   const renderer = useGpuixRequired()
+  const [rowBounds] = useState(() => createRowBoundsCache(id => renderer.getElementBounds?.(id) ?? null))
   const windowSize = useWindowSize()
   const viewport = useRef<PublicInstance>(null)
   const track = useRef<PublicInstance>(null)
@@ -11,6 +15,7 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
   const [metrics, setMetrics] = useState({ height: 0, total: 0, offset: 0 })
   const [range, setRange] = useState({ start: 0, end: 32 })
   const start = Math.min(range.start, Math.max(0, rowCount - 1))
+  useLayoutEffect(() => rowBounds.invalidate(), [rowBounds, layoutKey, windowSize.width, windowSize.height])
 
   const anchorOffset = (anchor: number[]) => Math.max(0, Math.min(
     Math.max(0, rowCount * themeMetrics.rowHeight - anchor[2]),
@@ -41,15 +46,18 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
   const travel = metrics.height - thumb
   const scroll = (offset: number) => {
     if (!viewport.current) return
+    rowBounds.invalidate()
     const value = Math.max(0, Math.min(maximum, offset))
     renderer.scrollToItem?.(viewport.current.id, Math.floor(value / themeMetrics.rowHeight), value % themeMetrics.rowHeight)
     setMetrics(previous => ({ ...previous, offset: value }))
   }
 
-  return <div
+  return <RowBoundsContext.Provider value={rowBounds}><div
+    onScroll={rowBounds.invalidate}
     style={{ display: "flex", flexDirection: "row", flexGrow: 1, flexBasis: 0, minHeight: 0 }}>
     <virtual-list ref={viewport} testId={`layer-scroll:${id}`} itemCount={rowCount} windowStart={start}
       estimatedItemHeight={themeMetrics.rowHeight} overdraw={64} onVisibleRange={event => {
+      rowBounds.invalidate()
       const next = { start: Math.max(0, (event.startIndex ?? 0) - 8), end: (event.endIndex ?? 24) + 8 }
       setRange(previous => previous.start === next.start && previous.end === next.end ? previous : next)
       if (!viewport.current) return
@@ -59,9 +67,9 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
       setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })
     }}
       style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, margin: 8 }}>
-        {/* Window changes are scrolling, not removals. Never animate recycled
-            rows out or replay pickup animations as they enter the viewport. */}
-        <AnimatePresence key={start} initial={false}>{children.slice(start, Math.max(start + 1, range.end))}</AnimatePresence>
+        {/* Scroll recycling is not a layer deletion. Stable row keys preserve
+            overlapping rows, and offscreen rows never become React elements. */}
+        {Array.from({ length: Math.max(0, Math.min(rowCount, Math.max(start + 1, range.end)) - start) }, (_, offset) => renderRow(start + offset))}
     </virtual-list>
     <div ref={track} testId={`layer-scrollbar:${id}`}
       onMouseDown={event => {
@@ -86,5 +94,5 @@ export function LayerScroll({ id, children, layoutKey, rowCount }: { id: string;
         top: Math.min(maximum, metrics.offset) / maximum * travel, height: thumb,
         borderRadius: 3, backgroundColor: colors.tertiary, pointerEvents: "none" }} /> : null}
     </div>
-  </div>
+  </div></RowBoundsContext.Provider>
 }

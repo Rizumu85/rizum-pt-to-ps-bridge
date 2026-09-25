@@ -15,6 +15,7 @@ import {
   type PublicInstance,
 } from "@gpuix/react"
 import { colors, metrics, typography } from "./theme"
+import { createPointerFollower } from "./drag-feedback"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
@@ -665,13 +666,14 @@ export function MappingHelpPopover() {
 type Bounds = { x: number; y: number; width: number; height: number }
 
 /**
- * The layers the pointer is carrying. It follows the pointer through its own
- * state so a drag re-renders one preview per move, not both layer trees.
+ * Position is an input feed, not React state. Only pickup and release render
+ * the card; continuous moves update its native wrapper alone.
  */
 export type PointerFeed = {
   x: number
   y: number
   follow: ((x: number, y: number) => void) | null
+  flush: (() => void) | null
   /** Where a drag that did not land began; the cards settle back into it. */
   returnTo: Bounds | null
 }
@@ -696,16 +698,40 @@ export function DragPreview({ items, pointer }: {
   const anchor = (x: number, y: number) => bounds
     ? { x: Math.min(x, bounds.width - 14 - cardWidth - 12), y: Math.min(y, bounds.height - 10 - cardHeight - 12) }
     : { x, y }
-  const [position, setPosition] = useState(() => anchor(pointer.current.x, pointer.current.y))
+  const position = useRef(anchor(pointer.current.x, pointer.current.y))
+  const carrier = useRef<PublicInstance>(null)
+  const carrierStyle = (point: { x: number; y: number }) => ({
+    position: "absolute", left: point.x, top: point.y, width: 0, height: 0, pointerEvents: "none" as const,
+  })
+  const writePosition = (point: { x: number; y: number }) => {
+    position.current = point
+    if (carrier.current) renderer.applyBatch(JSON.stringify([["setStyle", carrier.current.id, carrierStyle(point)]]))
+  }
   const present = useIsPresent()
+  // GPUiX resends host styles on React commits. Restore the input-owned
+  // position after those rare commits, so unrelated updates cannot snap it back.
+  useLayoutEffect(() => writePosition(position.current))
   useLayoutEffect(() => {
     // A leaving stack stops following, so the pointer cannot fight its exit.
     if (!present) return
-    const follow = (x: number, y: number) => setPosition(anchor(x, y))
+    const follower = createPointerFollower(position.current, writePosition)
+    const follow = (x: number, y: number) => {
+      const point = anchor(x, y)
+      follower.move(point.x, point.y)
+    }
     pointer.current.follow = follow
+    pointer.current.flush = follower.flush
+    follow(pointer.current.x, pointer.current.y)
+    follower.flush()
     // A preview still leaving must not detach the next drag's preview.
-    return () => { if (pointer.current.follow === follow) pointer.current.follow = null }
-  }, [pointer, present])
+    return () => {
+      follower.dispose()
+      if (pointer.current.follow === follow) {
+        pointer.current.follow = null
+        pointer.current.flush = null
+      }
+    }
+  }, [pointer, present, renderer])
   const home = present ? null : pointer.current.returnTo
   const depth = Math.min(items.length, 3)
   const first = items[0]
@@ -720,7 +746,7 @@ export function DragPreview({ items, pointer }: {
       // cancelled drop animates home; the carried card starts at the pointer.
       initial: carried,
       animate: carried,
-      exit: home ? { ...rowAt(home, position.x, position.y), opacity: 0 } : { ...carried, opacity: 0 },
+      exit: home ? { ...rowAt(home, position.current.x, position.current.y), opacity: 0 } : { ...carried, opacity: 0 },
       transition: home || present ? { duration: 0.2, ease: settleEase } : { duration: 0.12, ease: motionEase },
     }
   }
@@ -735,7 +761,7 @@ export function DragPreview({ items, pointer }: {
   }
   return (
     // The stack rides with the pointer; it must never become the hit target.
-    <div style={{ position: "absolute", left: position.x, top: position.y, width: 0, height: 0, pointerEvents: "none" }}>
+    <div ref={carrier} testId="drag-carrier" style={carrierStyle(position.current)}>
       {Array.from({ length: depth - 1 }, (_, index) => depth - 1 - index).map(layer => (
         <motion.div key={layer} {...card(layer)} style={cardStyle} />
       ))}

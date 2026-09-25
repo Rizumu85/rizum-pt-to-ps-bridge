@@ -75,6 +75,21 @@ export function findNode(nodes: LayerNode[], id: string): LayerNode | null {
   return null
 }
 
+export function indexLayerTrees(state: BridgeState): Map<string, { node: LayerNode; host: HostId }> {
+  const index = new Map<string, { node: LayerNode; host: HostId }>()
+  const visit = (nodes: LayerNode[], host: HostId) => {
+    for (const node of nodes) {
+      // Staged rows keep their source host, but hit testing needs the panel
+      // they currently occupy so they can be repositioned after a transfer.
+      index.set(node.id, { node, host })
+      if (node.children) visit(node.children, host)
+    }
+  }
+  visit(state.photoshop, "photoshop")
+  visit(state.painter, "substance_painter")
+  return index
+}
+
 export function removeNode(nodes: LayerNode[], id: string): [LayerNode[], LayerNode | null] {
   let removed: LayerNode | null = null
   const next: LayerNode[] = []
@@ -231,7 +246,12 @@ export function selectLayerIds(
   current: Set<string>, anchor: string | null, id: string, visible: string[],
   modifiers: { toggle?: boolean; range?: boolean },
 ): Set<string> {
-  const sameHost = new Set([...current].filter(value => visible.includes(value)))
+  if (!modifiers.range && !modifiers.toggle) {
+    if (!current.has(id)) return new Set([id])
+    if (current.size === 1) return current
+  }
+  const visibleSet = new Set(visible)
+  const sameHost = new Set([...current].filter(value => visibleSet.has(value)))
   if (modifiers.range && anchor && visible.includes(anchor)) {
     const start = visible.indexOf(anchor)
     const end = visible.indexOf(id)
@@ -242,7 +262,8 @@ export function selectLayerIds(
     else sameHost.add(id)
     return sameHost
   }
-  return sameHost.has(id) ? sameHost : new Set([id])
+  if (!sameHost.has(id)) return new Set([id])
+  return sameHost.size === current.size ? current : sameHost
 }
 
 function hostCollection(host: HostId): "photoshop" | "painter" {

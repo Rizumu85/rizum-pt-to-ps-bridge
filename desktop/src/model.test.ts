@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   cloneState,
   findNode,
+  indexLayerTrees,
   removeFromHost,
   transferBetweenHosts,
   transferSelection,
@@ -44,6 +45,19 @@ function fixture(): BridgeState {
 }
 
 describe("transferBetweenHosts", () => {
+  it("indexes staged nodes by current panel without changing their source identity", () => {
+    const state = transferBetweenHosts(fixture(), "photoshop:paint", "substance_painter:working")
+    const entry = indexLayerTrees(state).get("photoshop:paint")!
+    expect(entry.host).toBe("substance_painter")
+    expect(entry.node.ref.host).toBe("photoshop")
+    expect(entry.node).toBe(findNode(state.painter, "photoshop:paint"))
+  })
+
+  it("keeps an unchanged selection reference on ordinary pickup", () => {
+    const ids = new Set(["photoshop:paint", "photoshop:color"])
+    expect(selectLayerIds(ids, null, "photoshop:paint", [...ids], {})).toBe(ids)
+  })
+
   it("retargets pending batches without duplicating transfers or changing their order", () => {
     const ids = new Set(["photoshop:paint", "photoshop:color"])
     const staged = transferSelection(fixture(), ids, "substance_painter:working")
