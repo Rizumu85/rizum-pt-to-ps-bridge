@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo, useRef, useSyncExternalStore } from "react"
+import { createContext, memo, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { LayerScroll, RowBoundsContext } from "./layer-scroll"
 import {
   motion,
@@ -6,7 +6,7 @@ import {
   type EventPayload,
   type PublicInstance,
 } from "@gpuix/react"
-import { type HostId, type LayerNode, type Placement } from "./model"
+import { findNode, type HostId, type LayerNode, type Placement } from "./model"
 import { colors, metrics, typography } from "./theme"
 import {
   DisclosureIcon,
@@ -94,11 +94,54 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
 }
 
 /**
- * Pointer-driven arrivals fade in; undo and bulk changes remain immediate.
+ * Rows whose arrival or departure the pointer just caused: a drop or a ×.
+ * Only these fade in or out; undo, reset and reloads swap rows instantly
+ * because keyboard and bulk changes should read as immediate.
  */
 export const RowMotionContext = createContext<ReadonlySet<string>>(new Set())
 
 const growDuration = 0.2
+const shrinkDuration = 0.14
+
+type ShownRow = { node: LayerNode; depth: number; leaving?: boolean }
+type LeavingRow = ShownRow & { index: number }
+
+/**
+ * Rows the pointer removed from the tree stay in place while they fade, then
+ * go. Only opacity moves: the virtual list needs every item at the fixed row
+ * height, so a folding exit would leave phantom items. A removed folder's
+ * visible children fade with it. Rows only hidden by a collapse, or removed
+ * by undo or reset, are not in motion and leave at once.
+ */
+function useLeavingRows(nodes: LayerNode[], rows: ShownRow[], departing: ReadonlySet<string>) {
+  const [track, setTrack] = useState<{ rows: ShownRow[]; leaving: LeavingRow[] }>({ rows, leaving: [] })
+  let leaving = track.leaving
+  if (track.rows !== rows) {
+    // Derived during render, so a leaving row never unmounts for one commit.
+    const present = new Set(rows.map(row => row.node.id))
+    const gone: LeavingRow[] = []
+    let rootDepth: number | null = null
+    track.rows.forEach((row, index) => {
+      if (rootDepth !== null && row.depth <= rootDepth) rootDepth = null
+      const removed = !present.has(row.node.id) && !findNode(nodes, row.node.id)
+      if (removed && (rootDepth !== null || departing.has(row.node.id))) {
+        gone.push({ ...row, leaving: true, index })
+        rootDepth ??= row.depth
+      }
+    })
+    leaving = [...track.leaving.filter(row => !present.has(row.node.id)), ...gone]
+    setTrack({ rows, leaving })
+  }
+  const left = useCallback((id: string) => {
+    setTrack(current => ({ ...current, leaving: current.leaving.filter(row => row.node.id !== id) }))
+  }, [])
+  const shown = useMemo(() => {
+    const merged: ShownRow[] = [...rows]
+    for (const row of [...leaving].sort((a, b) => a.index - b.index)) merged.splice(Math.min(row.index, merged.length), 0, row)
+    return merged
+  }, [rows, leaving])
+  return { shown, left }
+}
 
 function typeGlyph(node: LayerNode): "paintLayer" | "fillLayer" | null {
   if (node.ref.host !== "substance_painter") return null
@@ -163,9 +206,14 @@ export type TreeInteraction = {
   onRemove: (id: string) => void
 }
 
-type LayerRowProps = TreeInteraction & { node: LayerNode; depth: number }
+type LayerRowProps = TreeInteraction & {
+  node: LayerNode
+  depth: number
+  leaving?: boolean
+  onLeft?: (id: string) => void
+}
 
-const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRowProps) {
+const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, ...interaction }: LayerRowProps) {
   const {
     host, pointer, selectedIds, mappedIds, pendingNotes,
     expanded, onToggle, onDragStart, onPointerMove,
@@ -173,7 +221,8 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
   } = interaction
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
-  const selected = selectedIds.has(node.id)
+  // A leaving row shows what it was, not the mapping its layer now belongs to elsewhere.
+  const selected = !leaving && selectedIds.has(node.id)
   const draggingHost = usePointer(pointer, state => state.hoveredId === node.id || state.dropTargetId === node.id || selected ? state.draggingHost : null)
   const dragging = draggingHost !== null
   const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
@@ -181,7 +230,7 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
   const dropAt = acceptsDrop ? placement : null
   const boundsCache = useContext(RowBoundsContext)!
   const header = useRef<PublicInstance>(null)
-  const mapped = mappedIds.has(node.id)
+  const mapped = !leaving && mappedIds.has(node.id)
   const hovered = usePointer(pointer, state => state.hoveredId === node.id)
   const animated = useContext(RowMotionContext).has(node.id)
   const height = metrics.rowHeight
@@ -201,9 +250,11 @@ const LayerRow = memo(function LayerRow({ node, depth, ...interaction }: LayerRo
     <Motion
       testId={`layer-group:${node.id}`}
       initial={animated ? { opacity: 0 } : false}
-      animate={{ opacity: 1 }}
-      transition={{ duration: growDuration, ease: motionEase }}
+      animate={{ opacity: leaving ? 0 : 1 }}
+      transition={{ duration: leaving ? shrinkDuration : growDuration, ease: motionEase }}
+      onMotionComplete={leaving ? () => onLeft?.(node.id) : undefined}
       style={{
+        pointerEvents: leaving ? "none" : undefined,
         // Fixed row geometry keeps virtual-list indices and cached drop bounds
         // valid; height exits would retain phantom items while recycling rows.
         height,
@@ -342,8 +393,9 @@ export function HostPanel({
   // read as a glitch. Reloads, Apply refreshes and the window's first frame
   // keep the key, so they stay instant.
   const shown = useRef({ key: contentKey, fade: false })
-  const layoutKey = useMemo(() => ({}), [nodes, interaction.expanded])
   const rows = useMemo(() => visibleLayerRows(nodes, interaction.expanded), [nodes, interaction.expanded])
+  const { shown: shownRows, left } = useLeavingRows(nodes, rows, useContext(RowMotionContext))
+  const layoutKey = useMemo(() => ({}), [shownRows])
   if (shown.current.key !== contentKey) shown.current = { key: contentKey, fade: true }
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
@@ -420,9 +472,9 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={rows.length} renderRow={index => {
-        const { node, depth } = rows[index]
-        return <LayerRow key={node.id} node={node} depth={depth} {...interaction} />
+      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={shownRows.length} renderRow={index => {
+        const { node, depth, leaving } = shownRows[index]
+        return <LayerRow key={node.id} node={node} depth={depth} leaving={leaving} onLeft={left} {...interaction} />
       }} /></motion.div>}
     </div>
   )
