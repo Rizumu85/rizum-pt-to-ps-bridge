@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from sp_plugin.rizum_sp_to_ps.exporter import _build_painter_snapshot, _snapshot_opacities
+from sp_plugin.rizum_sp_to_ps.exporter import _build_painter_snapshot, _channel_content, _snapshot_opacities
 
 
 class _Named:
@@ -35,7 +35,7 @@ class _Channel:
 
 class _Layer:
     uid = 0x2A
-    active_channels = set()
+    active_channels = {_Named("BaseColor"), _Named("Normal")}
 
     def get_name(self):
         return "Paint"
@@ -111,6 +111,21 @@ class PainterSnapshotTests(unittest.TestCase):
         self.assertEqual(nodes[0]["opacity"], 1)
         self.assertEqual(nodes[0]["children"][0]["opacity"], 0.5)
         self.assertEqual(nodes[0]["children"][1]["opacity"], 100)
+
+    def test_snapshot_lists_only_layers_the_channel_shows(self):
+        nodes = [
+            {"name": "Color fill", "active_channels": ["BaseColor"]},
+            {"name": "Height fill", "active_channels": ["Height"]},
+            {"name": "Paint"},
+            {"name": "Height folder", "children": [{"name": "Bump", "active_channels": ["Height"]}]},
+            {"name": "Mixed folder", "children": [
+                {"name": "Bump", "active_channels": ["Height"]}, {"name": "Tint", "active_channels": ["BaseColor"]},
+            ]},
+            {"name": "Empty folder", "children": []},
+        ]
+        kept = _channel_content(nodes, "BaseColor")
+        self.assertEqual([node["name"] for node in kept], ["Color fill", "Paint", "Mixed folder", "Empty folder"])
+        self.assertEqual([node["name"] for node in kept[2]["children"]], ["Tint"])
 
     @patch(
         "sp_plugin.rizum_sp_to_ps.exporter._used_channel_identifier_set",

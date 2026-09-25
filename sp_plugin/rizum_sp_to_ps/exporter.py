@@ -779,7 +779,7 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
             if not _matches_filter(channel_name, settings.get("channels")):
                 continue
 
-            layers = deepcopy(stack_record["layer_records"])
+            layers = _channel_content(deepcopy(stack_record["layer_records"]), channel_name)
             _project_nodes_for_channel(layers, channel_name)
             _snapshot_opacities(layers, channel_name)
             is_color = _call_or_attr(channel, "is_color", False)
@@ -815,6 +815,23 @@ def _build_painter_snapshot(modules, settings, stack_records=None):
         "project": _project_info(modules["project"]),
         "contexts": contexts,
     }
+
+
+def _channel_content(nodes, channel_name):
+    """Keep what one channel shows: layers enabled for it and folders holding any."""
+    # The mapper lists one channel at a time, and layers that channel ignores
+    # only crowd out the ones the user can drop onto. A folder emptied by this
+    # filter goes too; a folder that was already empty stays as a drop target.
+    kept = []
+    for node in nodes:
+        children = node.get("children")
+        if children:
+            node["children"] = _channel_content(children, channel_name)
+            if node["children"]:
+                kept.append(node)
+        elif _node_is_active_for_channel(node, channel_name):
+            kept.append(node)
+    return kept
 
 
 def _snapshot_opacities(nodes, channel_name):
