@@ -6,12 +6,49 @@ import { describe, expect, it, vi } from "vitest"
 
 import { BridgeApp } from "./bridge-app"
 import type { BridgeState } from "./model"
-import { loadBridgeSession } from "./transport"
+import { loadBridgeSession, type ApplyOutcome, type ApplyProgress } from "./transport"
 import { writeFeaturePsd } from "./test-psd"
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("Painter context selectors", () => {
+  it("shows counted Apply progress, host waits, and dismisses on failure without losing mappings", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const root = createTestRoot({ width: 652, height: 560 })
+    const app = await connectTest(root.renderer)
+    let report!: (progress: ApplyProgress) => void
+    let finish!: (outcome: ApplyOutcome) => void
+    try {
+      root.render(<BridgeApp session={session} onConnectPhotoshop={async () => null}
+        onApply={(_state, _context, _session, onProgress) => {
+          report = onProgress
+          return new Promise(resolve => { finish = resolve })
+        }} />)
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await app.mouse.up(app.getByText("Working"))
+      await app.getByTestId("apply-mapping").click()
+      expect(await app.getByTestId("apply-progress").count()).toBe(1)
+      report({ message: "Inserting layers...", completed: 1, total: 4 })
+      root.renderer.flush()
+      await vi.waitFor(async () => expect(await app.getByText("1 / 4").count()).toBe(1))
+      const fill = await app.getByTestId("apply-progress-fill").bounds()
+      const track = await app.getByTestId("apply-progress-bar").bounds()
+      expect(fill.width / track.width).toBeCloseTo(0.25, 2)
+      report({ message: "Saving Photoshop document..." })
+      root.renderer.flush()
+      await vi.waitFor(async () => expect(await app.getByTestId("apply-progress-fill").count()).toBe(0))
+      expect(await app.getByText("Saving Photoshop document...").count()).toBe(1)
+      finish({ session: null, failed: true, message: "Photoshop save failed" })
+      await vi.waitFor(async () => expect(await app.getByTestId("apply-progress").count()).toBe(0))
+      expect(await app.getByText("Photoshop save failed").count()).toBe(1)
+      expect(await app.getByText("Pending").count()).toBe(1)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("selects and transfers a batch with visible pending state, then undoes Reset", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),

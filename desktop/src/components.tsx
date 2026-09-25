@@ -153,20 +153,28 @@ export function InsetSeparator() {
   )
 }
 
-/**
- * The toolbar's separator doubles as the working indicator: a light sweeps
- * along it while Painter applies, where the wait is real and the window is
- * otherwise still. Picking a file is the user's time, so it shows nothing.
- */
-export function WorkingSeparator({ active }: { active: boolean }) {
+// Host phases have different units. Show their real counts, never a synthetic
+// overall percentage; saving and host waits remain indeterminate.
+export function ApplyProgressDialog({ progress }: { progress: import("./transport").ApplyProgress }) {
   const track = useRef<PublicInstance>(null)
+  const counted = progress.total !== undefined && progress.total > 0 && progress.completed !== undefined
+  const fraction = counted ? Math.max(0, Math.min(1, progress.completed! / progress.total!)) : null
   return (
-    <div style={{ height: 1, flexShrink: 0, paddingLeft: 12, paddingRight: 12 }}>
-      <div
-        ref={track}
-        style={{ position: "relative", width: "100%", height: 1, overflow: "hidden", backgroundColor: colors.line }}
-      >
-        <AnimatePresence>{active ? <WorkingSweep key="sweep" track={track} /> : null}</AnimatePresence>
+    <div testId="apply-progress" role="dialog" aria-label="Applying changes"
+      style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "#00000055",
+        display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 320, padding: 20, borderRadius: 8, backgroundColor: colors.panel,
+        display: "flex", flexDirection: "column", gap: 12 }}>
+        <PrimaryText>Applying changes</PrimaryText>
+        <text style={{ fontFamily: typography.family, fontSize: typography.secondarySize,
+          fontWeight: typography.secondaryWeight, color: colors.secondary, whiteSpace: "normal" }}>{progress.message}</text>
+        <div ref={track} testId="apply-progress-bar" role="progressbar" aria-label={progress.message}
+          aria-valuetext={counted ? `${progress.completed} / ${progress.total}` : "Working"}
+          style={{ position: "relative", height: 4, width: "100%", overflow: "hidden", borderRadius: 2, backgroundColor: colors.line }}>
+          {fraction === null ? <WorkingSweep key="sweep" track={track} /> : <div
+            testId="apply-progress-fill" style={{ height: 4, width: `${fraction * 100}%`, backgroundColor: colors.text }} />}
+        </div>
+        {counted ? <SecondaryText>{`${progress.completed} / ${progress.total}`}</SecondaryText> : null}
       </div>
     </div>
   )
@@ -193,7 +201,7 @@ function WorkingSweep({ track }: { track: { current: PublicInstance | null } }) 
         animate={{ left: width }}
         transition={{ duration: 1.1, ease: "linear" }}
         onMotionComplete={() => setPass(current => current + 1)}
-        style={{ position: "absolute", top: 0, width: segment, height: 1, backgroundColor: colors.text }}
+        style={{ position: "absolute", top: 0, width: segment, height: "100%", backgroundColor: colors.text }}
       />
     </motion.div>
   )

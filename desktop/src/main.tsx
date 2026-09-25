@@ -32,7 +32,7 @@ const painterLink = createPainterLink(process.stdin, (line) => process.stdout.wr
 render(
   <BridgeApp
     session={session}
-    onApply={(state, contextId, current) => applyTransfer(current, state, contextId, painterLink)}
+    onApply={(state, contextId, current, onProgress) => applyTransfer(current, state, contextId, painterLink, onProgress)}
     onConnectPhotoshop={(current) => {
       allowPainterForeground()
       return connectPhotoshop(current, painterLink)

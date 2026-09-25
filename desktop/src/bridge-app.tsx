@@ -23,7 +23,7 @@ import {
   type Placement,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import { normalizedBlendMode, type ApplyOutcome, type BridgeSession, type PainterContext } from "./transport"
+import { normalizedBlendMode, type ApplyOutcome, type ApplyProgress, type BridgeSession, type PainterContext } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -33,7 +33,8 @@ import {
   IconAction,
   MappingHelpPopover,
   Motion,
-  WorkingSeparator,
+  ApplyProgressDialog,
+  InsetSeparator,
   motionEase,
   type PointerFeed,
 } from "./components"
@@ -46,7 +47,7 @@ export function BridgeApp({
   onReloadPhotoshop,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession) => Promise<ApplyOutcome>
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void) => Promise<ApplyOutcome>
   onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
   onReloadPhotoshop?: (session: BridgeSession) => Promise<BridgeSession>
 }) {
@@ -69,6 +70,7 @@ export function BridgeApp({
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(false)
+  const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: "Preparing mapped items..." })
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -284,10 +286,11 @@ export function BridgeApp({
     pending.current = true
     setBusy(true)
     setApplying(true)
+    setApplyProgress({ message: "Preparing mapped items..." })
     setFailed(false)
     setStatus("Applying in Painter...")
     try {
-      const outcome = await onApply(bridge, activePainterContextId, session)
+      const outcome = await onApply(bridge, activePainterContextId, session, setApplyProgress)
       if (outcome.session) adoptSession(outcome.session, outcome.message)
       else setStatus(outcome.message)
       setFailed(outcome.failed)
@@ -410,7 +413,7 @@ export function BridgeApp({
           if (event.key === "z") { if (event.modifiers.shift) redo(); else undo() }
           if (event.key === "y") redo()
         }}
-        style={{ width: "100%", height: "100%", backgroundColor: colors.canvas }}
+        style={{ position: "relative", width: "100%", height: "100%", backgroundColor: colors.canvas }}
       >
         <RowMotionContext.Provider value={motionIds}>
         <motion.div
@@ -474,7 +477,7 @@ export function BridgeApp({
             onClick={apply}
           />
         </div>
-        <WorkingSeparator active={applying} />
+        <InsetSeparator />
         <div
           onMouseUp={() => endDrag()}
           style={{
@@ -579,6 +582,7 @@ export function BridgeApp({
         <AnimatePresence>
           {draggingId && carried.length ? <DragPreview key="drag" items={carried} pointer={pointer} /> : null}
         </AnimatePresence>
+        {applying ? <ApplyProgressDialog progress={applyProgress} /> : null}
       </div>
     </TooltipProvider>
   )

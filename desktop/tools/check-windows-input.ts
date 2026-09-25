@@ -15,8 +15,10 @@ const child = spawn(compiled ? path.resolve("dist/pt-bridge.exe") : process.exec
 // Painter's link and GPUiX automation share this stdio pair, exactly as under
 // Painter's QProcess; the check proves neither protocol consumes the other.
 let requested = false
+let applying = false
 child.stdout.on("data", data => {
   if (String(data).split("\n").some(line => line.startsWith(PAINTER_REQUEST_MARKER))) requested = true
+  if (String(data).split("\n").some(line => line.startsWith(PAINTER_REQUEST_MARKER) && line.includes('"type":"apply"'))) applying = true
 })
 const app = await connectStdio({
   write: data => { child.stdin.write(data) },
@@ -39,6 +41,20 @@ try {
   child.stdin.write(`${JSON.stringify({ type: "photoshop_connected", psd })}\n`)
   await app.getByText("Paint edit").waitFor({ timeoutMs: 5000 })
   if (child.exitCode !== null) throw new Error(`Connect closed the mapper: ${child.exitCode}`)
+  await app.mouse.down(app.getByText("Paint edit"))
+  await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+  await app.mouse.up(app.getByText("Working"))
+  await app.getByTestId("apply-mapping").click()
+  await app.getByTestId("apply-progress").waitFor({ timeoutMs: 5000 })
+  const deadline = Date.now() + 5000
+  while (!applying && Date.now() < deadline) await Bun.sleep(25)
+  if (!applying) throw new Error("Apply did not request Painter")
+  child.stdin.write(`${JSON.stringify({ type: "apply_progress", message: "Inserting mapped items into Painter...", completed: 1, total: 4 })}\n`)
+  await app.getByText("1 / 4").waitFor({ timeoutMs: 5000 })
+  await app.screenshot({ path: path.join(directory, "apply-progress.png") })
+  child.stdin.write(`${JSON.stringify({ type: "apply_failed", message: "Host test: no document was changed", snapshot: null })}\n`)
+  await app.getByText("Host test: no document was changed").waitFor({ timeoutMs: 5000 })
+  if (await app.getByTestId("apply-progress").count()) throw new Error("Apply progress did not dismiss")
   console.log({ connected: true, directory })
 } finally {
   await app.close()
