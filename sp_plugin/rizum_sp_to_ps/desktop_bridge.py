@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import sys
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import desktop_transfer, exporter
+from .mapper_process import mapper_process_class
 from .photoshop_job import PhotoshopJob
 from .ui_dialogs import CompactProgressDialog
 
@@ -33,7 +35,6 @@ class DesktopBridgeController:
         self._process = None
         self._snapshot_path = None
         self._closing = False
-        self._process_error_reported = False
         self._applying_transfer = False
         self._photoshop_job = None
         self._pending_transfer_result = None
@@ -42,6 +43,7 @@ class DesktopBridgeController:
         self._picking = False
         self._trace_path = None
         self._stdout_buffer = ""
+        self._stdout_decoder = None
 
         self.button = panel.dock_bridge_button
         self.button.clicked.connect(self.open)
@@ -59,16 +61,8 @@ class DesktopBridgeController:
             pass
         process = self._process
         self._process = None
-        if (
-            process is not None
-            and process.state()
-            != self.QtCore.QProcess.ProcessState.NotRunning
-        ):
-            process.terminate()
-            if not process.waitForFinished(800):
-                process.kill()
         if process is not None:
-            process.deleteLater()
+            process.stop()
 
     def open(self):
         """Launch one mapping session with the last connected Photoshop document."""
@@ -104,10 +98,8 @@ class DesktopBridgeController:
             return
 
         self._snapshot_path = snapshot_path
-        self._process_error_reported = False
         self._stdout_buffer = ""
-        process = self.QtCore.QProcess(self.panel.widget)
-        process.setProgram(str(executable))
+        self._stdout_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         arguments = [
             "--painter",
             str(snapshot_path),
@@ -116,14 +108,21 @@ class DesktopBridgeController:
         ]
         if psd_path is not None:
             arguments[0:0] = ["--psd", str(psd_path)]
-        process.setArguments(arguments)
-        process.finished.connect(self._desktop_finished)
-        process.errorOccurred.connect(self._desktop_error)
-        process.readyReadStandardOutput.connect(self._desktop_output)
-        process.started.connect(lambda: self._trace("desktop_started"))
+        process = mapper_process_class(self.QtCore)(executable, arguments)
+        # Each signal names its process, so a late one from a closed session
+        # cannot reach the mapper that replaced it.
+        process.output.connect(lambda chunk, owner=process: self._desktop_output(owner, chunk))
+        process.finished.connect(
+            lambda code, stderr, owner=process: self._desktop_finished(owner, code, stderr)
+        )
+        try:
+            process.start()
+        except OSError as exc:
+            self._show("Bridge", f"Could not start PT Bridge desktop.\n\n{exc}")
+            return
+        self._trace("desktop_started")
         self._process = process
         self._sync_button()
-        process.start()
 
     def _busy_reason(self):
         if self._photoshop_job is not None:
@@ -328,34 +327,13 @@ class DesktopBridgeController:
             job.stop()
         self._sync_button()
 
-    def _desktop_error(self, process_error):
-        if self._closing or self._process_error_reported:
+    def _desktop_finished(self, process, exit_code, stderr):
+        # Unload can deliver a final signal after the dock is disposed. close()
+        # owns that cleanup; an exiting child must not touch the old UI.
+        if self._closing or process is not self._process:
             return
-        failed_to_start = self.QtCore.QProcess.ProcessError.FailedToStart
-        if process_error != failed_to_start:
-            return
-        self._process_error_reported = True
-        process = self._take_process()
-        detail = process.errorString() if process is not None else "Unknown process error"
-        if process is not None:
-            process.deleteLater()
-        self._show("Bridge", f"Could not start PT Bridge desktop.\n\n{detail}")
-
-    def _desktop_finished(self, exit_code, _exit_status):
-        # Unload can deliver a final QProcess signal after the dock is disposed.
-        # close() owns that cleanup; an exiting child must not touch the old UI.
-        if self._closing:
-            return
-        self._desktop_output()
         self._trace("desktop_finished", str(exit_code))
-        process = self._take_process()
-        if process is None:
-            return
-        stderr = bytes(process.readAllStandardError()).decode(
-            "utf-8",
-            errors="replace",
-        ).strip()
-        process.deleteLater()
+        self._take_process()
         # Apply arrives as a request while the mapper is open, so an exit only
         # means the user closed the window; nothing is applied on the way out.
         if int(exit_code) != 0:
@@ -385,12 +363,10 @@ class DesktopBridgeController:
             self._sync_button()
             self._reply_to_desktop({"type": "photoshop_connect_failed", "message": str(exc)})
 
-    def _desktop_output(self):
-        if self._process is None:
+    def _desktop_output(self, process, chunk):
+        if process is not self._process:
             return
-        self._stdout_buffer += bytes(self._process.readAllStandardOutput()).decode(
-            "utf-8", errors="replace"
-        )
+        self._stdout_buffer += self._stdout_decoder.decode(bytes(chunk))
         *lines, self._stdout_buffer = self._stdout_buffer.split("\n")
         for line in lines:
             line = line.strip()
@@ -450,11 +426,10 @@ class DesktopBridgeController:
         process = self._process
         if process is None:
             return
+        # The pipe write is synchronous, so progress reaches the mapper while
+        # Painter keeps working on its own thread and no Qt events are pumped
+        # into a partially applied transfer.
         process.write((json.dumps({**payload, "type": "apply_progress"}) + "\n").encode("utf-8"))
-        # Painter work stays on its owning thread. Flush the pipe without
-        # pumping Qt events, which could re-enter a partially applied transfer.
-        if process.bytesToWrite():
-            process.waitForBytesWritten(100)
 
     def _finish_apply(self, reply_type, message):
         """Report an Apply to the open mapper with a fresh Painter snapshot."""

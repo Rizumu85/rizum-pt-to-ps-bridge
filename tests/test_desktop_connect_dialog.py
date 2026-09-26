@@ -241,10 +241,10 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
 
     def test_closing_the_mapper_needs_no_apply(self):
-        process = SimpleNamespace(readAllStandardOutput=lambda: b"", readAllStandardError=lambda: b"", deleteLater=Mock())
+        process = SimpleNamespace()
         self.controller._process = process
         with patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest") as apply:
-            self.controller._desktop_finished(0, None)
+            self.controller._desktop_finished(process, 0, "")
         apply.assert_not_called()
         self.controller._show_message_callback.assert_not_called()
         self.assertTrue(self.panel.dock_bridge_button.isEnabled())

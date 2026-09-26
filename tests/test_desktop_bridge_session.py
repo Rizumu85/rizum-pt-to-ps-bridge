@@ -1,3 +1,4 @@
+import codecs
 import json
 import tempfile
 import unittest
@@ -58,32 +59,32 @@ class _Panel:
 
 
 class DesktopBridgeSessionTests(unittest.TestCase):
-    def test_progress_flushes_to_mapper_without_pumping_painter_events(self):
-        process = SimpleNamespace(write=Mock(), bytesToWrite=Mock(return_value=40), waitForBytesWritten=Mock())
+    def test_progress_is_written_to_the_mapper(self):
+        process = SimpleNamespace(write=Mock())
         self.controller._process = process
         self.controller._apply_progress({"message": "Inserting", "completed": 1, "total": 3})
         reply = json.loads(process.write.call_args.args[0])
         self.assertEqual(reply, {"type": "apply_progress", "message": "Inserting", "completed": 1, "total": 3})
-        process.waitForBytesWritten.assert_called_once_with(100)
 
     def setUp(self):
         _Settings.values = {}
         self.controller = DesktopBridgeController(_Panel(), lambda *_args: None)
 
     def test_window_close_without_transfer_releases_bridge_action(self):
-        process = SimpleNamespace(
-            readAllStandardError=lambda: b"",
-            readAllStandardOutput=lambda: b"",
-            deleteLater=Mock(),
-        )
+        process = SimpleNamespace()
         self.controller._process = process
         self.controller.button.setEnabled(False)
 
-        self.controller._desktop_finished(0, None)
+        self.controller._desktop_finished(process, 0, "")
 
         self.assertIsNone(self.controller._process)
         self.assertTrue(self.controller.button.enabled)
-        process.deleteLater.assert_called_once()
+
+    def test_a_closed_sessions_late_exit_leaves_the_current_mapper_alone(self):
+        current = SimpleNamespace()
+        self.controller._process = current
+        self.controller._desktop_finished(SimpleNamespace(), 0, "")
+        self.assertIs(self.controller._process, current)
 
     def test_marked_stdout_request_queues_picker_and_traces_other_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -91,14 +92,15 @@ class DesktopBridgeSessionTests(unittest.TestCase):
                 b'[PT Bridge] connect_clicked\n@ptbridge {"type":"connect',
                 b'_photoshop"}\n',
             ]
-            process = SimpleNamespace(readAllStandardOutput=lambda: chunks.pop(0))
+            process = SimpleNamespace()
             schedule = Mock()
             self.controller.QtCore = SimpleNamespace(QTimer=SimpleNamespace(singleShot=schedule))
             self.controller._process = process
+            self.controller._stdout_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             self.controller._trace_path = Path(directory) / "desktop_session.log"
-            self.controller._desktop_output()
+            self.controller._desktop_output(process, chunks.pop(0))
             schedule.assert_not_called()
-            self.controller._desktop_output()
+            self.controller._desktop_output(process, chunks.pop(0))
             schedule.assert_called_once_with(0, self.controller._open_photoshop_picker)
             trace = self.controller._trace_path.read_text()
             self.assertIn("connect_clicked", trace)
@@ -107,7 +109,7 @@ class DesktopBridgeSessionTests(unittest.TestCase):
     def test_exit_after_unload_does_not_touch_deleted_widgets(self):
         self.controller._closing = True
         self.controller.button = SimpleNamespace(setEnabled=Mock(side_effect=RuntimeError("deleted")))
-        self.controller._desktop_finished(0, None)
+        self.controller._desktop_finished(self.controller._process, 0, "")
         self.controller.button.setEnabled.assert_not_called()
 
     def test_picker_exception_is_reported_to_the_open_mapper(self):
