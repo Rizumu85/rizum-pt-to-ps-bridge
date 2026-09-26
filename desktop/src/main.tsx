@@ -51,7 +51,7 @@ render(
     width: metrics.windowWidth,
     height: initialWindowHeight(session.state),
     minWidth: 560,
-    minHeight: 420,
+    minHeight: metrics.minWindowHeight,
     windowBackground: "opaque",
     focus: process.env.GPUIX_BACKGROUND !== "1",
   },

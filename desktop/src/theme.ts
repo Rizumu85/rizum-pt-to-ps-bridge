@@ -35,6 +35,7 @@ export const typography = {
 export const metrics = {
   windowWidth: 700,
   minWindowHeight: 420,
+  minInitialHeight: 520,
   maxInitialHeight: 580,
   cardRadius: 8,
   rowRadius: 6,

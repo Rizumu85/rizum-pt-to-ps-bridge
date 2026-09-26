@@ -418,7 +418,7 @@ describe("layer tree interaction", () => {
     const { state } = await loadBridgeSession({
       painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
     })
-    expect(initialWindowHeight(state)).toBe(metrics.minWindowHeight)
+    expect(initialWindowHeight(state)).toBe(metrics.minInitialHeight)
     const long: BridgeState = { ...state, painter: Array.from({ length: 40 }, (_, index) => ({ ...state.painter[0], id: `row-${index}` })) }
     expect(initialWindowHeight(long)).toBe(metrics.maxInitialHeight)
   })

@@ -529,6 +529,10 @@ export function BridgeApp({
             flexDirection: "row",
             gap: metrics.panelGap,
             padding: metrics.contentPadding,
+            // MiSans sits low in its line box, so equal padding left the status
+            // text visibly nearer the window edge than the panels; these two
+            // values balance the glyphs, not the boxes.
+            paddingBottom: 12,
           }}
         >
           <HostPanel
@@ -604,7 +608,7 @@ export function BridgeApp({
           animate={{ opacity: status !== session.status || !activePainterContext || selectedIds.size > 0 ? 1 : 0 }}
           transition={{ duration: 0.14, ease: motionEase }}
           // On the panels' edges, the workspace's one horizontal grid.
-          style={{ flexShrink: 0, paddingLeft: metrics.contentPadding, paddingRight: metrics.contentPadding, paddingBottom: 12 }}
+          style={{ flexShrink: 0, paddingLeft: metrics.contentPadding, paddingRight: metrics.contentPadding, paddingBottom: 13 }}
         >
             <text style={{
               color: failed ? colors.danger : colors.secondary,
@@ -697,7 +701,9 @@ export function initialWindowHeight(state: BridgeState): number {
   const content = Math.max(visibleNodesHeight(state.photoshop, expanded), visibleNodesHeight(state.painter, expanded))
   // Shared proportions fit content at a stable density; long data trees scroll
   // rather than forcing every session into the previous tall, narrow silhouette.
-  return Math.max(metrics.minWindowHeight, Math.min(metrics.maxInitialHeight, content + 160))
+  // Short trees still open taller than the resize floor: a first open often
+  // has no PSD yet, and a window sized to a few rows looked cramped.
+  return Math.max(metrics.minInitialHeight, Math.min(metrics.maxInitialHeight, content + 160))
 }
 
 function bridgeStateForContext(
