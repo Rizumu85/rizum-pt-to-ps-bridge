@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from .exporter import (
@@ -550,14 +551,18 @@ class BridgePanel:
         # Passing JSX to Photoshop is the host-supported zero-click path used
         # by the released exporter; UXP panels are lazy and cannot receive a
         # reliable external launch event when they have never been opened.
-        started = self.QtCore.QProcess.startDetached(
-            str(executable),
-            [str(Path(launcher_path).resolve())],
-        )
-        if isinstance(started, tuple):
-            started = started[0]
-        if not started:
-            return False, f"Could not launch Photoshop: {executable}"
+        # Photoshop must not inherit Painter's handles: QProcess.startDetached
+        # let it keep the open .spp, so Painter could not rename the project
+        # for its incremental save and crashed. close_fds starts it with none.
+        try:
+            subprocess.Popen(
+                [str(executable), str(Path(launcher_path).resolve())],
+                close_fds=True,
+                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+        except OSError as exc:
+            return False, f"Could not launch Photoshop: {executable} ({exc})"
         return True, ""
 
     def start_photoshop_build(self, export_list, output_dir):
