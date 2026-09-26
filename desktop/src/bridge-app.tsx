@@ -223,6 +223,18 @@ export function BridgeApp({
     endDrag(next !== bridge)
   }
 
+  // A release beside the rows (the list's margins, below the last row) makes
+  // the drop the preview shows. The user saw a line above the first row and
+  // got nothing on release; what is shown and what is done must agree.
+  const releaseInPanel = (host: HostId) => {
+    const aimed = treePointer.get()
+    if (aimed.draggingId && aimed.dropTargetId && layerIndex.get(aimed.dropTargetId)?.host === host) {
+      drop(aimed.dropTargetId)
+    } else {
+      endDrag()
+    }
+  }
+
   const undo = () => {
     if (pending.current) return
     const previous = history.at(-1)
@@ -416,8 +428,8 @@ export function BridgeApp({
 
   // Rows are memoized, so the tree receives handlers that never change and
   // reach the latest state through this ref.
-  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, removeSource })
-  latest.current = { toggle, startDrag, movePointer, endDrag, drop, removeSource }
+  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource })
+  latest.current = { toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource }
   // Real Win32 moves over a row stay with the row's handler inside the native
   // list and do not reach the panel, so rows feed the carried card too;
   // without it the card froze over every row. The follower drops repeated
@@ -438,11 +450,17 @@ export function BridgeApp({
     onDragEnd: () => latest.current.endDrag(),
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
+    onRelease: (host: HostId) => latest.current.releaseInPanel(host),
     onTrackPointer: (event: EventPayload) => {
       if (!treePointer.get().draggingId || event.pressedButton !== 0) latest.current.movePointer(event)
       carry(event)
     },
   }), [treePointer])
+  // Between the panels no drop can land, so the preview line goes too.
+  const trackGutter = useMemo(() => (event: EventPayload) => {
+    if (treePointer.get().dropTargetId) treePointer.set({ dropTargetId: null, dropPlacement: null })
+    tree.onTrackPointer(event)
+  }, [tree, treePointer])
   const removePhotoshop = useMemo(() => (id: string) => latest.current.removeSource("photoshop", id), [])
   const removePainter = useMemo(() => (id: string) => latest.current.removeSource("substance_painter", id), [])
 
@@ -524,7 +542,7 @@ export function BridgeApp({
         </div>
         <InsetSeparator />
         <div
-          onMouseMove={tree.onTrackPointer}
+          onMouseMove={trackGutter}
           onMouseUp={() => endDrag()}
           style={{
             flexGrow: 1,

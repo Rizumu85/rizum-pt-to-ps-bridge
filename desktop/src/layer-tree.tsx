@@ -385,6 +385,7 @@ export function HostPanel({
   headerAction,
   emptyContent,
   onTrackPointer,
+  onRelease,
   contentKey,
   ...interaction
 }: {
@@ -395,6 +396,8 @@ export function HostPanel({
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
   onTrackPointer: (event: EventPayload) => void
+  /** A release inside the panel that no row took. */
+  onRelease: (host: HostId) => void
   /** Names what the tree shows: a document or a Painter target. */
   contentKey: string
 } & TreeInteraction) {
@@ -414,6 +417,7 @@ export function HostPanel({
       // GPUiX delivers pointer moves no higher than the host panels, so the
       // drag preview is fed here; drops only land inside a panel anyway.
       onMouseMove={onTrackPointer}
+      onMouseUp={() => onRelease(interaction.host)}
       style={{
         // Rows that accept the drop override this; releasing anywhere else cancels.
         cursor: dragging ? "no-drop" : undefined,

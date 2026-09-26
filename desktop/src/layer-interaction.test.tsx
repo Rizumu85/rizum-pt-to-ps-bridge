@@ -289,6 +289,42 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
+  it("drops where the line shows when released in the list margin above the first row", async () => {
+    const { app, root, close } = await setup()
+    try {
+      const top = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move({ x: top.x + top.width / 2, y: top.y + top.height * 0.2 }, { pressedButton: 0 })
+      // Out of the row, into the margin above it: the line stays, so the drop does.
+      await app.mouse.move({ x: top.x + top.width / 2, y: top.y - 4 }, { pressedButton: 0 })
+      await app.mouse.up({ x: top.x + top.width / 2, y: top.y - 4 })
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+      expect(await app.getByText("Pending").count()).toBe(1)
+      const dropped = await app.getByTestId("layer-row:photoshop:ps:100").bounds()
+      const locator = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
+      expect(dropped.y).toBeLessThan(locator.y)
+    } finally { await close() }
+  })
+
+  it("cancels a drop released between the panels, where no line shows", async () => {
+    const { app, root, close } = await setup()
+    try {
+      const top = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
+      const panel = await app.getByTestId("layer-panel:painter").bounds()
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move({ x: top.x + top.width / 2, y: top.y + top.height * 0.2 }, { pressedButton: 0 })
+      await app.mouse.move({ x: panel.x - 6, y: top.y }, { pressedButton: 0 })
+      root.renderer.flush()
+      expect(dropMarks(root.renderer.toJSON() as TreeNode)).toBe(0)
+      await app.mouse.up({ x: panel.x - 6, y: top.y })
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      expect(await app.getByText("Pending").count()).toBe(0)
+    } finally { await close() }
+  })
+
   it("drops above a layer staged at the top, and applies that order", async () => {
     const { app, root, apply, close } = await setup()
     const dropOnUpperHalf = async (source: string, targetId: string) => {
