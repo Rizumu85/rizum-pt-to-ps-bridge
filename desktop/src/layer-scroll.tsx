@@ -17,6 +17,17 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
   const start = Math.min(range.start, Math.max(0, rowCount - 1))
   useLayoutEffect(() => rowBounds.invalidate(), [rowBounds, layoutKey, windowSize.width, windowSize.height])
 
+  // Native reports only rows the mounted window can lay out, so after a jump
+  // (a thumb drag) its endIndex stopped at the old window's edge and the rest
+  // of the viewport stayed blank. Rows share one fixed height, so the window
+  // follows from the first visible row and the viewport height instead.
+  const windowAt = (first: number, height: number) => ({
+    start: Math.max(0, first - 8),
+    end: first + Math.ceil((height || 24 * themeMetrics.rowHeight) / themeMetrics.rowHeight) + 8,
+  })
+  const adoptWindow = (next: { start: number; end: number }) =>
+    setRange(previous => previous.start === next.start && previous.end === next.end ? previous : next)
+
   const anchorOffset = (anchor: number[]) => Math.max(0, Math.min(
     Math.max(0, rowCount * themeMetrics.rowHeight - anchor[2]),
     anchor[0] * themeMetrics.rowHeight + anchor[1],
@@ -49,6 +60,7 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
     rowBounds.invalidate()
     const value = Math.max(0, Math.min(maximum, offset))
     renderer.scrollToItem?.(viewport.current.id, Math.floor(value / themeMetrics.rowHeight), value % themeMetrics.rowHeight)
+    adoptWindow(windowAt(Math.floor(value / themeMetrics.rowHeight), metrics.height))
     setMetrics(previous => ({ ...previous, offset: value }))
   }
 
@@ -58,10 +70,8 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
     <virtual-list ref={viewport} testId={`layer-scroll:${id}`} itemCount={rowCount} windowStart={start}
       estimatedItemHeight={themeMetrics.rowHeight} overdraw={64} onVisibleRange={event => {
       rowBounds.invalidate()
-      const next = { start: Math.max(0, (event.startIndex ?? 0) - 8), end: (event.endIndex ?? 24) + 8 }
-      setRange(previous => previous.start === next.start && previous.end === next.end ? previous : next)
-      if (!viewport.current) return
-      const anchor = renderer.getListScrollTop?.(viewport.current.id)
+      const anchor = viewport.current && renderer.getListScrollTop?.(viewport.current.id)
+      adoptWindow(windowAt(event.startIndex ?? 0, anchor?.[2] ?? metrics.height))
       if (!anchor) return
       const offset = anchorOffset(anchor)
       setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })

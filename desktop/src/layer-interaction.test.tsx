@@ -183,6 +183,40 @@ describe("layer tree interaction", () => {
       })
     } finally { await close() }
   })
+  it("fills the viewport after a thumb drag jumps past the mounted rows", async () => {
+    const { root, close } = await setup(false, 60)
+    const settle = async () => {
+      for (let i = 0; i < 4; i++) {
+        root.renderer.flush()
+        root.renderer.dispatchNativeEvents()
+        await new Promise(resolve => setTimeout(resolve, 15))
+      }
+    }
+    try {
+      await new Promise(resolve => setTimeout(resolve, 300))
+      await settle()
+      const track = root.renderer.getElementBounds(root.renderer.findByTestId("layer-scrollbar:painter")!.id)!
+      const bottomEdge = track.y + track.height
+      const paintedBottom = () => Math.max(0, ...root.renderer.findByType("div")
+        .filter(element => element.testId?.startsWith("layer-row:"))
+        .map(element => root.renderer.getElementBounds(element.id))
+        .filter(box => box && box.x < track.x && box.y < bottomEdge)
+        .map(box => box!.y + box!.height))
+      // Wheel far enough that the mounted window no longer holds the top rows.
+      for (let step = 0; step < 12; step++) {
+        root.renderer.dispatchScrollWheel(track.x - 80, track.y + 80, 0, -90)
+        await settle()
+      }
+      const x = track.x + track.width / 2
+      root.renderer.nativeSimulateMouseDown(x, track.y + 4)
+      for (const y of [track.y + 4, track.y + 60, track.y + 120]) {
+        root.renderer.nativeSimulateMouseMove(x, y, 0)
+        await settle()
+        expect(paintedBottom()).toBeGreaterThanOrEqual(bottomEdge - 1)
+      }
+      root.renderer.nativeSimulateMouseUp(x, track.y + 120)
+    } finally { await close() }
+  })
   it("shows only the actual drag target and clears it on Escape", async () => {
     const { app, root, close } = await setup()
     try {
