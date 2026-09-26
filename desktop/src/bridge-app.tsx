@@ -541,11 +541,6 @@ export function BridgeApp({
               )
             }
           />
-          <div style={{ flexGrow: 1 }} />
-          <IconAction icon="eraser" label="Reset mapping" testId="action:reset" disabled={busy || !hasChanges} onClick={reset} />
-          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
-          <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
-          <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ContextSelect
             label="Render:"
@@ -555,6 +550,12 @@ export function BridgeApp({
             busy={busy}
             onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
           />
+          <div style={{ flexGrow: 1 }} />
+          <IconAction icon="eraser" label="Reset mapping" testId="action:reset" disabled={busy || !hasChanges} onClick={reset} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
+          <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
+          <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ApplyAction
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
             onClick={apply}
