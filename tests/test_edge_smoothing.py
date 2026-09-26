@@ -95,6 +95,32 @@ class EdgeSmoothingTests(unittest.TestCase):
         after = sum(output.pixelColor(x, y).alpha() for y in range(6) for x in range(32))
         self.assertLess(abs(after - before), 255)
 
+    def test_strength_scales_from_untouched_to_full(self):
+        clear = QtGui.QColor(0, 0, 0, 0)
+        red = QtGui.QColor(220, 60, 60, 255)
+        rows = [
+            [red if x >= 30 - 5 * y else clear for x in range(32)]
+            for y in range(6)
+        ]
+        image = QtGui.QImage(32, 6, QtGui.QImage.Format.Format_RGBA8888)
+        for y, row in enumerate(rows):
+            for x, colour in enumerate(row):
+                image.setPixelColor(x, y, colour)
+
+        def blended(strength):
+            output, changed, _ = edge_smoothing.smooth_image(image, strength)
+            return changed, sum(
+                abs(output.pixelColor(x, y).alpha() - rows[y][x].alpha())
+                for y in range(6)
+                for x in range(32)
+            )
+
+        self.assertEqual(blended(0), (0, 0))
+        weak, half, full = blended(25)[1], blended(50)[1], blended(100)[1]
+        self.assertLess(0, weak)
+        self.assertLess(weak, half)
+        self.assertLess(half, full)
+
     def test_corners_of_long_straight_edges_stay_square(self):
         clear = QtGui.QColor(0, 0, 0, 0)
         white = QtGui.QColor(255, 255, 255, 255)
@@ -145,7 +171,7 @@ class EdgeSmoothingTests(unittest.TestCase):
         with mock.patch.object(
             edge_smoothing,
             "smooth_png",
-            side_effect=lambda path: calls.append(path) or {"changed_pixels": 3},
+            side_effect=lambda path, strength: calls.append((path, strength)) or {"changed_pixels": 3},
         ), mock.patch.object(
             png_color_metadata,
             "normalize_png",
@@ -153,7 +179,7 @@ class EdgeSmoothingTests(unittest.TestCase):
         ):
             result = _smooth_exported_assets(request)
 
-        self.assertEqual(calls, ["layer.png", "mask.png"])
+        self.assertEqual(calls, [("layer.png", 100), ("mask.png", 100)])
         self.assertEqual(result["layer_assets"], 1)
         self.assertEqual(result["mask_assets"], 1)
         self.assertEqual(result["changed_pixels"], 6)

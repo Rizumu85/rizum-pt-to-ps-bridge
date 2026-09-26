@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from . import edge_smoothing
 from .ui_kit import (
     PLUGIN_VERSION,
     PAINTER_DIALOG_STYLE,
@@ -184,6 +185,175 @@ def _make_settings_toggle(QtCore, QtGui, QtWidgets, checked=False):
             painter.end()
 
     return _SettingsToggle()
+
+
+def _make_settings_slider(QtCore, QtGui, QtWidgets):
+    """A thin track with a round knob, drawn like the dialog's other controls.
+
+    Qt style sheets cannot round a slider's handle reliably, so it is painted.
+    """
+
+    class _SettingsSlider(QtWidgets.QSlider):
+        def __init__(self):
+            super().__init__(QtCore.Qt.Orientation.Horizontal)
+            self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+
+        def _knob(self):
+            return max(8.0, self.height() * 0.6)
+
+        def _centre_x(self):
+            span = max(1, self.maximum() - self.minimum())
+            knob = self._knob()
+            travel = self.width() - knob
+            return knob / 2 + travel * (self.value() - self.minimum()) / span
+
+        def _value_at(self, x):
+            knob = self._knob()
+            travel = max(1.0, self.width() - knob)
+            fraction = max(0.0, min(1.0, (x - knob / 2) / travel))
+            return round(self.minimum() + fraction * (self.maximum() - self.minimum()))
+
+        def mousePressEvent(self, event):
+            if event.button() != QtCore.Qt.MouseButton.LeftButton:
+                return super().mousePressEvent(event)
+            # A click moves the knob to the pointer and starts a drag there.
+            self.setSliderDown(True)
+            self.setValue(self._value_at(event.position().x()))
+            event.accept()
+
+        def mouseMoveEvent(self, event):
+            if self.isSliderDown():
+                self.setValue(self._value_at(event.position().x()))
+                event.accept()
+
+        def mouseReleaseEvent(self, event):
+            if self.isSliderDown():
+                self.setSliderDown(False)
+                event.accept()
+
+        def paintEvent(self, _event):
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            knob = self._knob()
+            track = max(2.0, knob / 3)
+            centre_y = self.height() / 2
+            track_rect = QtCore.QRectF(knob / 2, centre_y - track / 2, self.width() - knob, track)
+            painter.setBrush(QtGui.QColor(PAINTER_DIALOG_STYLE["control"]))
+            painter.drawRoundedRect(track_rect, track / 2, track / 2)
+            x = self._centre_x()
+            painter.setBrush(QtGui.QColor(PAINTER_DIALOG_STYLE["accent"]))
+            filled = QtCore.QRectF(track_rect.left(), track_rect.top(), x - track_rect.left(), track)
+            painter.drawRoundedRect(filled, track / 2, track / 2)
+            hovered = self.underMouse() or self.isSliderDown()
+            painter.setBrush(QtGui.QColor(PAINTER_DIALOG_STYLE["accent_hover" if hovered else "accent"]))
+            painter.drawEllipse(QtCore.QPointF(x, centre_y), knob / 2, knob / 2)
+            painter.end()
+
+        def enterEvent(self, event):
+            self.update()
+            super().enterEvent(event)
+
+        def leaveEvent(self, event):
+            self.update()
+            super().leaveEvent(event)
+
+    return _SettingsSlider()
+
+
+def _make_smoothing_preview(QtCore, QtGui, QtWidgets):
+    """A magnified aliased sample that shows the chosen smoothing live.
+
+    The user asked that this setting explain itself: at 0 the sample shows the
+    jagged pixels Painter exports, and dragging the slider runs the export's
+    own smoothing pass on it, so the preview is exactly what the PSD gets.
+    """
+
+    class _SmoothingPreview(QtWidgets.QWidget):
+        SOURCE_WIDTH = 76
+        SOURCE_HEIGHT = 18
+
+        def __init__(self):
+            super().__init__()
+            self.setObjectName("RizumSettingsSmoothingPreview")
+            self._source = self._draw_source()
+            self._shown = self._source
+            self._failed = False
+            self.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+
+        def _draw_source(self):
+            image = QtGui.QImage(
+                self.SOURCE_WIDTH,
+                self.SOURCE_HEIGHT,
+                QtGui.QImage.Format.Format_RGBA8888,
+            )
+            image.fill(QtGui.QColor(0, 0, 0, 0))
+            painter = QtGui.QPainter(image)
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            # A shallow curve, a steep edge and a one-pixel stroke: the edges
+            # texture exports alias most.
+            painter.setBrush(QtGui.QColor(PAINTER_DIALOG_STYLE["text"]))
+            painter.drawEllipse(QtCore.QPointF(20, 30), 26, 22)
+            painter.drawPolygon(
+                QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(44, 18),
+                        QtCore.QPointF(52, 2),
+                        QtCore.QPointF(56, 2),
+                        QtCore.QPointF(50, 18),
+                    ]
+                )
+            )
+            painter.setPen(QtGui.QPen(QtGui.QColor(PAINTER_DIALOG_STYLE["text"]), 1))
+            painter.drawLine(QtCore.QPointF(58, 16), QtCore.QPointF(74, 3))
+            painter.end()
+            return image
+
+        def setStrength(self, strength):
+            try:
+                self._shown = edge_smoothing.smooth_image(self._source, strength)[0]
+                self._failed = False
+            except Exception:
+                # A missing native library already stops exports with its own
+                # error; the preview only falls back to the unsmoothed sample.
+                self._shown = self._source
+                self._failed = True
+            self.update()
+
+        def paintEvent(self, _event):
+            painter = QtGui.QPainter(self)
+            bounds = self.rect()
+            radius = max(2, round(bounds.height() / 12))
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(PAINTER_DIALOG_STYLE["control"]))
+            painter.drawRoundedRect(QtCore.QRectF(bounds), radius, radius)
+            # Whole-number magnification keeps each source pixel square, so
+            # the steps being smoothed stay readable.
+            scale = max(
+                1,
+                min(
+                    bounds.width() // self.SOURCE_WIDTH,
+                    bounds.height() // self.SOURCE_HEIGHT,
+                ),
+            )
+            width = self.SOURCE_WIDTH * scale
+            height = self.SOURCE_HEIGHT * scale
+            target = QtCore.QRect(
+                bounds.x() + (bounds.width() - width) // 2,
+                bounds.y() + (bounds.height() - height) // 2,
+                width,
+                height,
+            )
+            painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, False)
+            painter.drawImage(target, self._shown)
+            painter.end()
+
+    return _SmoothingPreview()
 
 
 def _make_settings_reveal_row(QtCore, QtWidgets, content, expanded_height):
@@ -385,6 +555,27 @@ class SettingsDialog:
         uv_map_layout.addWidget(self.export_uv_map)
         body_layout.addWidget(uv_map_row)
 
+        # Edge smoothing has one setting on purpose: texture export should not
+        # ask for a colour threshold, gamma or extra-smooth. Strength covers
+        # off (0) to the full reconstruction (100).
+        smoothing_row, smoothing_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(smoothing_row)
+        self.smoothing_texts = self._make_text_block("Edge smoothing", "Softens jagged edges · 100")
+        self.smoothing_meta = self.smoothing_texts._rizum_meta_label
+        smoothing_layout.addWidget(self.smoothing_texts)
+        smoothing_layout.addStretch(1)
+        self.smoothing_slider = _make_settings_slider(self.QtCore, self.QtGui, self.QtWidgets)
+        self.smoothing_slider.setRange(0, 100)
+        self.smoothing_slider.setSingleStep(5)
+        self.smoothing_slider.setPageStep(10)
+        smoothing_layout.addWidget(self.smoothing_slider)
+        body_layout.addWidget(smoothing_row)
+        self.smoothing_preview = _make_smoothing_preview(self.QtCore, self.QtGui, self.QtWidgets)
+        body_layout.addWidget(self.smoothing_preview)
+
         photoshop_section = _settings_section(self.QtWidgets, "Photoshop")
         self._settings_sections.append(photoshop_section)
         body_layout.addWidget(photoshop_section)
@@ -485,6 +676,9 @@ class SettingsDialog:
         self.dilation_stepper.valueChanged.connect(self._save_live)
         self.bit_depth.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
+        self.smoothing_slider.valueChanged.connect(self._sync_smoothing)
+        # Dragging previews every step; the setting is written once, on release.
+        self.smoothing_slider.sliderReleased.connect(self._save_live)
         self.photoshop_path.editingFinished.connect(self._save_live)
         self.photoshop_path.editingFinished.connect(self._sync_photoshop_hint)
 
@@ -570,11 +764,18 @@ class SettingsDialog:
             + self.export_uv_map.width()
             + 2 * body_margin
         )
+        smoothing_need = (
+            self.smoothing_texts.sizeHint().width()
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.smoothing_slider.width()
+            + 2 * body_margin
+        )
         return max(
             metric(338, 254),
             footer_need,
             bit_depth_need,
             uv_map_need,
+            smoothing_need,
         )
 
     def _apply_ui_scale(self, _scale):
@@ -620,6 +821,9 @@ class SettingsDialog:
 
         self.infinite_padding.setCompactHeight(metric(20))
         self.export_uv_map.setCompactHeight(metric(20))
+        self.smoothing_slider.setFixedWidth(metric(132, 99))
+        self.smoothing_slider.setFixedHeight(metric(20))
+        self.smoothing_preview.setFixedHeight(metric(62, 46))
         self.dilation_stepper.setCompactHeight(
             PAINTER_SETTINGS_LAYOUT.stepper_height.resolve(self.dialog)
         )
@@ -796,6 +1000,11 @@ QPushButton[variant="icon"]:pressed {{
                 emit=False,
             )
             self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
+            strength = settings.get("edge_smoothing")
+            self.smoothing_slider.setValue(
+                edge_smoothing.DEFAULT_STRENGTH if strength is None else int(strength)
+            )
+            self._sync_smoothing()
             self._sync_padding_mode(animate=False)
 
             bit_depth = settings.get("bit_depth")
@@ -803,6 +1012,16 @@ QPushButton[variant="icon"]:pressed {{
             self.bit_depth.setCurrentIndex(index if index >= 0 else 0)
         finally:
             self._loading_values = False
+
+    def _sync_smoothing(self, *_args):
+        strength = self.smoothing_slider.value()
+        self.smoothing_meta.setText(
+            "Softens jagged edges · " + ("Off" if strength == 0 else str(strength))
+        )
+        self.smoothing_preview.setStrength(strength)
+        if not self._loading_values and not self.smoothing_slider.isSliderDown():
+            # Keyboard and click steps have no release to save on.
+            self._save_live()
 
     def _sync_padding_mode(self, _enabled=None, animate=True):
         infinite = self.infinite_padding.isChecked()
@@ -839,6 +1058,7 @@ QPushButton[variant="icon"]:pressed {{
             "dilation": self.dilation_stepper.value(),
             "export_uv_map": self.export_uv_map.isChecked(),
             "bit_depth": self.bit_depth.currentData(),
+            "edge_smoothing": self.smoothing_slider.value(),
         }
 
     def _save_live(self, *_args):

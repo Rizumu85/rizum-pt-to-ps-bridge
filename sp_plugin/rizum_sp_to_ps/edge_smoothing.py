@@ -7,13 +7,15 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-ALGORITHM_ID = "morphological-aa-v4"
+ALGORITHM_ID = "morphological-aa-v5"
+# The one user setting: 0 leaves edges as Painter drew them, 100 smooths fully.
+DEFAULT_STRENGTH = 100
 _NATIVE_ERROR = (1 << 64) - 1
 
 
 @lru_cache(maxsize=1)
 def _native_library():
-    path = Path(__file__).with_name("native") / "rizum_edge_smoothing_v4.dll"
+    path = Path(__file__).with_name("native") / "rizum_edge_smoothing_v5.dll"
     if not path.is_file():
         # Mixing filtered and unfiltered layers would make one PSD internally
         # inconsistent, so a damaged installation must stop the whole export.
@@ -30,24 +32,19 @@ def _native_library():
             ctypes.c_size_t,
             ctypes.c_size_t,
             ctypes.c_size_t,
+            ctypes.c_float,
         )
         function.restype = ctypes.c_uint64
     return library
 
 
-def smooth_png(path):
-    """Rebuild jagged colour and coverage edges as smooth lines, in place."""
-    try:
-        from PySide6 import QtGui
-    except ImportError as exc:
-        raise RuntimeError("Edge smoothing requires Painter's bundled PySide6.") from exc
+def smooth_image(image, strength=DEFAULT_STRENGTH):
+    """Smooth a QImage; returns the smoothed copy and how many pixels changed.
 
-    source_path = Path(path)
-    image = QtGui.QImage(str(source_path))
-    if image.isNull():
-        raise RuntimeError(
-            f"Could not read exported PNG for edge smoothing: {source_path}"
-        )
+    The settings preview runs this same pass, so what it shows is what the
+    export writes.
+    """
+    from PySide6 import QtGui
 
     formats = QtGui.QImage.Format
     is_16_bit = image.depth() > 32 or image.format() == formats.Format_Grayscale16
@@ -64,10 +61,37 @@ def smooth_png(path):
         pixels = ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint8))
 
     changed_pixels = int(
-        function(pixels, image.width(), image.height(), image.bytesPerLine())
+        function(
+            pixels,
+            image.width(),
+            image.height(),
+            image.bytesPerLine(),
+            max(0.0, min(1.0, float(strength) / 100.0)),
+        )
     )
     if changed_pixels == _NATIVE_ERROR:
-        raise RuntimeError(f"Invalid image buffer while smoothing {source_path}")
+        raise RuntimeError("Invalid image buffer for edge smoothing")
+    return image, changed_pixels, is_16_bit
+
+
+def smooth_png(path, strength=DEFAULT_STRENGTH):
+    """Rebuild jagged colour and coverage edges as smooth lines, in place."""
+    try:
+        from PySide6 import QtGui
+    except ImportError as exc:
+        raise RuntimeError("Edge smoothing requires Painter's bundled PySide6.") from exc
+
+    source_path = Path(path)
+    image = QtGui.QImage(str(source_path))
+    if image.isNull():
+        raise RuntimeError(
+            f"Could not read exported PNG for edge smoothing: {source_path}"
+        )
+
+    try:
+        image, changed_pixels, is_16_bit = smooth_image(image, strength)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc}: {source_path}") from exc
 
     result = {
         "algorithm": ALGORITHM_ID,

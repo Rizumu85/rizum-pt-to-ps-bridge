@@ -86,6 +86,7 @@ struct Line<'a> {
     rows: &'a Rows,
     vertical: bool,
     fixed: isize,
+    strength: f32,
 }
 
 impl Line<'_> {
@@ -205,12 +206,19 @@ impl Line<'_> {
             }
         }
         let (s, e) = (start as f32, end as f32);
-        let profile: &[(f32, f32)] = if h0 != 0.0 && h0 == h1 {
-            &[(s, h0), ((s + e) / 2.0, 0.0), (e, h1)]
+        // Each turn's ramp reaches the far point of full smoothing; strength
+        // shortens it towards the turn, as the paper's smoothness scales the
+        // L shape, so a weaker setting keeps more of the original step.
+        let reach = |far: f32, near: f32| near + (far - near) * self.strength;
+        let profile: [(f32, f32); 4] = if h0 != 0.0 && h1 != 0.0 {
+            let middle = (s + e) / 2.0;
+            [(s, h0), (reach(middle, s), 0.0), (reach(middle, e), 0.0), (e, h1)]
+        } else if h0 != 0.0 {
+            [(s, h0), (reach(e, s), 0.0), (e, 0.0), (e, 0.0)]
         } else {
-            &[(s, h0), (e, h1)]
+            [(s, 0.0), (s, 0.0), (reach(s, e), 0.0), (e, h1)]
         };
-        let (toward0, toward1) = coverage(profile, i as f32, i as f32 + 1.0);
+        let (toward0, toward1) = coverage(&profile, i as f32, i as f32 + 1.0);
         (toward1, toward0)
     }
 }
@@ -266,15 +274,17 @@ unsafe fn smooth<T: Sample>(
     width: usize,
     height: usize,
     stride_bytes: usize,
+    strength: f32,
 ) -> Option<u64> {
-    if pixels.is_null() || stride_bytes % size_of::<T>() != 0 {
+    if pixels.is_null() || stride_bytes % size_of::<T>() != 0 || !strength.is_finite() {
         return None;
     }
+    let strength = strength.clamp(0.0, 1.0);
     let stride = stride_bytes / size_of::<T>();
     if stride < width.checked_mul(4)? {
         return None;
     }
-    if width < 2 || height < 2 {
+    if width < 2 || height < 2 || strength == 0.0 {
         return Some(0);
     }
 
@@ -291,8 +301,8 @@ unsafe fn smooth<T: Sample>(
         }
         let (row, x_count) = (y as isize, width as isize);
         let destination = unsafe { slice::from_raw_parts_mut(pixels.add(y * stride), width * 4) };
-        let below = Line { rows: &rows, vertical: false, fixed: row };
-        let above = Line { rows: &rows, vertical: false, fixed: row - 1 };
+        let below = Line { rows: &rows, vertical: false, fixed: row, strength };
+        let above = Line { rows: &rows, vertical: false, fixed: row - 1, strength };
         let base = |y: usize| (y % WINDOW) * width;
         let current = &rows.data[base(y)..base(y) + width];
         let up = (y > 0).then(|| &rows.data[base(y - 1)..base(y - 1) + width]);
@@ -308,8 +318,8 @@ unsafe fn smooth<T: Sample>(
             if !edged {
                 continue;
             }
-            let right = Line { rows: &rows, vertical: true, fixed: x };
-            let left = Line { rows: &rows, vertical: true, fixed: x - 1 };
+            let right = Line { rows: &rows, vertical: true, fixed: x, strength };
+            let left = Line { rows: &rows, vertical: true, fixed: x - 1, strength };
             let blends = [
                 (below.weights(x).0, rows.get(x, row + 1)),
                 (above.weights(x).1, rows.get(x, row - 1)),
@@ -357,8 +367,9 @@ pub extern "C" fn rizum_smooth_rgba8(
     width: usize,
     height: usize,
     stride_bytes: usize,
+    strength: f32,
 ) -> u64 {
-    unsafe { smooth(pixels, width, height, stride_bytes) }.unwrap_or(ERROR)
+    unsafe { smooth(pixels, width, height, stride_bytes, strength) }.unwrap_or(ERROR)
 }
 
 #[no_mangle]
@@ -367,6 +378,7 @@ pub extern "C" fn rizum_smooth_rgba16(
     width: usize,
     height: usize,
     stride_bytes: usize,
+    strength: f32,
 ) -> u64 {
-    unsafe { smooth(pixels, width, height, stride_bytes) }.unwrap_or(ERROR)
+    unsafe { smooth(pixels, width, height, stride_bytes, strength) }.unwrap_or(ERROR)
 }

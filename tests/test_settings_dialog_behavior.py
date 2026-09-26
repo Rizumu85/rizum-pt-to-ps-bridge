@@ -67,6 +67,18 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         self.panel.widget.deleteLater()
         self.app.processEvents()
 
+    def test_smoothing_previews_while_dragging_and_saves_on_release(self):
+        slider = self.settings.smoothing_slider
+        self.assertEqual(slider.value(), 100)
+        middle = QtCore.QPoint(slider.width() // 2, slider.height() // 2)
+        QtTest.QTest.mousePress(slider, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(1, middle.y()))
+        self.assertIn("Off", self.settings.smoothing_meta.text())
+        QtTest.QTest.mouseMove(slider, middle)
+        self.assertEqual(self.panel.saved, [])
+        QtTest.QTest.mouseRelease(slider, QtCore.Qt.MouseButton.LeftButton, pos=middle)
+        self.assertEqual(self.panel.saved[-1]["edge_smoothing"], slider.value())
+        self.assertTrue(40 <= slider.value() <= 60)
+
     def test_controls_save_live_without_saving_during_initial_load(self):
         self.assertEqual(self.panel.saved, [])
 

@@ -1487,6 +1487,13 @@ def _request_uses_udim(request):
     return request.get("uv_tile", {}).get("is_udim", True)
 
 
+def _edge_smoothing(settings):
+    value = settings.get("edge_smoothing")
+    if value is None:
+        return edge_smoothing.DEFAULT_STRENGTH
+    return max(0, min(100, int(value)))
+
+
 def _export_settings(request, settings):
     infinite_padding = settings.get("infinite_padding", False)
     padding = "Infinite" if infinite_padding else "Transparent"
@@ -1498,6 +1505,7 @@ def _export_settings(request, settings):
         "bit_depth": int(settings.get("bit_depth") or request["bit_depth"]),
         "keep_alpha": bool(settings.get("keep_alpha", True)),
         "export_uv_map": bool(settings.get("export_uv_map", False)),
+        "edge_smoothing": _edge_smoothing(settings),
         "resolution": [int(resolution["width"]), int(resolution["height"])],
     }
 
@@ -1713,7 +1721,12 @@ def _smooth_exported_assets(
             text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
             detail=f"Smoothing \u201c{label}\u201d",
         )
-        result = edge_smoothing.smooth_png(asset["path"])
+        result = edge_smoothing.smooth_png(
+            asset["path"],
+            build_request.get("export_settings", {}).get(
+                "edge_smoothing", edge_smoothing.DEFAULT_STRENGTH
+            ),
+        )
         encoding = color_policy["encoding"] if asset["kind"] == "layer" else "raw"
         metadata = png_color_metadata.normalize_png(asset["path"], encoding)
         metadata_rewrites += int(metadata["changed"])

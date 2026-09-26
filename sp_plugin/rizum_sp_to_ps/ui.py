@@ -10,6 +10,7 @@ from .exporter import (
     default_output_dir,
     write_build_bundles,
 )
+from .edge_smoothing import DEFAULT_STRENGTH
 from .photoshop_automation import find_photoshop_executable, write_photoshop_launcher
 from .photoshop_job import PhotoshopJob
 from .ui_kit import (
@@ -422,6 +423,7 @@ class BridgePanel:
             "dilation": optional_int(store.value("dilation", 8)) or 8,
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
             "bit_depth": bit_depth,
+            "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
         }
 
     def save_user_settings(self, values):
@@ -430,6 +432,7 @@ class BridgePanel:
         store.setValue("infinite_padding", bool(values.get("infinite_padding")))
         store.setValue("dilation", int(values.get("dilation") or 8))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
+        store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
         bit_depth = values.get("bit_depth")
         if bit_depth:
             store.setValue("bit_depth", int(bit_depth))
@@ -643,6 +646,11 @@ class BridgePanel:
         progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()
+
+def _smoothing_strength(value):
+    strength = optional_int(value)
+    return DEFAULT_STRENGTH if strength is None else max(0, min(100, strength))
+
 
 def _is_relative_to(path, parent):
     try:
