@@ -18,12 +18,9 @@ from .ui_kit import (
 )
 
 
-PSD_SIZE_OPTIONS = [
-    ("Texture Set", None),
-    ("1K", 1024),
-    ("2K", 2048),
-    ("4K", 4096),
-    ("8K", 8192),
+# Written the way Painter lists texture set sizes, which users already read.
+PSD_SIZE_OPTIONS = [("Texture Set", None)] + [
+    (str(size), size) for size in (128, 256, 512, 1024, 2048, 4096, 8192)
 ]
 RENDER_SCALE_OPTIONS = [("1\u00d7", 1), ("2\u00d7", 2), ("4\u00d7", 4)]
 RENDER_SCALE_HINT = "Supersampling"
@@ -558,7 +555,7 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.row_height.design,
         )
         self._settings_rows.append(psd_size_row)
-        psd_size_layout.addWidget(_settings_label(self.QtWidgets, "PSD size", "RizumSettingsItemName"))
+        psd_size_layout.addWidget(_settings_label(self.QtWidgets, "Size", "RizumSettingsItemName"))
         psd_size_layout.addStretch(1)
         psd_size_layout.addWidget(self.psd_size)
         body_layout.addWidget(psd_size_row)
