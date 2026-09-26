@@ -359,13 +359,16 @@ export function ContextSelect({
             borderWidth: 1,
             borderColor: colors.line,
             backgroundColor: colors.panel,
-            boxShadow: {
+            // GPUiX fades an element's fill but not its shadow, so a shadow
+            // kept through the exit outlived the fading list as an empty dark
+            // box for a frame. It leaves as the close begins.
+            boxShadow: visuallyOpen ? {
               offsetX: 0,
               offsetY: 4,
               blurRadius: 12,
               spreadRadius: 0,
               color: "#00000066",
-            },
+            } : undefined,
           }}
         >
           {options.map((option, index) => (
