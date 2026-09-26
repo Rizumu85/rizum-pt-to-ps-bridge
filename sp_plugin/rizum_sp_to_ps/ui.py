@@ -586,6 +586,10 @@ class BridgePanel:
             "dilation": int(self.user_settings.get("dilation") or 8),
             "keep_alpha": True,
             "export_uv_map": bool(self.user_settings.get("export_uv_map")),
+            # These were read from Settings only by Bridge transfers; exports
+            # silently used their defaults.
+            "edge_smoothing": self.user_settings.get("edge_smoothing"),
+            "cleanup_layer_pngs": self.user_settings.get("cleanup_layer_pngs", True),
         }
         bit_depth = self.user_settings.get("bit_depth")
         if bit_depth:
