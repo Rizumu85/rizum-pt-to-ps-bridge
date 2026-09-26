@@ -612,9 +612,6 @@ class ExportDialog:
         )
         self.scope_combo.fitToContents()
         footer_margin_x = PAINTER_SETTINGS_LAYOUT.footer_margin_x.resolve(self.dialog)
-        self.size_controls.setFixedHeight(
-            PAINTER_SETTINGS_LAYOUT.row_height.resolve(self.dialog)
-        )
         self.size_controls.layout().setContentsMargins(footer_margin_x, 0, footer_margin_x, 0)
         self.size_controls.layout().setSpacing(PAINTER_SETTINGS_LAYOUT.row_spacing)
         for combo in (self.psd_size_combo, self.render_scale_combo):
@@ -680,16 +677,29 @@ class ExportDialog:
         footer_gap = PAINTER_SETTINGS_LAYOUT.footer_gap.resolve(self.dialog)
         footer_bottom = PAINTER_SETTINGS_LAYOUT.footer_bottom.resolve(self.dialog)
         footer_row_height = PAINTER_SETTINGS_LAYOUT.footer_row_height.resolve(self.dialog)
-        self.footer_outer.setContentsMargins(
-            0,
-            footer_top + footer_gap,
-            0,
-            footer_bottom,
+        # The size row carries the footer's top spacing, so its combos sit
+        # centred between the divider and the buttons they belong to; a row
+        # of its own height above the footer's full inset left 7px over them
+        # and 30px under.
+        self.size_controls.setFixedHeight(
+            PAINTER_SETTINGS_LAYOUT.row_height.resolve(self.dialog)
+            + footer_top
+            + footer_gap
         )
+        # The buttons sit centred in their row, so the gap measured to the
+        # buttons includes that inset; offset the combos by it to match.
+        button_inset = max(
+            0,
+            footer_row_height
+            - PAINTER_SETTINGS_LAYOUT.footer_button_height.resolve(self.dialog),
+        )
+        size_margins = self.size_controls.layout().contentsMargins()
+        self.size_controls.layout().setContentsMargins(
+            size_margins.left(), button_inset, size_margins.right(), 0,
+        )
+        self.footer_outer.setContentsMargins(0, 0, 0, footer_bottom)
         self.footer_row.setFixedHeight(footer_row_height)
-        self.footer.setFixedHeight(
-            footer_top + footer_gap + footer_row_height + footer_bottom
-        )
+        self.footer.setFixedHeight(footer_row_height + footer_bottom)
         self.footer_layout.setContentsMargins(
             footer_margin,
             0,
