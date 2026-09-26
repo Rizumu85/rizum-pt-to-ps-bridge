@@ -12,13 +12,17 @@ import {
   loadBridgeSession,
   parseSessionOptions,
   type BridgeSession,
+  type RenderScale,
 } from "./transport"
 
 registerBundledFonts()
 
 let session: BridgeSession
+let defaultRenderScale: RenderScale = 1
 try {
-  session = await loadBridgeSession(parseSessionOptions(Bun.argv.slice(2)))
+  const options = parseSessionOptions(Bun.argv.slice(2))
+  defaultRenderScale = options.renderScale ?? 1
+  session = await loadBridgeSession(options)
 } catch (error) {
   session = failedBridgeSession(error)
 }
@@ -34,7 +38,9 @@ const painterLink = createPainterLink(process.stdin, (line) => process.stdout.wr
 render(
   <BridgeApp
     session={session}
-    onApply={(state, contextId, current, onProgress) => applyTransfer(current, state, contextId, painterLink, onProgress)}
+    defaultRenderScale={defaultRenderScale}
+    onApply={(state, contextId, current, onProgress, renderScale) =>
+      applyTransfer(current, state, contextId, painterLink, onProgress, renderScale)}
     onConnectPhotoshop={(current, context) => {
       allowPainterForeground()
       return connectPhotoshop(current, painterLink, context)

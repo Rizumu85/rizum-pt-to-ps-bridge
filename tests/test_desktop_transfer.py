@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -321,6 +322,27 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertEqual(plan.photoshop_exports[0].source_uid, 0x2B)
         self.assertEqual(plan.photoshop_exports[0].target_layer_id, 101)
         self.assertEqual(plan.photoshop_exports[0].name, "Recolor")
+
+    def test_painter_renders_for_the_psd_at_the_applys_render_scale(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["render_scale"] = 2
+        payload["photoshop"]["document"].update({"width": 2048, "height": 2048})
+        payload["transfers"] = [{
+            "order": 0, "direction": "painter_to_photoshop", "insertion": "after",
+            "source": {"host": "substance_painter", "id": "2b", "kind": "FillLayer", "path": "Recolor"},
+            "target": {"host": "photoshop", "id": "101", "kind": "pixel", "path": "Retouch"},
+        }]
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        plan = load_transfer_plan(self.manifest)
+        self.assertEqual(plan.render_scale, 2)
+
+        from sp_plugin.rizum_sp_to_ps import desktop_transfer
+        rendered = [{"png": str(self.layer_png), "mask_png": None, "children": []}]
+        with mock.patch.object(desktop_transfer.exporter, "export_desktop_nodes", return_value=rendered) as export:
+            desktop_transfer._prepare_photoshop_transfer(plan, {"dilation": 3})
+        settings = export.call_args.args[3]
+        self.assertEqual(settings["render_scale"], 2)
+        self.assertEqual(settings["psd_resolution"], [2048, 2048])
 
     def test_photoshop_target_without_layer_id_is_addressed_by_position(self):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))

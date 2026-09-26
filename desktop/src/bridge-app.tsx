@@ -25,7 +25,7 @@ import {
   type Placement,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import { normalizedBlendMode, sameDocument, stagesFor, type ApplyOutcome, type ApplyProgress, type ApplyStage, type BridgeSession, type PainterContext } from "./transport"
+import { normalizedBlendMode, renderScalesFor, sameDocument, stagesFor, type ApplyOutcome, type ApplyProgress, type ApplyStage, type BridgeSession, type PainterContext, type RenderScale } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -45,11 +45,15 @@ import { createTreePointer, HostPanel, RowMotionContext, visibleLayerRows, type 
 export function BridgeApp({
   session: initialSession,
   onApply,
+  defaultRenderScale = 1,
   onConnectPhotoshop,
   onLoadPhotoshop,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void) => Promise<ApplyOutcome>
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void, renderScale: RenderScale) => Promise<ApplyOutcome>
+  /** Settings' default. The window changes it for its own Applies only, since
+   *  not every transfer is worth a larger render. */
+  defaultRenderScale?: RenderScale
   onConnectPhotoshop: (session: BridgeSession, context: PainterContext | null) => Promise<BridgeSession | null>
   /** Reads a PSD afresh, or none for null: a reload, or a target with its own PSD. */
   onLoadPhotoshop?: (session: BridgeSession, document: string | null) => Promise<BridgeSession>
@@ -74,6 +78,12 @@ export function BridgeApp({
   const [applying, setApplying] = useState(false)
   const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: "Preparing mapped items..." })
   const [applySteps, setApplySteps] = useState<ApplyStage[]>([])
+  const [renderScale, setRenderScale] = useState<RenderScale>(defaultRenderScale)
+  const scaleOptions = useMemo(() => renderScalesFor(session.photoshop).map(scale => ({
+    value: String(scale), label: scale === 1 ? "PSD size" : `${scale}\u00d7 PSD`,
+  })), [session.photoshop])
+  // A PSD too large for a scale offers only what Painter can render.
+  const appliedScale = renderScalesFor(session.photoshop).includes(renderScale) ? renderScale : 1
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -337,7 +347,7 @@ export function BridgeApp({
     setStatus("Applying in Painter...")
     try {
       const outcome = await onApply(bridge, activePainterContextId, session, (next) =>
-        setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })))
+        setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })), appliedScale)
       if (outcome.session) adoptSession(outcome.session, outcome.message)
       else setStatus(outcome.message)
       setFailed(outcome.failed)
@@ -535,6 +545,14 @@ export function BridgeApp({
           <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
           <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
+          <ContextSelect
+            label="Render:"
+            value={String(appliedScale)}
+            options={scaleOptions}
+            width={132}
+            busy={busy}
+            onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
+          />
           <ApplyAction
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
             onClick={apply}

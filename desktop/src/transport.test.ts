@@ -17,6 +17,7 @@ import {
   createPainterLink,
   loadBridgeSession,
   parseSessionOptions,
+  renderScalesFor,
   writeTransferManifest,
 } from "./transport"
 
@@ -276,6 +277,29 @@ describe("desktop file transport", () => {
         index_path: [3],
       },
     })
+  })
+
+  it("writes the Apply's render scale and the PSD's size, for Painter to render the PSD's pixels", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-desktop-"))
+    const session = await loadBridgeSession({
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
+    const manifest = JSON.parse(await readFile(
+      await writeTransferManifest(session, mapped, session.initialPainterContextId, undefined, 2), "utf8",
+    ))
+    expect(manifest.render_scale).toBe(2)
+    expect(manifest.photoshop.document).toMatchObject({ width: session.photoshop!.width, height: session.photoshop!.height })
+  })
+
+  it("offers only the render scales Painter can reach for the PSD", () => {
+    expect(renderScalesFor({ width: 2048, height: 2048 })).toEqual([1, 2, 4])
+    expect(renderScalesFor({ width: 4096, height: 4096 })).toEqual([1, 2])
+    expect(renderScalesFor({ width: 8192, height: 8192 })).toEqual([1])
+    expect(parseSessionOptions(["--painter", "a.json", "--render-scale", "4"], {}).renderScale).toBe(4)
+    expect(parseSessionOptions(["--painter", "a.json", "--render-scale", "3"], {}).renderScale).toBe(1)
   })
 
   it("accepts environment paths without hidden discovery", () => {

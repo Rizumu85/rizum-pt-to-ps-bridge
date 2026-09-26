@@ -88,6 +88,8 @@ class TransferPlan:
     painter_imports: tuple[PainterImportItem, ...]
     photoshop_exports: tuple[PhotoshopExportItem, ...]
     warnings: tuple[str, ...] = ()
+    # Chosen in the Bridge window for this Apply; Settings only seed it.
+    render_scale: int = 1
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,7 @@ def load_transfer_plan(manifest_path):
         painter_imports=tuple(painter_imports),
         photoshop_exports=tuple(photoshop_exports),
         warnings=tuple(str(value) for value in root.get("warnings") or ()),
+        render_scale=root.get("render_scale") if root.get("render_scale") in (1, 2, 4) else 1,
     )
 
 
@@ -337,6 +340,12 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
     # Each Apply renders its own sources; a previous Apply's PNGs are never
     # read again, so they must not pile up beside this one.
     shutil.rmtree(output_dir / "assets", ignore_errors=True)
+    settings = {**settings, "render_scale": plan.render_scale}
+    width, height = plan.photoshop_document.get("width"), plan.photoshop_document.get("height")
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        # Layers are rendered for the PSD they go into. Painter's own size
+        # was placed at the mercy of Photoshop's place-resize preference.
+        settings["psd_resolution"] = [width, height]
     rendered = exporter.export_desktop_nodes(
         output_dir / "assets",
         context,

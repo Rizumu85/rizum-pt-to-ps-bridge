@@ -26,6 +26,8 @@ export type SessionOptions = {
   /** Painter's map of which PSD each texture set or channel uses. */
   documents?: string
   output?: string
+  /** The Bridge window's starting render scale, from Painter's Settings. */
+  renderScale?: RenderScale
 }
 
 export type PainterContext = {
@@ -70,7 +72,7 @@ export function parseSessionOptions(
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]
     const value = argv[index + 1]
-    if (!["--psd", "--painter", "--documents", "--output"].includes(flag)) {
+    if (!["--psd", "--painter", "--documents", "--output", "--render-scale"].includes(flag)) {
       throw new Error(`Unknown desktop argument: ${flag}`)
     }
     if (!value || value.startsWith("--")) {
@@ -81,6 +83,7 @@ export function parseSessionOptions(
     if (flag === "--painter") values.painterSnapshot = value
     if (flag === "--documents") values.documents = value
     if (flag === "--output") values.output = value
+    if (flag === "--render-scale") values.renderScale = renderScales.find(scale => String(scale) === value) ?? 1
     index += 1
   }
 
@@ -88,6 +91,17 @@ export function parseSessionOptions(
     throw new Error("Pass --painter <painter_snapshot.json> to open PT Bridge")
   }
   return values
+}
+
+/** Painter renders a transfer at this many times the PSD's size, then scales it down. */
+export const renderScales = [1, 2, 4] as const
+export type RenderScale = typeof renderScales[number]
+/** Painter's largest render; a PSD this size or bigger cannot supersample. */
+export const renderLimit = 8192
+
+export function renderScalesFor(photoshop: { width: number; height: number } | null): RenderScale[] {
+  if (!photoshop) return [1]
+  return renderScales.filter(scale => Math.max(photoshop.width, photoshop.height) * scale <= renderLimit)
 }
 
 export async function loadBridgeSession(options: SessionOptions): Promise<BridgeSession> {
@@ -131,7 +145,8 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
     status: photoshop
       ? "Drag layers between Photoshop and Painter to map a transfer"
       : "Connect Photoshop to start mapping layers",
-    sourceDocument: photoshop ? { name: photoshop.name, path: photoshop.path } : {},
+    // Painter renders transfers for this size instead of its own.
+    sourceDocument: photoshop ? { name: photoshop.name, path: photoshop.path, width: photoshop.width, height: photoshop.height } : {},
     sourceContext,
     targetDocument: objectValue(target.project),
   }
@@ -292,8 +307,9 @@ export async function applyTransfer(
   painterContextId: string,
   link: PainterLink,
   onProgress?: (progress: ApplyProgress) => void,
+  renderScale: RenderScale = 1,
 ): Promise<ApplyOutcome> {
-  const manifest = await writeTransferManifest(session, state, painterContextId, onProgress)
+  const manifest = await writeTransferManifest(session, state, painterContextId, onProgress, renderScale)
   onProgress?.({ message: "Waiting for Painter..." })
   const reply = await link.request("apply", { manifest }, onProgress)
   if (reply.type !== "applied" && reply.type !== "apply_failed") {
@@ -338,6 +354,7 @@ export async function writeTransferManifest(
   state: BridgeState,
   painterContextId: string,
   onProgress?: (progress: ApplyProgress) => void,
+  renderScale: RenderScale = 1,
 ): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
   if (state.mappings.length === 0) throw new Error("Map at least one layer before Apply")
@@ -393,6 +410,7 @@ export async function writeTransferManifest(
     },
     transfers,
     warnings,
+    render_scale: renderScale,
   }
 
   await writeAtomicJson(session.outputPath, payload)

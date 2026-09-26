@@ -113,6 +113,9 @@ class DesktopBridgeController:
             str(self._documents_path),
             "--output",
             str(transfer_path),
+            # The window opens on the Settings default and can change it per Apply.
+            "--render-scale",
+            str(self.panel.user_settings.get("render_scale") or 1),
         ]
         process = mapper_process_class(self.QtCore)(executable, arguments)
         # Each signal names its process, so a late one from a closed session
