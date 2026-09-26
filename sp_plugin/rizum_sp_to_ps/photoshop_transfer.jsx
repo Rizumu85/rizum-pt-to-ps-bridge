@@ -5,6 +5,8 @@ __RIZUM_MASK_RUNTIME__
     var resultPath = File(requestPath).parent.fsName + "/photoshop_transfer_result.json";
     var progressPath = File(requestPath).parent.fsName + "/photoshop_transfer_progress.json";
     var result = { success: false, inserted: [], errors: [], warnings: [], saved: false };
+    // Where Place put a canvas-sized image; every placed PNG moves back by it.
+    var placeOffset = { x: 0, y: 0 };
     var previousDialogs = app.displayDialogs;
     var previousRulerUnits = app.preferences.rulerUnits;
 
@@ -33,6 +35,9 @@ __RIZUM_MASK_RUNTIME__
             }
             requireAssets(mapped);
             targets.push(destination);
+        }
+        if (request.placement_probe) {
+            placeOffset = measurePlaceOffset(document, request.placement_probe);
         }
         // Progress counts every layer a folder brings, so a large folder
         // advances the bar instead of holding it on one step.
@@ -189,11 +194,30 @@ __RIZUM_MASK_RUNTIME__
             placeEmbeddedFile(file);
             placed = targetDocument.activeLayer;
             if (!placed) throw new Error("Photoshop did not create a placed layer: " + path);
+            if (placeOffset.x !== 0 || placeOffset.y !== 0) {
+                placed.translate(-placeOffset.x, -placeOffset.y);
+            }
         } finally {
             var remaining = findLayerById(targetDocument, placeholderId);
             if (remaining && (!placed || Number(placed.id) !== placeholderId)) remaining.remove();
         }
         return placed;
+    }
+
+    // Place centres an image in the visible part of the window, so a zoomed
+    // or scrolled view moved every insert. An opaque probe the canvas's size
+    // lands exactly where Place puts things; its corner is the offset.
+    function measurePlaceOffset(targetDocument, probePath) {
+        placeOffset = { x: 0, y: 0 };
+        var probe = placePngLayer(probePath, targetDocument);
+        var bounds = probe.bounds;
+        var offset = { x: pixels(bounds[0]), y: pixels(bounds[1]) };
+        probe.remove();
+        return offset;
+    }
+
+    function pixels(value) {
+        return typeof value === "number" ? value : Number(value.as("px"));
     }
 
     function placeEmbeddedFile(file) {

@@ -318,6 +318,27 @@ class _NullContext:
         return False
 
 
+def _write_placement_probe(output_dir, size):
+    """An opaque PNG the PSD's size, which shows Photoshop where Place puts it.
+
+    Photoshop places into the centre of the visible part of the window, not
+    of the canvas. Zoomed in on a corner, every insert landed shifted by the
+    distance to that corner. The probe's placed position is that shift.
+    """
+    from PySide6 import QtGui
+
+    image = QtGui.QImage(int(size[0]), int(size[1]), QtGui.QImage.Format.Format_RGB32)
+    image.fill(QtGui.QColor(0, 0, 0))
+    # Place honours a PNG's physical size; 72 ppi matches the payload PNGs.
+    image.setDotsPerMeterX(2835)
+    image.setDotsPerMeterY(2835)
+    path = output_dir / "placement_probe.png"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not image.save(str(path), "PNG"):
+        raise DesktopTransferError("Could not write the Photoshop placement probe.")
+    return path
+
+
 def transfer_assets_dir(launch):
     """The PNGs rendered for one Photoshop insert, beside its request."""
     return Path(launch.request_path).parent / "assets"
@@ -382,16 +403,16 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
         )
 
     request_path = output_dir / "photoshop_transfer.json"
-    exporter.write_json_atomic(
-        request_path,
-        {
-            "schema_version": 1,
-            "request_type": "painter_to_photoshop_transfer",
-            "document": plan.photoshop_document,
-            "context": plan.photoshop_context,
-            "layers": layers,
-        },
-    )
+    request = {
+        "schema_version": 1,
+        "request_type": "painter_to_photoshop_transfer",
+        "document": plan.photoshop_document,
+        "context": plan.photoshop_context,
+        "layers": layers,
+    }
+    if "psd_resolution" in settings:
+        request["placement_probe"] = str(_write_placement_probe(output_dir, settings["psd_resolution"]))
+    exporter.write_json_atomic(request_path, request)
     return photoshop_automation.write_photoshop_transfer_launcher(request_path)
 
 

@@ -9,6 +9,10 @@ const vm = require("node:vm");
 // selected and shown; otherwise it lands as a new layer. Prints the final layer tree.
 const request = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 let nextId = 100;
+// Like Photoshop, Place centres an image in the visible part of the window;
+// a zoomed view sets how far from the canvas corner a canvas-sized image lands.
+const viewOffset = (process.env.FAKE_VIEW_OFFSET || "0,0").split(",").map(Number);
+const CANVAS = 64;
 
 function File(filename) {
   return {
@@ -53,7 +57,9 @@ function makeLayer(name, typename) {
       if (value === "DIVIDE") throw new Error("General Photoshop error occurred. - The command \"Set\" is not currently available.")
       blendMode = value
     },
-    rasterized: false, parent: null,
+    rasterized: false, parent: null, offset: [0, 0],
+    get bounds() { return [this.offset[0], this.offset[1], this.offset[0] + CANVAS, this.offset[1] + CANVAS]; },
+    translate(dx, dy) { this.offset = [this.offset[0] + dx, this.offset[1] + dy]; },
     rasterize() { this.rasterized = true; },
     remove() { detach(this); },
     move(target, placement) {
@@ -153,7 +159,9 @@ function executeAction(id, descriptor) {
     return;
   }
   if (id !== "Plc ") throw new Error("Unexpected action " + id);
-  insertAboveActive(makeLayer("Placed", "ArtLayer"));
+  const placed = makeLayer("Placed", "ArtLayer");
+  placed.offset = [...viewOffset];
+  insertAboveActive(placed);
 }
 const names = (list) => Object.fromEntries(list.map((name) => [name, name]));
 const app = {
@@ -179,7 +187,7 @@ vm.runInContext(script, context, { timeout: 5000 });
 
 const tree = (list) => list.map((layer) => ({
   name: layer.name, typename: layer.typename, blendMode: layer.blendMode, opacity: layer.opacity,
-  visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null,
+  visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null, offset: layer.offset,
   ...(layer.typename === "LayerSet" ? { layers: tree(layer.layers) } : {}),
 }));
 process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers) }));

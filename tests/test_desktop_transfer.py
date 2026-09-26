@@ -339,10 +339,15 @@ class DesktopTransferTests(unittest.TestCase):
         from sp_plugin.rizum_sp_to_ps import desktop_transfer
         rendered = [{"png": str(self.layer_png), "mask_png": None, "children": []}]
         with mock.patch.object(desktop_transfer.exporter, "export_desktop_nodes", return_value=rendered) as export:
-            desktop_transfer._prepare_photoshop_transfer(plan, {"dilation": 3})
+            launch = desktop_transfer._prepare_photoshop_transfer(plan, {"dilation": 3})
         settings = export.call_args.args[3]
         self.assertEqual(settings["render_scale"], 2)
         self.assertEqual(settings["psd_resolution"], [2048, 2048])
+        # Photoshop measures where Place lands with a probe the PSD's size.
+        request = json.loads(Path(launch.request_path).read_text(encoding="utf-8"))
+        from PySide6 import QtGui
+        probe = QtGui.QImage(request["placement_probe"])
+        self.assertEqual((probe.width(), probe.height()), (2048, 2048))
 
     def test_photoshop_target_without_layer_id_is_addressed_by_position(self):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))

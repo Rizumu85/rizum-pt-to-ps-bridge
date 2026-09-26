@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -52,7 +53,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
-    def run_group_transfer(self, insertion, target_id, target_name):
+    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -63,8 +64,11 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                 "blend_mode": "NORMAL", "opacity": 100.0, "visible": True, "children": [], **fields,
             }
             request = root / "photoshop_transfer.json"
+            probe = root / "placement_probe.png"
+            probe.write_bytes(b"png")
             request.write_text(json.dumps({
                 "request_type": "painter_to_photoshop_transfer",
+                "placement_probe": str(probe),
                 "document": {"path": str(root / "document.psd")},
                 "layers": [{
                     "order": 0, "name": "Working", "png": None, "mask_png": None,
@@ -81,9 +85,10 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             }), encoding="utf-8")
             launch = write_photoshop_transfer_launcher(request)
             host = Path(__file__).parent / "fixtures" / "photoshop_transfer_host.cjs"
+            environment = {**os.environ, "FAKE_VIEW_OFFSET": ",".join(map(str, view_offset or (0, 0)))}
             completed = subprocess.run(
                 ["node", str(host), str(launch.launcher_path), str(request)],
-                capture_output=True, text=True, encoding="utf-8",
+                capture_output=True, text=True, encoding="utf-8", env=environment,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             result = json.loads(launch.result_path.read_text(encoding="utf-8"))
@@ -121,6 +126,24 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         document = self.run_group_transfer("before", 1, "Group")
 
         self.assertEqual([item["name"] for item in document["layers"]], ["Working", "Group", "Base"])
+
+    def test_inserts_land_on_the_canvas_whatever_part_of_it_is_in_view(self):
+        # Zoomed in on a corner, Photoshop placed every PNG around that
+        # corner's centre; the probe measures the shift and each insert
+        # moves back by it, masks included.
+        document = self.run_group_transfer("after", 3, "Base", view_offset=(-998, -641))
+
+        def offsets(layers):
+            for item in layers:
+                if item["typename"] == "ArtLayer" and item["name"] not in ("Base", "Detail"):
+                    yield item["name"], item["offset"]
+                yield from offsets(item.get("layers", []))
+
+        placed = dict(offsets(document["layers"]))
+        self.assertTrue(placed)
+        self.assertEqual(set(map(tuple, placed.values())), {(0, 0)}, placed)
+        # The probe itself is gone.
+        self.assertNotIn("Placed", placed)
 
     def test_folder_mapped_inside_a_group_lands_last_in_it(self):
         document = self.run_group_transfer("inside", 1, "Group")
