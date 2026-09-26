@@ -6,6 +6,7 @@ from .ui_kit import (
     PAINTER_DIALOG_STYLE,
     PAINTER_SETTINGS_LAYOUT,
     PainterSettingsDialog,
+    ProgressTrack,
     SecondaryActionButton,
     apply_theme,
     default_theme,
@@ -269,33 +270,20 @@ class CompactProgressDialog:
             width=340,
             body_spacing=12,
         )
-        status_row = self.QtWidgets.QWidget()
-        status_row.setObjectName("RizumProgressStatusRow")
-        status_layout = self.QtWidgets.QHBoxLayout(status_row)
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(10)
+        # Laid out like the desktop mapper's Apply card, which the user asked
+        # this to match: the message, a thin line, then the amount under it.
         self.status_label = self.QtWidgets.QLabel(status)
         self.status_label.setObjectName("RizumSettingsItemName")
         self.status_label.setWordWrap(True)
-        self.status_label.setSizePolicy(
-            self.QtWidgets.QSizePolicy.Policy.Expanding,
-            self.QtWidgets.QSizePolicy.Policy.Preferred,
-        )
-        self.percent_label = self.QtWidgets.QLabel("")
-        self.percent_label.setObjectName("RizumSettingsItemMeta")
-        self.percent_label.setAlignment(
-            self.QtCore.Qt.AlignmentFlag.AlignRight
-            | self.QtCore.Qt.AlignmentFlag.AlignVCenter
-        )
-        status_layout.addWidget(self.status_label, 1)
-        status_layout.addWidget(self.percent_label)
-        self.shell.body_layout.addWidget(status_row)
+        self.shell.body_layout.addWidget(self.status_label)
 
-        self.progress_bar = self.QtWidgets.QProgressBar()
-        self.progress_bar.setObjectName("RizumProgressBar")
-        self.progress_bar.setTextVisible(False)
+        self.progress_bar = ProgressTrack()
         self.progress_bar.setRange(0, 0)
         self.shell.body_layout.addWidget(self.progress_bar)
+
+        self.percent_label = self.QtWidgets.QLabel("")
+        self.percent_label.setObjectName("RizumSettingsItemMeta")
+        self.shell.body_layout.addWidget(self.percent_label)
 
         self.cancel_button = None
         if cancellable:
@@ -318,26 +306,10 @@ class CompactProgressDialog:
         self.dialog._rizum_progress_controller = self
 
     def _apply_ui_scale(self, _scale):
-        bar_height = self.shell._metric(4, 3)
-        self.status_label.parentWidget().layout().setSpacing(
-            self.shell._metric(10, 8)
-        )
-        self.progress_bar.setFixedHeight(bar_height)
-        self.percent_label.setMinimumWidth(self.shell._metric(34, 26))
-        self.progress_bar.setStyleSheet(
-            f"""
-QProgressBar#RizumProgressBar {{
-    background: {PAINTER_DIALOG_STYLE["control"]};
-    border: 0;
-    border-radius: {max(1, bar_height // 2)}px;
-}}
-QProgressBar#RizumProgressBar::chunk {{
-    background: {PAINTER_DIALOG_STYLE["accent"]};
-    border: 0;
-    border-radius: {max(1, bar_height // 2)}px;
-}}
-"""
-        )
+        self.progress_bar.setFixedHeight(self.shell._metric(4, 3))
+        # The amount line keeps its height while work has no count, so the
+        # dialog does not jump when a count starts or ends.
+        self.percent_label.setMinimumHeight(self.percent_label.fontMetrics().height())
 
     def _request_cancel(self):
         if self._cancelled or not self._cancellable:

@@ -63,6 +63,7 @@ PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
 AnimatedSaveButton = _settings_controls.AnimatedSaveButton
 IconActionButton = _settings_controls.IconActionButton
+ProgressTrack = _settings_controls.ProgressTrack
 SecondaryActionButton = _settings_controls.SecondaryActionButton
 PAINTER_SETTINGS_LAYOUT = _settings_layout.PAINTER_SETTINGS_LAYOUT
 default_theme = _vendored_ui.default_theme

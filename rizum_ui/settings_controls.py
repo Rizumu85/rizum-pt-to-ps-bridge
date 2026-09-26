@@ -1711,10 +1711,96 @@ class ModeParameterSlot(QtWidgets.QFrame):
         self.update()
 
 
+class ProgressTrack(QtWidgets.QWidget):
+    """A thin progress line drawn like the desktop mapper's.
+
+    QProgressBar's style-sheet chunks render as separate segments on Windows,
+    so the track is painted: a solid fill for a count, and a light sweeping
+    across for work without one.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._minimum = 0
+        self._maximum = 0
+        self._value = 0
+        self._sweep = QtCore.QVariantAnimation(self)
+        self._sweep.setStartValue(0.0)
+        self._sweep.setEndValue(1.0)
+        self._sweep.setDuration(1100)
+        self._sweep.setLoopCount(-1)
+        self._sweep.valueChanged.connect(self.update)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
+
+    def minimum(self):
+        return self._minimum
+
+    def maximum(self):
+        return self._maximum
+
+    def value(self):
+        return self._value
+
+    def setRange(self, minimum, maximum):
+        self._minimum = int(minimum)
+        self._maximum = int(maximum)
+        self._sync_sweep()
+        self.update()
+
+    def setValue(self, value):
+        self._value = int(value)
+        self.update()
+
+    def _indeterminate(self):
+        return self._maximum <= self._minimum
+
+    def _sync_sweep(self):
+        # The sweep runs only while it can be seen, so a hidden dialog keeps
+        # no timer alive.
+        running = self._sweep.state() == QtCore.QAbstractAnimation.State.Running
+        wanted = self._indeterminate() and self.isVisible()
+        if wanted and not running:
+            self._sweep.start()
+        elif not wanted and running:
+            self._sweep.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._sync_sweep()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._sync_sweep()
+
+    def paintEvent(self, _event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        bounds = QtCore.QRectF(self.rect())
+        radius = bounds.height() / 2
+        clip = QtGui.QPainterPath()
+        clip.addRoundedRect(bounds, radius, radius)
+        painter.setClipPath(clip)
+        painter.fillRect(bounds, QtGui.QColor(PAINTER_DIALOG_STYLE["control"]))
+        fill = QtGui.QColor(PAINTER_DIALOG_STYLE["accent"])
+        if self._indeterminate():
+            segment = max(48.0, bounds.width() * 0.28)
+            left = -segment + (bounds.width() + segment) * float(self._sweep.currentValue() or 0.0)
+            painter.fillRect(QtCore.QRectF(left, 0, segment, bounds.height()), fill)
+        else:
+            span = self._maximum - self._minimum
+            fraction = max(0.0, min(1.0, (self._value - self._minimum) / span))
+            painter.fillRect(QtCore.QRectF(0, 0, bounds.width() * fraction, bounds.height()), fill)
+        painter.end()
+
+
 __all__ = [
     "AnimatedSaveButton",
     "ModeParameterSlot",
     "PAINTER_DIALOG_STYLE",
+    "ProgressTrack",
     "SettingsToggle",
     "StatusBanner",
     "SecondaryActionButton",
