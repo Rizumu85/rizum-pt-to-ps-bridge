@@ -4,7 +4,7 @@ const vm = require("node:vm");
 
 // A minimal Photoshop layer model for photoshop_transfer.jsx: Place creates a
 // layer above the active one, new groups open at the top of their container,
-// and move() follows ElementPlacement. Prints the final layer tree.
+// move() follows ElementPlacement, and a folder is never moved into a folder. Prints the final layer tree.
 const request = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 let nextId = 100;
 
@@ -55,6 +55,10 @@ function makeLayer(name, typename) {
     rasterize() { this.rasterized = true; },
     remove() { detach(this); },
     move(target, placement) {
+      // Like Photoshop, a folder can be moved beside a layer but not into a folder.
+      if (typename === "LayerSet" && placement !== "PLACEBEFORE" && placement !== "PLACEAFTER") {
+        throw new Error("Illegal Argument")
+      }
       detach(this);
       if (placement === "PLACEATEND") attach(this, target, target.layers.length);
       else if (placement === "PLACEATBEGINNING") attach(this, target, 0);

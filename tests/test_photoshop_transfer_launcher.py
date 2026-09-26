@@ -120,5 +120,12 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
 
         self.assertEqual([item["name"] for item in document["layers"]], ["Working", "Group", "Base"])
 
+    def test_folder_mapped_inside_a_group_lands_last_in_it(self):
+        document = self.run_group_transfer("inside", 1, "Group")
+
+        self.assertEqual(self.outline(document["layers"]), [
+            ("Group", ["Detail", ("Working", ["Top", ("Sub", ["Deep"]), "Bottom"])]), "Base",
+        ])
+
 if __name__ == "__main__":
     unittest.main()

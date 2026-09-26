@@ -42,7 +42,10 @@
             var item = request.layers[index];
             try {
                 var target = targets[index];
-                var placed = createLayer(document, document, item, progress);
+                // A folder dropped inside a group is created in it: Photoshop
+                // cannot move a folder into a folder.
+                var parent = isGroup(item) && item.insertion === "inside" ? target : document;
+                var placed = createLayer(document, parent, item, progress);
                 step(item, "moving it to its mapped place", function () { moveMappedLayer(placed, target, item); });
                 // A mapped Painter folder stays a folder: its layers are placed
                 // only after the folder sits at its destination.
@@ -280,11 +283,17 @@
     }
 
     function placeChildren(targetDocument, group, children, progress) {
-        // Children arrive top to bottom; appending each keeps that order.
-        for (var index = 0; index < (children || []).length; index += 1) {
+        // Photoshop refuses to move a folder into a folder ("Illegal
+        // Argument"), so, as the PSD builder does, a nested folder is created
+        // inside its parent, where it opens at the top, and never moved.
+        // Children arrive top to bottom and are placed bottom first, each at
+        // the top of its folder, which keeps their order.
+        for (var index = (children || []).length - 1; index >= 0; index -= 1) {
             var child = children[index];
             var layer = createLayer(targetDocument, group, child, progress);
-            step(child, "moving it into its folder", function () { layer.move(group, ElementPlacement.PLACEATEND); });
+            if (!isGroup(child)) {
+                step(child, "moving it into its folder", function () { layer.move(group, ElementPlacement.PLACEATBEGINNING); });
+            }
             placeChildren(targetDocument, layer, child.children, progress);
             if (child.mask_png) {
                 step(child, "applying its mask", function () { applyMask(targetDocument, layer, child.mask_png); });
@@ -296,7 +305,13 @@
         // Replay each drop exactly as the desktop preview: group drops append;
         // repeated drops on one layer insert right above or below that layer.
         if (item.insertion === "inside") {
-            layer.move(target, ElementPlacement.PLACEATEND);
+            if (!isGroup(item)) {
+                layer.move(target, ElementPlacement.PLACEATEND);
+            } else if (target.layers.length > 1) {
+                // Created at the top of the group; a move beside its last
+                // layer is the one kind Photoshop allows a folder.
+                layer.move(target.layers[target.layers.length - 1], ElementPlacement.PLACEAFTER);
+            }
         } else if (item.insertion === "before") {
             layer.move(target, ElementPlacement.PLACEBEFORE);
         } else {
