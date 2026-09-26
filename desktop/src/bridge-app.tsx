@@ -603,7 +603,8 @@ export function BridgeApp({
           initial={false}
           animate={{ opacity: status !== session.status || !activePainterContext || selectedIds.size > 0 ? 1 : 0 }}
           transition={{ duration: 0.14, ease: motionEase }}
-          style={{ flexShrink: 0, padding: 12, paddingTop: 0 }}
+          // On the panels' edges, the workspace's one horizontal grid.
+          style={{ flexShrink: 0, paddingLeft: metrics.contentPadding, paddingRight: metrics.contentPadding, paddingBottom: 12 }}
         >
             <text style={{
               color: failed ? colors.danger : colors.secondary,

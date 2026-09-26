@@ -518,7 +518,7 @@ export function ApplyAction({ disabled, onClick }: { disabled: boolean; onClick:
         color: disabled ? colors.tertiary : colors.canvas,
         fontFamily: typography.family,
         fontSize: typography.primarySize,
-        fontWeight: 600,
+        fontWeight: typography.primaryWeight,
         whiteSpace: "nowrap",
       }}>Apply</text>
     </div>
