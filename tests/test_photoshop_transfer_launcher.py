@@ -75,7 +75,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                         layer("Top", blend_mode="MULTIPLY", opacity=50.0),
                         {**layer("Sub"), "kind": "group", "png": None, "blend_mode": "PASSTHROUGH",
                          "children": [layer("Deep")]},
-                        layer("Bottom", visible=False),
+                        layer("Bottom", visible=False, blend_mode="DIVIDE"),
                     ],
                 }],
             }), encoding="utf-8")
@@ -88,6 +88,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             result = json.loads(launch.result_path.read_text(encoding="utf-8"))
             self.assertTrue(result["success"], result["errors"])
+            self.last_result = result
             return json.loads(completed.stdout)
 
     @staticmethod
@@ -110,6 +111,9 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         self.assertEqual((top["blendMode"], top["opacity"], top["rasterized"]), ("MULTIPLY", 50.0, True))
         self.assertEqual(sub["blendMode"], "PASSTHROUGH")
         self.assertFalse(bottom["visible"])
+        # A blend mode Photoshop refuses warns and keeps Normal; the folder still lands.
+        self.assertEqual(bottom["blendMode"], "BlendMode.NORMAL")
+        self.assertEqual(self.last_result["warnings"], ["Bottom: Photoshop refused blend mode DIVIDE here; Normal was kept."])
 
     def test_before_places_above_the_target_including_the_topmost_layer(self):
         document = self.run_group_transfer("before", 1, "Group")

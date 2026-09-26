@@ -42,8 +42,15 @@ function container(owner) {
 }
 
 function makeLayer(name, typename) {
+  let blendMode = "BlendMode.NORMAL"
   const layer = {
-    id: nextId++, name, typename, visible: true, opacity: 100, blendMode: "BlendMode.NORMAL",
+    id: nextId++, name, typename, visible: true, opacity: 100,
+    // Like a document whose mode lacks it, this host refuses Divide.
+    get blendMode() { return blendMode },
+    set blendMode(value) {
+      if (value === "DIVIDE") throw new Error("General Photoshop error occurred. - The command \"Set\" is not currently available.")
+      blendMode = value
+    },
     rasterized: false, parent: null,
     rasterize() { this.rasterized = true; },
     remove() { detach(this); },
@@ -97,9 +104,28 @@ attach(base, document, 1);
 document.activeLayer = base;
 
 function ActionDescriptor() {
-  return { putPath() {}, putEnumerated() {}, putUnitDouble() {}, putObject() {} };
+  return {
+    putPath() {}, putEnumerated() {}, putUnitDouble() {}, putObject() {}, putBoolean() {},
+    putReference(_key, reference) { this.reference = reference; },
+  };
 }
-function executeAction(id) {
+function ActionReference() {
+  return { putIdentifier(_type, id) { this.layerId = id; }, putEnumerated() {} };
+}
+function findLayer(list, id) {
+  for (const layer of list) {
+    if (layer.id === id) return layer;
+    const inner = layer.layers && findLayer(layer.layers, id);
+    if (inner) return inner;
+  }
+  return null;
+}
+function executeAction(id, descriptor) {
+  if (id === "slct") {
+    const layerId = descriptor && descriptor.reference && descriptor.reference.layerId;
+    if (layerId !== undefined) document.activeLayer = findLayer(document.layers, layerId);
+    return;
+  }
   if (id !== "Plc ") throw new Error("Unexpected action " + id);
   insertAboveActive(makeLayer("Placed", "ArtLayer"));
 }
@@ -110,7 +136,7 @@ const app = {
   open() { throw new Error("The mapped document is already open"); },
 };
 const context = vm.createContext({
-  JSON: undefined, File, app, ActionDescriptor, executeAction,
+  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction,
   charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id,
   DialogModes: { NO: "none" }, Units: { PIXELS: "pixels" },
   RasterizeType: { ENTIRELAYER: "ENTIRELAYER" },

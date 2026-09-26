@@ -33,19 +33,22 @@
             requireAssets(mapped);
             targets.push(destination);
         }
-        publishProgress("transferring_layers", 0, request.layers.length);
+        // Progress counts every layer a folder brings, so a large folder
+        // advances the bar instead of holding it on one step.
+        var progress = { done: 0, total: countLayers(request.layers) };
+        publishProgress("transferring_layers", 0, progress.total);
 
         for (var index = 0; index < request.layers.length; index += 1) {
             var item = request.layers[index];
             try {
                 var target = targets[index];
-                var placed = createLayer(document, document, item);
-                moveMappedLayer(placed, target, item);
+                var placed = createLayer(document, document, item, progress);
+                step(item, "moving it to its mapped place", function () { moveMappedLayer(placed, target, item); });
                 // A mapped Painter folder stays a folder: its layers are placed
                 // only after the folder sits at its destination.
-                placeChildren(document, placed, item.children);
+                placeChildren(document, placed, item.children, progress);
                 if (item.mask_png) {
-                    applyMask(document, placed, item.mask_png);
+                    step(item, "applying its mask", function () { applyMask(document, placed, item.mask_png); });
                 }
                 result.inserted.push(placed.name);
             } catch (itemError) {
@@ -54,8 +57,8 @@
                     message: errorMessage(itemError)
                 });
             }
-            publishProgress("transferring_layers", index + 1, request.layers.length);
         }
+        publishProgress("transferring_layers", progress.total, progress.total);
 
         if (result.errors.length === 0) {
             result.success = true;
@@ -221,30 +224,70 @@
         }
     }
 
-    function createLayer(targetDocument, parent, item) {
-        var layer = isGroup(item) ? parent.layerSets.add() : placePngLayer(item.png, targetDocument);
-        layer.name = String(item.name || "Painter Layer");
-        layer.visible = item.visible !== false;
-        layer.opacity = opacityPercent(item.opacity);
+    function countLayers(items) {
+        var total = 0;
+        for (var index = 0; index < (items || []).length; index += 1) {
+            total += 1 + countLayers(items[index].children);
+        }
+        return total;
+    }
+
+    // Names the layer and the step in a failure, so a Photoshop error such as
+    // "Set is not currently available" says which property it refused.
+    function step(item, label, action) {
+        try {
+            return action();
+        } catch (error) {
+            throw new Error(String(item.name || "Painter Layer") + ": " + label + ": " + errorMessage(error));
+        }
+    }
+
+    function createLayer(targetDocument, parent, item, progress) {
+        var layer = step(item, "creating it", function () {
+            return isGroup(item) ? parent.layerSets.add() : placePngLayer(item.png, targetDocument);
+        });
+        // As the PSD builder does: properties are set on the selected layer's
+        // composite channel, opacity only when it differs, and a blend mode
+        // Photoshop refuses (one this document's mode or depth lacks) is a
+        // warning that keeps Normal instead of failing the whole folder.
+        step(item, "selecting it", function () {
+            selectLayer(layer);
+            selectCompositeChannel();
+        });
+        step(item, "naming it", function () { layer.name = String(item.name || "Painter Layer"); });
+        step(item, "setting its visibility", function () { layer.visible = item.visible !== false; });
+        var opacity = opacityPercent(item.opacity);
+        if (Math.abs(opacity - 100) > 0.0001) {
+            step(item, "setting its opacity", function () { layer.opacity = opacity; });
+        }
         var blendMode = photoshopBlendMode(item.blend_mode, isGroup(item));
-        if (blendMode !== null) {
-            layer.blendMode = blendMode;
+        if (blendMode !== null && blendMode !== BlendMode.NORMAL) {
+            try {
+                layer.blendMode = blendMode;
+            } catch (blendError) {
+                result.warnings.push(
+                    String(item.name || "Painter Layer") + ": Photoshop refused blend mode "
+                    + String(item.blend_mode) + " here; Normal was kept."
+                );
+            }
         }
         if (!isGroup(item)) {
-            layer.rasterize(RasterizeType.ENTIRELAYER);
+            step(item, "rasterizing it", function () { layer.rasterize(RasterizeType.ENTIRELAYER); });
         }
+        progress.done += 1;
+        publishProgress("transferring_layers", progress.done, progress.total);
         return layer;
     }
 
-    function placeChildren(targetDocument, group, children) {
+    function placeChildren(targetDocument, group, children, progress) {
         // Children arrive top to bottom; appending each keeps that order.
         for (var index = 0; index < (children || []).length; index += 1) {
             var child = children[index];
-            var layer = createLayer(targetDocument, group, child);
-            layer.move(group, ElementPlacement.PLACEATEND);
-            placeChildren(targetDocument, layer, child.children);
+            var layer = createLayer(targetDocument, group, child, progress);
+            step(child, "moving it into its folder", function () { layer.move(group, ElementPlacement.PLACEATEND); });
+            placeChildren(targetDocument, layer, child.children, progress);
             if (child.mask_png) {
-                applyMask(targetDocument, layer, child.mask_png);
+                step(child, "applying its mask", function () { applyMask(targetDocument, layer, child.mask_png); });
             }
         }
     }
