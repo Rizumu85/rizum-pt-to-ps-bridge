@@ -24,7 +24,7 @@ class _Button:
     def setEnabled(self, enabled):
         self.enabled = enabled
 
-    def setToolTip(self, _tooltip):
+    def setCompactTooltipText(self, _tooltip):
         pass
 
 

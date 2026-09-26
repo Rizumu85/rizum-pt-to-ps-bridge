@@ -22,6 +22,7 @@ from .ui_kit import (
     build_compact_dock_stylesheet,
     call_or_attr,
     default_theme,
+    install_compact_tooltip,
     make_icon_button,
     optional_int,
     to_bool,
@@ -245,6 +246,9 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips,
         True,
     )
+    # The dock's compact tooltip, as the Settings button has; Qt's native one
+    # ignored the panel's style. The controller only changes its text.
+    install_compact_tooltip(bridge_button, "Map layers between Painter and Photoshop")
 
     settings_button = make_icon_button("settings.svg", "Settings")
     settings_button.setObjectName("RizumBridgeDockSettings")
@@ -271,6 +275,8 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         for button in (export_button, bridge_button):
             button.setCompactHeight(control_height)
             button.setMinimumWidth(metric(80, 64))
+        if hasattr(bridge_button, "setCompactTooltipScale"):
+            bridge_button.setCompactTooltipScale(scale)
         for button in (settings_button,):
             button.setStyleSheet(
                 f"QPushButton#{button.objectName()} {{"

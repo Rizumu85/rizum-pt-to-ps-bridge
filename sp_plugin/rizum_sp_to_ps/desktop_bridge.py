@@ -151,7 +151,7 @@ class DesktopBridgeController:
             return
         reason = self._busy_reason()
         self.button.setEnabled(reason is None)
-        self.button.setToolTip(reason or IDLE_TOOLTIP)
+        self.button.setCompactTooltipText(reason or IDLE_TOOLTIP)
 
     def _document_memory(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)

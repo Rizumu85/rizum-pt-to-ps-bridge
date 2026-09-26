@@ -9,6 +9,7 @@ from PySide6 import QtCore, QtWidgets
 
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import DesktopBridgeController
 from sp_plugin.rizum_sp_to_ps.desktop_transfer import TransferResult
+from sp_plugin.rizum_sp_to_ps.ui_kit import install_compact_tooltip
 from sp_plugin.rizum_sp_to_ps.photoshop_automation import write_photoshop_transfer_launcher
 
 
@@ -26,7 +27,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.panel = SimpleNamespace(
             QtCore=SimpleNamespace(QSettings=lambda *_: self.settings, QTimer=QtCore.QTimer, Qt=QtCore.Qt, QProcess=QtCore.QProcess),
             QtWidgets=QtWidgets, widget=self.widget,
-            dock_bridge_button=QtWidgets.QPushButton(self.widget),
+            dock_bridge_button=install_compact_tooltip(QtWidgets.QPushButton(self.widget), "Map layers"),
             user_settings={}, launch_photoshop=Mock(return_value=(True, "")),
         )
         self.controller = DesktopBridgeController(self.panel, Mock())
