@@ -109,6 +109,8 @@
         );
     }
 
+__RIZUM_MASK_RUNTIME__
+
     function buildRequest(request, progress) {
         validateRequest(request);
         var resolution = request.uv_tile.resolution;
@@ -534,74 +536,14 @@
         }
 
         var maskLayer = placePngLayer(path, targetDocument, targetLayer.parent);
-        targetDocument.activeLayer = maskLayer;
-        targetDocument.selection.selectAll();
-        executeAction(charIDToTypeID("copy"), undefined, DialogModes.NO);
-        maskLayer.remove();
-        targetDocument.activeLayer = targetLayer;
-        makeRevealAllMask();
-        selectLayerMaskChannel();
-        pasteMaskPixels();
-        try {
-            targetDocument.selection.deselect();
-        } catch (ignored) {}
+        pasteLayerAsMask(targetDocument, targetLayer, maskLayer);
         selectLayer(targetLayer);
         selectCompositeChannel();
     }
 
-    function makeRevealAllMask() {
-        var descriptor = new ActionDescriptor();
-        descriptor.putClass(charIDToTypeID("Nw  "), charIDToTypeID("Chnl"));
 
-        var targetReference = new ActionReference();
-        targetReference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Msk ")
-        );
-        descriptor.putReference(charIDToTypeID("At  "), targetReference);
-        descriptor.putEnumerated(
-            charIDToTypeID("Usng"),
-            charIDToTypeID("UsrM"),
-            charIDToTypeID("RvlA")
-        );
-        executeAction(charIDToTypeID("Mk  "), descriptor, DialogModes.NO);
-    }
 
-    function selectLayerMaskChannel() {
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Msk ")
-        );
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        descriptor.putBoolean(charIDToTypeID("MkVs"), true);
-        executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
-    }
 
-    function pasteMaskPixels() {
-        var descriptor = new ActionDescriptor();
-        descriptor.putEnumerated(
-            charIDToTypeID("AntA"),
-            charIDToTypeID("Annt"),
-            charIDToTypeID("Anno")
-        );
-        executeAction(charIDToTypeID("past"), descriptor, DialogModes.NO);
-    }
-
-    function selectCompositeChannel() {
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("RGB ")
-        );
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
-    }
 
     function selectLayer(layer) {
         // Placed smart objects do not expose a reliable DOM `id` in every

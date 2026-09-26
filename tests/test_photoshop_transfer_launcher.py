@@ -56,7 +56,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
-            for name in ("top", "deep", "bottom"):
+            for name in ("top", "top_mask", "deep", "bottom"):
                 Path(png(name)).write_bytes(b"png")
             layer = lambda name, **fields: {
                 "name": name, "kind": "layer", "png": png(name.lower()), "mask_png": None,
@@ -72,7 +72,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                     "target_kind": "layer", "insertion": insertion,
                     "blend_mode": "Passthrough", "opacity": 80.0, "visible": True,
                     "children": [
-                        layer("Top", blend_mode="MULTIPLY", opacity=50.0),
+                        layer("Top", blend_mode="MULTIPLY", opacity=50.0, mask_png=png("top_mask")),
                         {**layer("Sub"), "kind": "group", "png": None, "blend_mode": "PASSTHROUGH",
                          "children": [layer("Deep")]},
                         layer("Bottom", visible=False, blend_mode="DIVIDE"),
@@ -109,6 +109,8 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         self.assertEqual((working["blendMode"], working["opacity"]), ("PASSTHROUGH", 80.0))
         top, sub, bottom = working["layers"]
         self.assertEqual((top["blendMode"], top["opacity"], top["rasterized"]), ("MULTIPLY", 50.0, True))
+        # The mask PNG becomes Top's layer mask, never a layer of its own.
+        self.assertEqual(top["mask"], "pasted Placed")
         self.assertEqual(sub["blendMode"], "PASSTHROUGH")
         self.assertFalse(bottom["visible"])
         # A blend mode Photoshop refuses warns and keeps Normal; the folder still lands.

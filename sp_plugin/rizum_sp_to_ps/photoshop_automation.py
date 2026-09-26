@@ -17,6 +17,7 @@ TRANSFER_RESULT_FILENAME = "photoshop_transfer_result.json"
 TRANSFER_PROGRESS_FILENAME = "photoshop_transfer_progress.json"
 _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
 _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
+_MASK_RUNTIME_TOKEN = "__RIZUM_MASK_RUNTIME__"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,14 @@ def _embed_json_runtime(template):
     # https://github.com/douglascrockford/JSON-js/blob/7e83f38a2312429fd4933169c1f6a27fd65e889c/json2.js
     codec = (Path(__file__).parent / "vendor" / "json2.js").read_text(encoding="utf-8")
     return template.replace(_JSON_RUNTIME_TOKEN, "var JSON = {};\n" + codec)
+
+
+def _embed_mask_runtime(template):
+    if template.count(_MASK_RUNTIME_TOKEN) != 1:
+        raise RuntimeError("Photoshop template has an invalid mask runtime token")
+    # Both scripts build layer masks; one shared copy keeps them in step.
+    runtime = (Path(__file__).parent / "photoshop_masks.jsx").read_text(encoding="utf-8")
+    return template.replace(_MASK_RUNTIME_TOKEN, runtime)
 
 
 def find_photoshop_executable(configured=""):
@@ -90,7 +99,7 @@ def write_photoshop_launcher(export_list_path, receipt_dir):
 
     # Photoshop still accepts JSX as a process argument while UXP scripts do
     # not. Keep the paths as data so the builder stays generic and inspectable.
-    script = template
+    script = _embed_mask_runtime(template)
     for token, value in (
         (_EXPORT_LIST_TOKEN, export_list),
         (_BUILD_PROGRESS_TOKEN, progress_path),
@@ -112,7 +121,7 @@ def write_photoshop_transfer_launcher(request_path):
     if template.count(_TRANSFER_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop transfer template has an invalid request token")
 
-    script = _embed_json_runtime(template).replace(
+    script = _embed_mask_runtime(_embed_json_runtime(template)).replace(
         _TRANSFER_REQUEST_TOKEN,
         json.dumps(str(request), ensure_ascii=True),
     )

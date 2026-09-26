@@ -1,5 +1,6 @@
 (function () {
     __RIZUM_JSON_RUNTIME__
+__RIZUM_MASK_RUNTIME__
     var requestPath = __RIZUM_TRANSFER_REQUEST_PATH__;
     var resultPath = File(requestPath).parent.fsName + "/photoshop_transfer_result.json";
     var progressPath = File(requestPath).parent.fsName + "/photoshop_transfer_progress.json";
@@ -361,66 +362,14 @@
     function applyMask(targetDocument, targetLayer, path) {
         var maskLayer = placePngLayer(path, targetDocument);
         maskLayer.rasterize(RasterizeType.ENTIRELAYER);
-        targetDocument.activeLayer = maskLayer;
-        targetDocument.selection.selectAll();
-        executeAction(charIDToTypeID("copy"), undefined, DialogModes.NO);
-        maskLayer.remove();
-        targetDocument.activeLayer = targetLayer;
-        makeRevealAllMask();
-        selectLayerMaskChannel();
-        pasteMaskPixels();
-        try {
-            targetDocument.selection.deselect();
-        } catch (ignored) {}
+        pasteLayerAsMask(targetDocument, targetLayer, maskLayer);
         selectLayer(targetLayer);
         selectCompositeChannel();
     }
 
-    function makeRevealAllMask() {
-        var descriptor = new ActionDescriptor();
-        descriptor.putClass(charIDToTypeID("Nw  "), charIDToTypeID("Chnl"));
-        var reference = new ActionReference();
-        reference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Msk ")
-        );
-        descriptor.putReference(charIDToTypeID("At  "), reference);
-        descriptor.putEnumerated(
-            charIDToTypeID("Usng"),
-            charIDToTypeID("UsrM"),
-            charIDToTypeID("RvlA")
-        );
-        executeAction(charIDToTypeID("Mk  "), descriptor, DialogModes.NO);
-    }
 
-    function selectLayerMaskChannel() {
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Msk ")
-        );
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
-    }
 
-    function selectCompositeChannel() {
-        var descriptor = new ActionDescriptor();
-        var reference = new ActionReference();
-        reference.putEnumerated(
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("Chnl"),
-            charIDToTypeID("RGB ")
-        );
-        descriptor.putReference(charIDToTypeID("null"), reference);
-        executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
-    }
 
-    function pasteMaskPixels() {
-        executeAction(charIDToTypeID("past"), undefined, DialogModes.NO);
-    }
 
     function selectLayer(layer) {
         var descriptor = new ActionDescriptor();

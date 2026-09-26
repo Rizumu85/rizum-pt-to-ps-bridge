@@ -4,7 +4,9 @@ const vm = require("node:vm");
 
 // A minimal Photoshop layer model for photoshop_transfer.jsx: Place creates a
 // layer above the active one, new groups open at the top of their container,
-// move() follows ElementPlacement, and a folder is never moved into a folder. Prints the final layer tree.
+// move() follows ElementPlacement, and a folder is never moved into a folder.
+// As in Photoshop, a paste goes into a layer mask only while that mask is
+// selected and shown; otherwise it lands as a new layer. Prints the final layer tree.
 const request = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 let nextId = 100;
 
@@ -95,7 +97,10 @@ const document = container({
   id: 10, name: path.basename(request.document.path), fullName: File(request.document.path),
   activeLayer: null, saved: false,
   save() { this.saved = true; },
+  selection: { selectAll() {}, deselect() {} },
 });
+let maskShown = false;
+let clipboard = null;
 const group = makeLayer("Group", "LayerSet");
 group.id = 1;
 attach(group, document, 0);
@@ -109,12 +114,17 @@ document.activeLayer = base;
 
 function ActionDescriptor() {
   return {
-    putPath() {}, putEnumerated() {}, putUnitDouble() {}, putObject() {}, putBoolean() {},
+    flags: {},
+    putPath() {}, putEnumerated() {}, putUnitDouble() {}, putObject() {}, putClass() {},
+    putBoolean(key, value) { this.flags[key] = value; },
     putReference(_key, reference) { this.reference = reference; },
   };
 }
 function ActionReference() {
-  return { putIdentifier(_type, id) { this.layerId = id; }, putEnumerated() {} };
+  return {
+    putIdentifier(_type, id) { this.layerId = id; },
+    putEnumerated(_type, _enum, value) { this.channel = value; },
+  };
 }
 function findLayer(list, id) {
   for (const layer of list) {
@@ -126,8 +136,20 @@ function findLayer(list, id) {
 }
 function executeAction(id, descriptor) {
   if (id === "slct") {
-    const layerId = descriptor && descriptor.reference && descriptor.reference.layerId;
-    if (layerId !== undefined) document.activeLayer = findLayer(document.layers, layerId);
+    const reference = (descriptor && descriptor.reference) || {};
+    if (reference.layerId !== undefined) {
+      document.activeLayer = findLayer(document.layers, reference.layerId);
+      maskShown = false;
+    } else {
+      maskShown = reference.channel === "Msk " && descriptor.flags.MkVs === true;
+    }
+    return;
+  }
+  if (id === "copy") { clipboard = document.activeLayer.name; return; }
+  if (id === "Mk  ") { document.activeLayer.mask = "reveal all"; return; }
+  if (id === "past") {
+    if (maskShown && document.activeLayer.mask) document.activeLayer.mask = "pasted " + clipboard;
+    else insertAboveActive(makeLayer("Pasted " + clipboard, "ArtLayer"));
     return;
   }
   if (id !== "Plc ") throw new Error("Unexpected action " + id);
@@ -157,7 +179,7 @@ vm.runInContext(script, context, { timeout: 5000 });
 
 const tree = (list) => list.map((layer) => ({
   name: layer.name, typename: layer.typename, blendMode: layer.blendMode, opacity: layer.opacity,
-  visible: layer.visible, rasterized: layer.rasterized,
+  visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null,
   ...(layer.typename === "LayerSet" ? { layers: tree(layer.layers) } : {}),
 }));
 process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers) }));
