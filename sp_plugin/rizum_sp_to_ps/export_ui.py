@@ -809,15 +809,21 @@ QWidget#RizumExportTopDivider QFrame#RizumInsetSeparator,
 QWidget#RizumExportFooterDivider QFrame#RizumInsetSeparator {{
     background: #3a3b3e;
 }}
-QFrame#RizumExportScopeInput {{
+QFrame#RizumExportScopeInput,
+QFrame#RizumExportPsdSize,
+QFrame#RizumExportRenderScale {{
     background: transparent;
     border: 0;
     border-radius: {default_theme.radius_small}px;
 }}
-QFrame#RizumExportScopeInput:focus {{
+QFrame#RizumExportScopeInput:focus,
+QFrame#RizumExportPsdSize:focus,
+QFrame#RizumExportRenderScale:focus {{
     background: transparent;
 }}
-QFrame#RizumExportScopeInput:hover {{
+QFrame#RizumExportScopeInput:hover,
+QFrame#RizumExportPsdSize:hover,
+QFrame#RizumExportRenderScale:hover {{
     background: {default_theme.action_hover};
 }}
 QFrame#RizumCollapsibleGroup {{
