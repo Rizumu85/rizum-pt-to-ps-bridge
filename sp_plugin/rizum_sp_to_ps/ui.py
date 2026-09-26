@@ -427,6 +427,8 @@ class BridgePanel:
             # On by default: a finished PSD holds the pixels, and 4K PNGs per
             # layer filled the export folder with copies nobody opens.
             "cleanup_layer_pngs": to_bool(store.value("cleanup_layer_pngs", True)),
+            "psd_size": optional_int(store.value("psd_size", None)),
+            "render_scale": _render_scale(store.value("render_scale", 1)),
         }
 
     def save_user_settings(self, values):
@@ -437,6 +439,11 @@ class BridgePanel:
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
         store.setValue("cleanup_layer_pngs", bool(values.get("cleanup_layer_pngs", True)))
+        if values.get("psd_size"):
+            store.setValue("psd_size", int(values["psd_size"]))
+        else:
+            store.remove("psd_size")
+        store.setValue("render_scale", _render_scale(values.get("render_scale")))
         bit_depth = values.get("bit_depth")
         if bit_depth:
             store.setValue("bit_depth", int(bit_depth))
@@ -449,7 +456,7 @@ class BridgePanel:
         dialog = ExportDialog(self)
         dialog.open()
 
-    def _run_export_selections(self, label, selections):
+    def _run_export_selections(self, label, selections, overrides=None):
         if not self._project_is_open():
             return {"ok": False, "message": "Open a Painter project before exporting."}
         if not self._project_is_ready():
@@ -460,7 +467,7 @@ class BridgePanel:
         if not selections:
             return {"ok": False, "message": "No channels were selected."}
 
-        base_settings = self._base_export_settings()
+        base_settings = self._base_export_settings(overrides)
         output_dir = default_output_dir(base_settings)
         all_paths = []
         texture_sets = []
@@ -579,7 +586,7 @@ class BridgePanel:
         if not self._closing:
             show_modal_message(self.QtWidgets, self.widget, "Photoshop build", message)
 
-    def _base_export_settings(self):
+    def _base_export_settings(self, overrides=None):
         settings = {
             "normal_map_format": "OpenGL",
             "infinite_padding": bool(self.user_settings.get("infinite_padding")),
@@ -590,6 +597,10 @@ class BridgePanel:
             # silently used their defaults.
             "edge_smoothing": self.user_settings.get("edge_smoothing"),
             "cleanup_layer_pngs": self.user_settings.get("cleanup_layer_pngs", True),
+            "psd_size": self.user_settings.get("psd_size"),
+            "render_scale": self.user_settings.get("render_scale", 1),
+            # The Export dialog's size choices apply to this export only.
+            **(overrides or {}),
         }
         bit_depth = self.user_settings.get("bit_depth")
         if bit_depth:
@@ -655,6 +666,11 @@ class BridgePanel:
         progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()
+
+def _render_scale(value):
+    scale = optional_int(value) or 1
+    return scale if scale in (1, 2, 4) else 1
+
 
 def _smoothing_strength(value):
     strength = optional_int(value)

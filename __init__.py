@@ -31,6 +31,7 @@ def reload_plugin():
         desktop_bridge,
         desktop_transfer,
         edge_smoothing,
+        payload_resample,
         export_ui,
         exporter,
         mapper_process,
@@ -51,6 +52,7 @@ def reload_plugin():
         del sys.modules[name]
     for module in (
         edge_smoothing,
+        payload_resample,
         exporter,
         photoshop_automation,
         photoshop_job,

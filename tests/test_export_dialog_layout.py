@@ -20,6 +20,7 @@ class _Panel:
 
     def __init__(self):
         self.widget = QtWidgets.QWidget()
+        self.user_settings = {}
 
     def active_target_key(self):
         return ("M_body", "")
@@ -61,6 +62,16 @@ class ExportDialogLayoutTests(unittest.TestCase):
         self.export.dialog.close()
         self.export.dialog.deleteLater()
         self.app.processEvents()
+
+    def test_size_choices_open_on_the_defaults_and_apply_to_this_export_only(self):
+        self.export.panel.user_settings = {"psd_size": 2048, "render_scale": 2}
+        self.export._load_size_defaults()
+        self.assertEqual(self.export.size_overrides(), {"psd_size": 2048, "render_scale": 2})
+        self.export.psd_size_combo.setCurrentIndex(self.export.psd_size_combo.findData(4096))
+        self.assertEqual(self.export.size_overrides()["psd_size"], 4096)
+        # Reopening starts from Settings again; the one-off choice is gone.
+        self.export._load_size_defaults()
+        self.assertEqual(self.export.size_overrides()["psd_size"], 2048)
 
     def test_scope_switch_keeps_the_scrollbar_gutter_stable(self):
         scrollbar = self.export.tree_scrollbar

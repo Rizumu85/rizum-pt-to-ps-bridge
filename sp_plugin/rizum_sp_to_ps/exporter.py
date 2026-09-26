@@ -12,6 +12,7 @@ from . import (
     bridge,
     color_management,
     edge_smoothing,
+    payload_resample,
     export_naming,
     geometry_mask,
     pixel_export,
@@ -436,6 +437,11 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
         is_color=request.get("is_color"),
     )
     request["export_settings"] = _export_settings(request, settings)
+    # The PSD is built at the output size; Painter renders at export_settings'
+    # resolution, which a render scale makes larger, and every payload is
+    # scaled to the output once it is smoothed.
+    output_width, output_height = request["export_settings"]["output_resolution"]
+    request["uv_tile"]["resolution"] = {"width": output_width, "height": output_height}
     if settings.get("export_uv_map"):
         request["uv_map_asset"] = {
             "kind": "uv_map",
@@ -444,7 +450,9 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
             "texture_set": request.get("texture_set"),
             "texture_set_original": request.get("texture_set_original"),
             "uv_tile": deepcopy(request["uv_tile"]),
-            "resolution": list(request["export_settings"]["resolution"]),
+            # Guide lines are drawn at the PSD's size: rendered larger and
+            # scaled down, they would thin out to faint grey.
+            "resolution": list(request["export_settings"]["output_resolution"]),
         }
 
     for node in request["layers"]:
@@ -1494,11 +1502,41 @@ def _edge_smoothing(settings):
     return max(0, min(100, int(value)))
 
 
+# Painter renders exports up to 8K; a render scale past it steps down.
+RENDER_LIMIT = 8192
+
+
+def output_resolution(native, settings):
+    """The PSD's size: a Bridge target's own, a chosen PSD size, or Painter's."""
+    explicit = settings.get("psd_resolution")
+    if explicit:
+        return [int(explicit[0]), int(explicit[1])]
+    width, height = int(native[0]), int(native[1])
+    size = settings.get("psd_size")
+    if not size:
+        return [width, height]
+    # A chosen size is the longer side, keeping a non-square set's aspect.
+    longest = max(width, height)
+    return [max(1, width * int(size) // longest), max(1, height * int(size) // longest)]
+
+
+def render_scale(output, settings):
+    """How many times the output size Painter renders at, within its limit."""
+    scale = max(1, int(settings.get("render_scale") or 1))
+    while scale > 1 and max(output) * scale > RENDER_LIMIT:
+        scale //= 2
+    return scale
+
+
 def _export_settings(request, settings):
     infinite_padding = settings.get("infinite_padding", False)
     padding = "Infinite" if infinite_padding else "Transparent"
-    dilation = 0 if infinite_padding else int(settings.get("dilation", 0))
-    resolution = request["uv_tile"]["resolution"]
+    native = request["uv_tile"]["resolution"]
+    output = output_resolution([native["width"], native["height"]], settings)
+    scale = render_scale(output, settings)
+    # Dilation is the user's distance at the PSD's size, so a larger render
+    # reaches as far once it is scaled down.
+    dilation = 0 if infinite_padding else int(settings.get("dilation", 0)) * scale
     return {
         "padding": padding,
         "dilation": dilation,
@@ -1506,7 +1544,9 @@ def _export_settings(request, settings):
         "keep_alpha": bool(settings.get("keep_alpha", True)),
         "export_uv_map": bool(settings.get("export_uv_map", False)),
         "edge_smoothing": _edge_smoothing(settings),
-        "resolution": [int(resolution["width"]), int(resolution["height"])],
+        "render_scale": scale,
+        "resolution": [value * scale for value in output],
+        "output_resolution": output,
     }
 
 
@@ -1721,12 +1761,16 @@ def _smooth_exported_assets(
             text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
             detail=f"Smoothing \u201c{label}\u201d",
         )
+        export_settings = build_request.get("export_settings", {})
+        # Smoothing runs at the render size, where Painter's polygon fills are
+        # still aliased, and the result is scaled to the PSD's size after, so
+        # a larger render is both smoothed and supersampled.
         result = edge_smoothing.smooth_png(
             asset["path"],
-            build_request.get("export_settings", {}).get(
-                "edge_smoothing", edge_smoothing.DEFAULT_STRENGTH
-            ),
+            export_settings.get("edge_smoothing", edge_smoothing.DEFAULT_STRENGTH),
         )
+        if export_settings.get("render_scale", 1) > 1:
+            payload_resample.scale_png(asset["path"], export_settings["output_resolution"])
         encoding = color_policy["encoding"] if asset["kind"] == "layer" else "raw"
         metadata = png_color_metadata.normalize_png(asset["path"], encoding)
         metadata_rewrites += int(metadata["changed"])

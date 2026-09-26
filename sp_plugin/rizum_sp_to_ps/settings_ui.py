@@ -18,6 +18,17 @@ from .ui_kit import (
 )
 
 
+PSD_SIZE_OPTIONS = [
+    ("Texture Set", None),
+    ("1K", 1024),
+    ("2K", 2048),
+    ("4K", 4096),
+    ("8K", 8192),
+]
+RENDER_SCALE_OPTIONS = [("1\u00d7", 1), ("2\u00d7", 2), ("4\u00d7", 4)]
+RENDER_SCALE_HINT = "Renders larger, then scales down"
+
+
 def _section_label(QtWidgets, text):
     label = QtWidgets.QLabel(text)
     label.setObjectName("RizumSettingsSection")
@@ -536,6 +547,37 @@ class SettingsDialog:
         bit_depth_layout.addWidget(self.bit_depth)
         body_layout.addWidget(bit_depth_row)
 
+        # Settings hold the defaults; the Export dialog and the Bridge window
+        # start from them and change them for one export or Apply, because
+        # the user wanted size to adapt case by case without a trip here.
+        self.psd_size = make_combo_input(PSD_SIZE_OPTIONS)
+        self.psd_size.setFitToContents(False)
+        self.psd_size.setFixedWidth(126)
+        psd_size_row, psd_size_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(psd_size_row)
+        self.psd_size_texts = self._make_text_block("PSD size", "Default for exports")
+        psd_size_layout.addWidget(self.psd_size_texts)
+        psd_size_layout.addStretch(1)
+        psd_size_layout.addWidget(self.psd_size)
+        body_layout.addWidget(psd_size_row)
+
+        self.render_scale = make_combo_input(RENDER_SCALE_OPTIONS)
+        self.render_scale.setFitToContents(False)
+        self.render_scale.setFixedWidth(126)
+        render_row, render_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(render_row)
+        self.render_texts = self._make_text_block("Render at", RENDER_SCALE_HINT)
+        render_layout.addWidget(self.render_texts)
+        render_layout.addStretch(1)
+        render_layout.addWidget(self.render_scale)
+        body_layout.addWidget(render_row)
+
         self.export_uv_map = _make_settings_toggle(
             self.QtCore,
             self.QtGui,
@@ -694,6 +736,8 @@ class SettingsDialog:
         self.infinite_padding.toggled.connect(self._save_live)
         self.dilation_stepper.valueChanged.connect(self._save_live)
         self.bit_depth.currentIndexChanged.connect(self._save_live)
+        self.psd_size.currentIndexChanged.connect(self._save_live)
+        self.render_scale.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
         self.smoothing_slider.valueChanged.connect(self._sync_smoothing)
         # Dragging previews every step; the setting is written once, on release.
@@ -870,6 +914,9 @@ class SettingsDialog:
         )
         self.bit_depth.setFitToContents(False)
         self.bit_depth.setFixedWidth(max(metric(126, 95), localized_width))
+        for combo in (self.psd_size, self.render_scale):
+            combo.setCompactHeight(control_height)
+            combo.setFixedWidth(self.bit_depth.width())
         self.dilation_reveal.setExpandedHeight(
             PAINTER_SETTINGS_LAYOUT.detail_row_height.resolve(self.dialog)
         )
@@ -1051,6 +1098,10 @@ QPushButton[variant="icon"]:pressed {{
             bit_depth = settings.get("bit_depth")
             index = self.bit_depth.findData(bit_depth)
             self.bit_depth.setCurrentIndex(index if index >= 0 else 0)
+            index = self.psd_size.findData(settings.get("psd_size"))
+            self.psd_size.setCurrentIndex(index if index >= 0 else 0)
+            index = self.render_scale.findData(settings.get("render_scale", 1))
+            self.render_scale.setCurrentIndex(index if index >= 0 else 0)
         finally:
             self._loading_values = False
 
@@ -1100,6 +1151,8 @@ QPushButton[variant="icon"]:pressed {{
             "dilation": self.dilation_stepper.value(),
             "export_uv_map": self.export_uv_map.isChecked(),
             "bit_depth": self.bit_depth.currentData(),
+            "psd_size": self.psd_size.currentData(),
+            "render_scale": self.render_scale.currentData(),
             "edge_smoothing": self.smoothing_slider.value(),
             "cleanup_layer_pngs": self.cleanup_layer_pngs.isChecked(),
         }

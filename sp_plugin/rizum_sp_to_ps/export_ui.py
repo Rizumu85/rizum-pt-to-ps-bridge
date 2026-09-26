@@ -31,6 +31,7 @@ from .ui_kit import (
     update_export_tree_item,
 )
 from .ui_dialogs import show_modal_message
+from .settings_ui import PSD_SIZE_OPTIONS, RENDER_SCALE_OPTIONS
 
 
 class ExportDialog:
@@ -191,6 +192,35 @@ class ExportDialog:
         self.footer_separator.setObjectName("RizumExportFooterDivider")
         surface_layout.addWidget(self.footer_separator)
 
+        # Size is chosen per export: these open on the Settings defaults and
+        # apply to this export only, so a one-off 2K or 2x render needs no
+        # trip to Settings and leaves the defaults alone.
+        self.psd_size_combo = make_combo_input(PSD_SIZE_OPTIONS)
+        self.psd_size_combo.setObjectName("RizumExportPsdSize")
+        self.render_scale_combo = make_combo_input(RENDER_SCALE_OPTIONS)
+        self.render_scale_combo.setObjectName("RizumExportRenderScale")
+        # Each combo names itself, so the row needs no separate labels.
+        self.psd_size_combo.setDisplayParts("PSD size", PSD_SIZE_OPTIONS[0][0])
+        self.render_scale_combo.setDisplayParts("Render at", RENDER_SCALE_OPTIONS[0][0])
+        self.render_scale_combo.setToolTip(
+            "Painter renders this many times the PSD size, smooths edges there, "
+            "then scales down: sharper on small UV islands, slower."
+        )
+        self.size_controls = make_compact_action_bar(
+            [self.psd_size_combo, self.render_scale_combo],
+            None,
+            object_name="RizumExportSizeControls",
+            height=PAINTER_SETTINGS_LAYOUT.row_height.design,
+            margins=(
+                PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+                0,
+                PAINTER_SETTINGS_LAYOUT.footer_margin_x.design,
+                0,
+            ),
+            spacing=PAINTER_SETTINGS_LAYOUT.row_spacing,
+        )
+        surface_layout.addWidget(self.size_controls)
+
         self.footer = self.QtWidgets.QWidget()
         self.footer.setObjectName("RizumExportFooter")
         self.footer_outer = self.QtWidgets.QVBoxLayout(self.footer)
@@ -232,6 +262,7 @@ class ExportDialog:
         self._apply_ui_scale(self.dialog.settingsUiScale())
 
     def open(self):
+        self._load_size_defaults()
         self.refresh_targets()
         self._position_for_default_expansion()
         # Windows recenters a parented modal as exec() begins, so repeat the
@@ -241,6 +272,21 @@ class ExportDialog:
             self._position_for_default_expansion,
         )
         return self.dialog.exec()
+
+    def _load_size_defaults(self):
+        settings = self.panel.user_settings
+        for combo, value in (
+            (self.psd_size_combo, settings.get("psd_size")),
+            (self.render_scale_combo, settings.get("render_scale", 1)),
+        ):
+            index = combo.findData(value)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def size_overrides(self):
+        return {
+            "psd_size": self.psd_size_combo.currentData(),
+            "render_scale": self.render_scale_combo.currentData(),
+        }
 
     def tree_expand_all(self):
         for group in self.groups:
@@ -418,6 +464,7 @@ class ExportDialog:
             + self.top_separator.height()
             + int(round(viewport_height))
             + self.footer_separator.height()
+            + self.size_controls.height()
             + self.footer.height()
         )
 
@@ -554,6 +601,17 @@ class ExportDialog:
             PAINTER_SETTINGS_LAYOUT.control_height.resolve(self.dialog)
         )
         self.scope_combo.fitToContents()
+        footer_margin_x = PAINTER_SETTINGS_LAYOUT.footer_margin_x.resolve(self.dialog)
+        self.size_controls.setFixedHeight(
+            PAINTER_SETTINGS_LAYOUT.row_height.resolve(self.dialog)
+        )
+        self.size_controls.layout().setContentsMargins(footer_margin_x, 0, footer_margin_x, 0)
+        self.size_controls.layout().setSpacing(PAINTER_SETTINGS_LAYOUT.row_spacing)
+        for combo in (self.psd_size_combo, self.render_scale_combo):
+            combo.setCompactHeight(
+                PAINTER_SETTINGS_LAYOUT.control_height.resolve(self.dialog)
+            )
+            combo.fitToContents()
 
         icon_frame = self._metric(22, 17)
         icon_size = self._metric(16, 12)
@@ -682,7 +740,9 @@ class ExportDialog:
 QFrame#RizumPainterSettingsSurface {{
     background: {theme["surface"]};
 }}
+
 QWidget#RizumExportTopControls,
+QWidget#RizumExportSizeControls,
 QWidget#RizumExportTreeContainer,
 QScrollArea#RizumExportTreeScroll,
 QScrollArea#RizumExportTreeScroll > QWidget > QWidget,
@@ -1132,6 +1192,7 @@ QLabel#RizumSvgLabel:hover {{
         result = self.panel._run_export_selections(
             "export dialog selection",
             selections,
+            self.size_overrides(),
         )
         if not result["ok"]:
             show_modal_message(
