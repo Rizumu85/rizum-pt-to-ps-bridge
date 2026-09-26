@@ -69,12 +69,15 @@ class EdgeSmoothingTests(unittest.TestCase):
         self.assertGreater(result["changed_pixels"], 0)
         self.assertTrue(any(0 < value < 255 for value in values))
 
-    def test_transparent_staircase_edges_gain_inward_coverage_without_expanding(self):
-        clear_magenta = QtGui.QColor(255, 0, 255, 0)
-        opaque_white = QtGui.QColor(255, 255, 255, 255)
+    def test_shallow_transparent_edge_blends_like_clip_studio_paint(self):
+        # Rows of five opaque pixels stepping up to the right, as in the CSP
+        # reference: each step becomes one ramp, half outside and half inside
+        # the original footprint, and keeps the shape's own colour.
+        clear = QtGui.QColor(0, 0, 0, 0)
+        red = QtGui.QColor(220, 60, 60, 255)
         rows = [
-            [opaque_white if x <= y else clear_magenta for x in range(7)]
-            for y in range(7)
+            [red if x >= 30 - 5 * y else clear for x in range(32)]
+            for y in range(6)
         ]
 
         with tempfile.TemporaryDirectory() as directory:
@@ -82,24 +85,30 @@ class EdgeSmoothingTests(unittest.TestCase):
             self._write_image(path, rows)
             result = edge_smoothing.smooth_png(path)
             output = QtGui.QImage(str(path))
-            originally_clear = [
-                (x, y)
-                for y in range(output.height())
-                for x in range(output.width())
-                if rows[y][x].alpha() == 0
-            ]
-            originally_opaque_alpha = [
-                output.pixelColor(x, y).alpha()
-                for y in range(output.height())
-                for x in range(output.width())
-                if rows[y][x].alpha() == 255
-            ]
 
         self.assertGreater(result["changed_pixels"], 0)
-        self.assertTrue(
-            all(output.pixelColor(x, y).alpha() == 0 for x, y in originally_clear)
-        )
-        self.assertTrue(any(0 < alpha < 255 for alpha in originally_opaque_alpha))
+        # Row 3 starts at x=15; the rows around it step at x=20 and x=10.
+        ramp = [round(output.pixelColor(x, 3).alpha() / 2.55) for x in range(12, 19)]
+        self.assertEqual(ramp, [2, 20, 40, 60, 80, 98, 100])
+        self.assertEqual((output.pixelColor(13, 3).red(), output.pixelColor(13, 3).green()), (220, 60))
+        before = sum(row.alpha() for row_pixels in rows for row in row_pixels)
+        after = sum(output.pixelColor(x, y).alpha() for y in range(6) for x in range(32))
+        self.assertLess(abs(after - before), 255)
+
+    def test_corners_of_long_straight_edges_stay_square(self):
+        clear = QtGui.QColor(0, 0, 0, 0)
+        white = QtGui.QColor(255, 255, 255, 255)
+        rows = [
+            [white if 2 <= x < 10 and 2 <= y < 10 else clear for x in range(12)]
+            for y in range(12)
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "square.png"
+            self._write_image(path, rows)
+            result = edge_smoothing.smooth_png(path)
+
+        self.assertEqual(result["changed_pixels"], 0)
 
     def test_16_bit_payload_remains_16_bit(self):
         image_format = QtGui.QImage.Format.Format_RGBA64
