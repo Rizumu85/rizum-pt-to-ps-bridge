@@ -25,7 +25,7 @@ import {
   type Placement,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import { normalizedBlendMode, sameDocument, type ApplyOutcome, type ApplyProgress, type BridgeSession, type PainterContext } from "./transport"
+import { normalizedBlendMode, sameDocument, stagesFor, type ApplyOutcome, type ApplyProgress, type ApplyStage, type BridgeSession, type PainterContext } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -73,6 +73,7 @@ export function BridgeApp({
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: "Preparing mapped items..." })
+  const [applySteps, setApplySteps] = useState<ApplyStage[]>([])
   const [failed, setFailed] = useState(false)
   const pending = useRef(false)
   const [motionIds, setMotionIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -317,11 +318,14 @@ export function BridgeApp({
     pending.current = true
     setBusy(true)
     setApplying(true)
-    setApplyProgress({ message: "Preparing mapped items..." })
+    const steps = stagesFor(bridge.mappings)
+    setApplySteps(steps)
+    setApplyProgress({ stage: steps[0], message: "Preparing mapped items..." })
     setFailed(false)
     setStatus("Applying in Painter...")
     try {
-      const outcome = await onApply(bridge, activePainterContextId, session, setApplyProgress)
+      const outcome = await onApply(bridge, activePainterContextId, session, (next) =>
+        setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })))
       if (outcome.session) adoptSession(outcome.session, outcome.message)
       else setStatus(outcome.message)
       setFailed(outcome.failed)
@@ -623,7 +627,7 @@ export function BridgeApp({
         </motion.div>
         </RowMotionContext.Provider>
         <DragOverlay bridge={bridge} gesture={press} pointer={pointer} store={treePointer} />
-        {applying ? <ApplyProgressDialog progress={applyProgress} /> : null}
+        {applying ? <ApplyProgressDialog progress={applyProgress} steps={applySteps} /> : null}
       </div>
     </TooltipProvider>
   )

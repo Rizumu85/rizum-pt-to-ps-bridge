@@ -243,7 +243,7 @@ class DesktopBridgeController:
         process.write((json.dumps(payload) + "\n").encode("utf-8"))
 
     def _start_photoshop_job(self, launch, label, transfer_result):
-        self._apply_progress({"message": "Opening Photoshop document..."})
+        self._apply_progress({"stage": "photoshop", "message": "Opening Photoshop document..."})
         self._clear_photoshop_export()
         self._pending_transfer_result = transfer_result
         # Only Painter reads the script's progress receipts, so Painter shows
@@ -282,7 +282,8 @@ class DesktopBridgeController:
         completed = payload.get("completed", 0)
         if not isinstance(total, int) or not isinstance(completed, int):
             return
-        if phase == "transferring_layers" and total > 0:
+        counted = phase == "transferring_layers" and total > 0
+        if counted:
             if dialog is not None:
                 dialog.setRange(0, total)
                 dialog.setValue(max(0, min(completed, total)))
@@ -292,11 +293,12 @@ class DesktopBridgeController:
         else:
             message = "Opening Photoshop document..."
         if dialog is not None:
-            if phase != "transferring_layers" or total <= 0:
+            if not counted:
                 dialog.setRange(0, 0)
             dialog.setLabelText(message)
-        self._apply_progress({"message": message, **(
-            {"completed": completed, "total": total} if phase == "transferring_layers" and total > 0 else {}
+        # The mapper shows the count under its step title, not in the message.
+        self._apply_progress({"stage": "photoshop", **(
+            {"message": "Adding layers...", "completed": completed, "total": total} if counted else {"message": message}
         )})
 
     def _photoshop_job_failed(self, message):

@@ -312,50 +312,63 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
     preview = matching[0]
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
+    items = []
+    for order, source_uid in enumerate(source_uids):
+        selected = _find_node_by_uid(preview.get("layers", []), source_uid)
+        if selected is None:
+            raise ValueError(
+                f"Painter layer {source_uid!r} no longer exists in the mapped context."
+            )
+
+        selected = deepcopy(selected)
+        if not selected.get("children"):
+            # A mapped layer always crosses as its rendered pixels, even
+            # where the channel projection would leave it out.
+            selected["bake_policy"] = "bake"
+            selected["content_effects"] = []
+            selected["mask_effects"] = []
+        # A mapped group keeps the structure the regular PSD export gives
+        # it: a Photoshop folder of its layers, flattened only where the
+        # channel's blend decisions bake it. Users map folders to keep
+        # working on their layers in Photoshop.
+
+        bundle = root / f"{order + 1:03d}_{_safe_filename(selected.get('name'))}"
+        (bundle / "png").mkdir(parents=True, exist_ok=True)
+        item_preview = deepcopy(preview)
+        item_preview["layers"] = [selected]
+        build_request = build_request_from_preview(
+            item_preview,
+            bundle,
+            export_settings,
+        )
+        items.append((source_uid, selected, build_request, _plan_asset_work(build_request)[-1]))
+
+    # Every mapped item is planned before any renders so the mapper's
+    # rendering step counts them all once, instead of restarting per item.
+    total = sum(work for *_rest, work in items)
+    done = 0
+
+    def forward(event):
+        if event.get("detail"):
+            progress_callback({
+                "stage": "render",
+                "message": event["detail"],
+                "completed": done + int(event.get("value") or 0),
+                "total": total,
+            })
+
     node_exporter = stack_node_export.StackNodeExporter()
     geometry_baker = geometry_mask.GeometryMaskBaker()
     exported = []
     try:
-        for order, source_uid in enumerate(source_uids):
-            selected = _find_node_by_uid(preview.get("layers", []), source_uid)
-            if selected is None:
-                raise ValueError(
-                    f"Painter layer {source_uid!r} no longer exists in the mapped context."
-                )
-
-            selected = deepcopy(selected)
-            if not selected.get("children"):
-                # A mapped layer always crosses as its rendered pixels, even
-                # where the channel projection would leave it out.
-                selected["bake_policy"] = "bake"
-                selected["content_effects"] = []
-                selected["mask_effects"] = []
-            # A mapped group keeps the structure the regular PSD export gives
-            # it: a Photoshop folder of its layers, flattened only where the
-            # channel's blend decisions bake it. Users map folders to keep
-            # working on their layers in Photoshop.
-
-            bundle = root / f"{order + 1:03d}_{_safe_filename(selected.get('name'))}"
-            (bundle / "png").mkdir(parents=True, exist_ok=True)
-            item_preview = deepcopy(preview)
-            item_preview["layers"] = [selected]
-            build_request = build_request_from_preview(
-                item_preview,
-                bundle,
-                export_settings,
-            )
+        for source_uid, selected, build_request, work in items:
             export_request_assets(
                 build_request,
                 node_exporter=node_exporter,
                 geometry_baker=geometry_baker,
-                progress_callback=(
-                    lambda event: progress_callback({
-                        "message": event.get("text") or "Rendering Painter assets...",
-                        "completed": event.get("value"),
-                        "total": event.get("total"),
-                    })
-                ) if progress_callback else None,
+                progress_callback=forward if progress_callback else None,
             )
+            done += work
             node = _transfer_node(build_request["layers"][0], context["channel"])
             if node is None:
                 raise RuntimeError(
@@ -445,6 +458,32 @@ def build_request_from_preview(preview_request, bundle_dir, settings=None):
     return request
 
 
+def _plan_asset_work(build_request):
+    """The assets export_request_assets renders and the steps it reports."""
+    assets = list(
+        _iter_assets(build_request["layers"], build_request["channel_identifier"])
+    )
+    layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
+    mask_assets = [asset for asset in assets if asset["kind"] == "mask"]
+    geometry_assets = [asset for asset in assets if asset["kind"] == "geometry_mask"]
+    export_work_total = (
+        len(layer_assets)
+        + len(mask_assets)
+        + len(geometry_assets)
+        + int(bool(build_request.get("uv_map_asset")))
+    )
+    smoothing_work_total = len(layer_assets) + len(
+        {int(asset["uid"]) for asset in (*mask_assets, *geometry_assets)}
+    )
+    return (
+        layer_assets,
+        mask_assets,
+        geometry_assets,
+        export_work_total,
+        export_work_total + smoothing_work_total,
+    )
+
+
 def export_request_assets(
     build_request,
     node_exporter,
@@ -458,26 +497,14 @@ def export_request_assets(
 
     export_settings = build_request["export_settings"]
     request_channel = build_request["channel_identifier"]
-    assets = list(_iter_assets(build_request["layers"], request_channel))
-    layer_assets = [asset for asset in assets if asset["kind"] == "layer"]
-    initial_mask_assets = [asset for asset in assets if asset["kind"] == "mask"]
-    initial_geometry_assets = [
-        asset for asset in assets if asset["kind"] == "geometry_mask"
-    ]
+    (
+        layer_assets,
+        initial_mask_assets,
+        initial_geometry_assets,
+        export_work_total,
+        total,
+    ) = _plan_asset_work(build_request)
     uv_map_asset = build_request.get("uv_map_asset")
-    export_work_total = (
-        len(layer_assets)
-        + len(initial_mask_assets)
-        + len(initial_geometry_assets)
-        + int(bool(uv_map_asset))
-    )
-    smoothing_work_total = len(layer_assets) + len(
-        {
-            int(asset["uid"])
-            for asset in (*initial_mask_assets, *initial_geometry_assets)
-        }
-    )
-    total = export_work_total + smoothing_work_total
     completed = 0
     for asset in layer_assets:
         index = completed + 1
@@ -492,6 +519,7 @@ def export_request_assets(
                 f"{prefix}exporting PNG {index} of {export_work_total}: "
                 f"{layer_label}"
             ),
+            detail=f"Layer \u201c{layer_label}\u201d",
         )
         if pixel_export.export_layer_png(
             asset,
@@ -512,6 +540,7 @@ def export_request_assets(
                 f"{prefix}finished PNG {index} of {export_work_total}: "
                 f"{layer_label}"
             ),
+            detail=f"Layer \u201c{layer_label}\u201d",
         )
 
     # Re-plan masks after empty channel layers are pruned so their now-orphaned
@@ -535,6 +564,7 @@ def export_request_assets(
                 f"{prefix}exporting PNG {index} of {export_work_total}: "
                 f"{layer_label}"
             ),
+            detail=f"Mask of \u201c{layer_label}\u201d",
         )
         pixel_export.export_mask_png(
             asset,
@@ -552,6 +582,7 @@ def export_request_assets(
                 f"{prefix}finished PNG {index} of {export_work_total}: "
                 f"{layer_label}"
             ),
+            detail=f"Mask of \u201c{layer_label}\u201d",
         )
 
     geometry_assets = [
@@ -586,6 +617,7 @@ def export_request_assets(
                     f"{prefix}exporting Geometry Mask {index} of "
                     f"{export_work_total}: {layer_label}"
                 ),
+                detail=f"Geometry mask of \u201c{layer_label}\u201d",
             )
             try:
                 diagnostics.append(geometry_baker.bake(asset, asset["path"]))
@@ -606,6 +638,7 @@ def export_request_assets(
                     f"{prefix}finished Geometry Mask {index} of "
                     f"{export_work_total}: {layer_label}"
                 ),
+                detail=f"Geometry mask of \u201c{layer_label}\u201d",
             )
         if diagnostics:
             build_request["geometry_mask_diagnostics"] = diagnostics
@@ -619,6 +652,7 @@ def export_request_assets(
                 value=completed,
                 total=total,
                 text=f"{prefix}exporting UV Map {index} of {export_work_total}",
+                detail="UV map",
             )
             try:
                 build_request["uv_map_diagnostics"] = geometry_baker.bake_uv_map(
@@ -644,6 +678,7 @@ def export_request_assets(
                 value=completed,
                 total=total,
                 text=f"{prefix}finished UV Map {index} of {export_work_total}",
+                detail="UV map",
             )
     finally:
         if owns_baker:
@@ -1676,6 +1711,7 @@ def _smooth_exported_assets(
             value=progress_offset + index - 1,
             total=progress_total,
             text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
+            detail=f"Smoothing \u201c{label}\u201d",
         )
         result = edge_smoothing.smooth_png(asset["path"])
         encoding = color_policy["encoding"] if asset["kind"] == "layer" else "raw"
@@ -1696,6 +1732,7 @@ def _smooth_exported_assets(
             value=progress_offset + index,
             total=progress_total,
             text=f"{prefix}smoothed PNG {index} of {len(assets)}: {label}",
+            detail=f"Smoothing \u201c{label}\u201d",
         )
 
     return {

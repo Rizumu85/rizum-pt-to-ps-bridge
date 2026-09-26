@@ -175,7 +175,21 @@ export type PainterLink = {
   request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>, onProgress?: (progress: ApplyProgress) => void) => Promise<PainterReply>
 }
 
-export type ApplyProgress = { message: string; completed?: number; total?: number }
+/**
+ * One Apply runs these steps in this order, each only when a mapping needs it.
+ * Each step counts its own work once from zero, so the dialog numbers the
+ * steps instead of letting one bar restart under an unchanged title.
+ */
+export const applyStages = ["read", "render", "import", "photoshop"] as const
+export type ApplyStage = typeof applyStages[number]
+/** A step's own work; a progress without a stage continues the current step. */
+export type ApplyProgress = { stage?: ApplyStage; message: string; completed?: number; total?: number }
+
+export function stagesFor(mappings: readonly { direction: string }[]): ApplyStage[] {
+  const imports = mappings.some(mapping => mapping.direction === "photoshop_to_painter")
+  const exports = mappings.some(mapping => mapping.direction === "painter_to_photoshop")
+  return applyStages.filter(stage => stage === "read" || stage === "import" ? imports : exports)
+}
 
 export type ApplyOutcome = {
   /** The refreshed session, or null when Painter could not report its layers. */
@@ -247,7 +261,8 @@ function parsePainterReply(line: string): PainterReply | Error {
     const total = typeof reply.total === "number" && Number.isFinite(reply.total) && reply.total > 0 ? reply.total : undefined
     const completed = total && typeof reply.completed === "number" && Number.isFinite(reply.completed)
       ? Math.max(0, Math.min(total, reply.completed)) : undefined
-    return { type: "apply_progress", message: textValue(reply.message) || "Applying changes...", completed, total }
+    const stage = applyStages.find(candidate => candidate === reply.stage)
+    return { type: "apply_progress", stage, message: textValue(reply.message) || "Applying changes...", completed, total }
   }
   if (reply.type === "photoshop_connected" && textValue(reply.psd)) {
     return { type: "photoshop_connected", psd: textValue(reply.psd) }
@@ -336,13 +351,17 @@ export async function writeTransferManifest(
   }
   const warnings: string[] = []
   const transfers = []
+  const reads = state.mappings.filter(mapping => mapping.direction === "photoshop_to_painter").length
+  let read = 0
   for (const [order, mapping] of state.mappings.entries()) {
-    onProgress?.({ message: "Preparing mapped items...", completed: order, total: state.mappings.length })
     let source: unknown = manifestRef(mapping.source)
     if (mapping.direction === "photoshop_to_painter") {
       const node = findNode(state.painter, mapping.sourceId)
       if (!node || !session.photoshop) throw new Error("A mapped Photoshop layer is no longer available")
+      onProgress?.({ stage: "read", message: `Layer “${node.name}”`, completed: read, total: reads })
       source = await renderPhotoshopTransfer(session.photoshop, node, assets, warnings)
+      read += 1
+      onProgress?.({ stage: "read", message: `Layer “${node.name}”`, completed: read, total: reads })
     }
     transfers.push({
       order,
@@ -351,7 +370,6 @@ export async function writeTransferManifest(
       target: manifestRef(mapping.target),
       insertion: mapping.placement,
     })
-    onProgress?.({ message: "Preparing mapped items...", completed: order + 1, total: state.mappings.length })
   }
 
   const payload = {

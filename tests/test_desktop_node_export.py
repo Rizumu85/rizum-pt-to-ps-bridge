@@ -47,6 +47,8 @@ class DesktopNodeExportTests(unittest.TestCase):
         ), mock.patch.object(
             exporter, "export_request_assets", side_effect=export_assets
         ), mock.patch.object(
+            exporter, "_plan_asset_work", return_value=([], [], [], 0, 0)
+        ), mock.patch.object(
             exporter.stack_node_export, "StackNodeExporter", return_value=closer
         ), mock.patch.object(
             exporter.geometry_mask, "GeometryMaskBaker", return_value=closer

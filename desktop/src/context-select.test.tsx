@@ -32,9 +32,13 @@ describe("Painter context selectors", () => {
       await app.mouse.up(app.getByText("Working"))
       await app.getByTestId("apply-mapping").click()
       expect(await app.getByTestId("apply-progress").count()).toBe(1)
-      report({ message: "Inserting layers...", completed: 1, total: 4 })
+      // A Photoshop layer into Painter: the mapper reads it, then Painter imports.
+      expect(await app.getByText("Reading Photoshop layers").count()).toBe(1)
+      report({ stage: "import", message: "Inserting layers...", completed: 1, total: 4 })
       root.renderer.flush()
       await vi.waitFor(async () => expect(await app.getByText("1 / 4").count()).toBe(1))
+      expect(await app.getByText("Importing into Painter").count()).toBe(1)
+      expect(await app.getByText("Step 2 of 2").count()).toBe(1)
       const fill = await app.getByTestId("apply-progress-fill").bounds()
       const track = await app.getByTestId("apply-progress-bar").bounds()
       expect(fill.width / track.width).toBeCloseTo(0.25, 2)
@@ -42,6 +46,8 @@ describe("Painter context selectors", () => {
       root.renderer.flush()
       await vi.waitFor(async () => expect(await app.getByTestId("apply-progress-fill").count()).toBe(0))
       expect(await app.getByText("Saving Photoshop document...").count()).toBe(1)
+      // A wait without a step stays under the step it belongs to.
+      expect(await app.getByText("Step 2 of 2").count()).toBe(1)
       finish({ session: null, failed: true, message: "Photoshop save failed" })
       await vi.waitFor(async () => expect(await app.getByTestId("apply-progress").count()).toBe(0))
       expect(await app.getByText("Photoshop save failed").count()).toBe(1)

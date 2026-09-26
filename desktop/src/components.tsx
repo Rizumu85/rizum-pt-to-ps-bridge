@@ -16,6 +16,7 @@ import {
 } from "@gpuix/react"
 import { colors, metrics, typography } from "./theme"
 import { createPointerFollower } from "./drag-feedback"
+import type { ApplyProgress, ApplyStage } from "./transport"
 
 import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
@@ -157,19 +158,32 @@ export function InsetSeparator() {
   )
 }
 
+const stageTitles: Record<ApplyStage, string> = {
+  read: "Reading Photoshop layers",
+  render: "Rendering Painter layers",
+  import: "Importing into Painter",
+  photoshop: "Inserting into Photoshop",
+}
+
 // Host phases have different units. Show their real counts, never a synthetic
-// overall percentage; saving and host waits remain indeterminate.
-export function ApplyProgressDialog({ progress }: { progress: import("./transport").ApplyProgress }) {
+// overall percentage; saving and host waits remain indeterminate. The user
+// asked that a bar starting over be told apart as a new step, so every step is
+// titled and numbered, and a step never restarts its own count.
+export function ApplyProgressDialog({ progress, steps }: { progress: ApplyProgress; steps: readonly ApplyStage[] }) {
   const track = useRef<PublicInstance>(null)
   const counted = progress.total !== undefined && progress.total > 0 && progress.completed !== undefined
   const fraction = counted ? Math.max(0, Math.min(1, progress.completed! / progress.total!)) : null
+  const step = progress.stage ? steps.indexOf(progress.stage) : -1
   return (
     <div testId="apply-progress" role="dialog" aria-label="Applying changes"
       style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "#00000055",
         display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 320, padding: 20, borderRadius: 8, backgroundColor: colors.panel,
         display: "flex", flexDirection: "column", gap: 12 }}>
-        <PrimaryText>Applying changes</PrimaryText>
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <PrimaryText>{step >= 0 ? stageTitles[progress.stage!] : "Applying changes"}</PrimaryText>
+          {step >= 0 && steps.length > 1 ? <SecondaryText>{`Step ${step + 1} of ${steps.length}`}</SecondaryText> : null}
+        </div>
         <text style={{ fontFamily: typography.family, fontSize: typography.secondarySize,
           fontWeight: typography.secondaryWeight, color: colors.secondary, whiteSpace: "normal" }}>{progress.message}</text>
         <div ref={track} testId="apply-progress-bar" role="progressbar" aria-label={progress.message}
@@ -178,7 +192,10 @@ export function ApplyProgressDialog({ progress }: { progress: import("./transpor
           {fraction === null ? <WorkingSweep key="sweep" track={track} /> : <div
             testId="apply-progress-fill" style={{ height: 4, width: `${fraction * 100}%`, backgroundColor: colors.text }} />}
         </div>
-        {counted ? <SecondaryText>{`${progress.completed} / ${progress.total}`}</SecondaryText> : null}
+        {/* Kept while a step waits, so the card does not jump between counts. */}
+        <div style={{ opacity: counted ? 1 : 0 }}>
+          <SecondaryText>{counted ? `${progress.completed} / ${progress.total}` : "0 / 0"}</SecondaryText>
+        </div>
       </div>
     </div>
   )

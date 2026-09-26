@@ -198,12 +198,17 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
 
     resources = {}
     assets = list(dict.fromkeys(path for item in plan.painter_imports for path in item.layer.assets()))
-    for index, path in enumerate(assets):
+    # Textures and layer inserts are one mapper step, so they share one count.
+    total = len(assets) + len(resolved)
+
+    def report(message, completed=None):
         if progress_callback:
-            progress_callback({"message": "Importing textures into Painter...", "completed": index, "total": len(assets)})
+            counted = {} if completed is None else {"completed": completed, "total": total}
+            progress_callback({"stage": "import", "message": message, **counted})
+
+    for index, path in enumerate(assets):
+        report(f"Texture \u201c{Path(path).stem}\u201d", index)
         resources[path] = _import_texture(path, painter.resource)
-    if progress_callback and assets:
-        progress_callback({"message": "Importing textures into Painter...", "completed": len(assets), "total": len(assets)})
 
     warnings = []
     # The desktop Apply action is one user intent; grouping every layerstack edit
@@ -216,15 +221,13 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
         modification = _NullContext()
     with modification:
         for index, (item, target_node, channel_type, channel_is_color) in enumerate(resolved):
-            if progress_callback:
-                progress_callback({"message": f"Inserting mapped item: {item.name}", "completed": index, "total": len(resolved)})
+            report(f"Layer \u201c{item.name}\u201d", len(assets) + index)
             position = _insertion_position(item, target_node, painter.layerstack)
             target = _InsertTarget(painter, channel_type, channel_is_color, resources, warnings)
             _insert_photoshop_layer(item.layer, position, target)
-            if progress_callback:
-                progress_callback({"message": "Inserting mapped items into Painter...", "completed": index + 1, "total": len(resolved)})
-        if progress_callback and resolved:
-            progress_callback({"message": "Updating Painter stack..."})
+            report(f"Layer \u201c{item.name}\u201d", len(assets) + index + 1)
+        if resolved:
+            report("Updating Painter stack...")
 
     return TransferResult(
         imported_count=len(plan.painter_imports),
