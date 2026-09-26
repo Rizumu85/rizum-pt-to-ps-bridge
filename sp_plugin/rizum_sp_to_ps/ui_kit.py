@@ -9,8 +9,11 @@ import sys
 from pathlib import Path
 
 
+_VENDORED_UI_PACKAGE = "_rizum_pt_to_ps_bridge_ui"
+
+
 def _load_vendored_ui():
-    package_name = "_rizum_pt_to_ps_bridge_ui"
+    package_name = _VENDORED_UI_PACKAGE
     package_dir = Path(__file__).resolve().parents[2] / "rizum_ui"
     package = sys.modules.get(package_name)
     if package is not None:

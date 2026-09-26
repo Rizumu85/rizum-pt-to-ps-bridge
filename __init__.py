@@ -24,11 +24,13 @@ def close_plugin():
 def reload_plugin():
     """Reload the package modules Painter keeps cached between plugin toggles."""
     import importlib
+    import sys
 
     from sp_plugin import rizum_sp_to_ps as bridge_package
     from sp_plugin.rizum_sp_to_ps import (
         desktop_bridge,
         desktop_transfer,
+        edge_smoothing,
         export_ui,
         exporter,
         mapper_process,
@@ -43,7 +45,12 @@ def reload_plugin():
     global _close_plugin, _start_plugin
     # Dependency order: each module binds names from the ones before it, so a
     # module reloaded before its dependency would keep the stale definitions.
+    # ui_kit loads the vendored rizum_ui package once and reuses it from
+    # sys.modules, so drop it here for ui_kit's reload to load it afresh.
+    for name in [name for name in sys.modules if name.startswith(ui_kit._VENDORED_UI_PACKAGE)]:
+        del sys.modules[name]
     for module in (
+        edge_smoothing,
         exporter,
         photoshop_automation,
         photoshop_job,
