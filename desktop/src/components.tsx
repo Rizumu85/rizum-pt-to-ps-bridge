@@ -247,44 +247,14 @@ export function ContextSelect({
   busy?: boolean
   onValueChange: (value: string) => void
 }) {
-  const [present, setPresent] = useState(false)
-  const [visuallyOpen, setVisuallyOpen] = useState(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [open, setOpen] = useState(false)
   const disabled = busy || options.length < 2
   const selectedLabel = options.find((option) => option.value === value)?.label || value
-
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current)
-    },
-    [],
-  )
-
-  const setOpen = (nextOpen: boolean) => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current)
-      closeTimer.current = null
-    }
-    if (nextOpen) {
-      setPresent(true)
-      setVisuallyOpen(true)
-      return
-    }
-
-    setVisuallyOpen(false)
-    // SelectContent renders nothing once its Select is closed, so
-    // AnimatePresence cannot hold it through the fade; the Select stays open
-    // until the exit has played instead.
-    closeTimer.current = setTimeout(() => {
-      setPresent(false)
-      closeTimer.current = null
-    }, 180)
-  }
 
   return (
     <Select
       value={value}
-      open={present}
+      open={open}
       onOpenChange={setOpen}
       onValueChange={onValueChange}
       disabled={disabled}
@@ -302,7 +272,7 @@ export function ContextSelect({
           alignItems: "center",
           gap: 4,
           borderRadius: metrics.rowRadius,
-          backgroundColor: visuallyOpen ? colors.fieldHover : "transparent",
+          backgroundColor: open ? colors.fieldHover : "transparent",
           opacity: disabled ? 0.72 : 1,
           cursor: disabled ? "default" : "pointer",
           hover: disabled ? undefined : { backgroundColor: colors.fieldHover },
@@ -314,7 +284,7 @@ export function ContextSelect({
         </div>
         <div style={{ width: 12, height: 12, flexShrink: 0, position: "relative" }}>
           {(["chevronDown", "chevronUp"] as const).map((name) => {
-            const visible = name === (visuallyOpen ? "chevronUp" : "chevronDown")
+            const visible = name === (open ? "chevronUp" : "chevronDown")
             return (
               <motion.div
                 key={name}
@@ -344,12 +314,17 @@ export function ContextSelect({
         sideOffset={4}
         align="start"
         collisionPadding={8}
-        style={{ width, backgroundColor: "transparent", pointerEvents: visuallyOpen ? undefined : "none" }}
+        style={{ width, backgroundColor: "transparent" }}
       >
+        {/* The floating layer blanks the area under it to the window colour
+            for as long as it is mounted, so any transparent moment showed an
+            empty dark box: while held open through an exit fade, and while
+            fading in. It opens as a short opaque drop and closes at once; a
+            choice made many times a day needs no exit anyway. */}
         <motion.div
-          initial={{ opacity: 0, top: -6 }}
-          animate={{ opacity: visuallyOpen ? 1 : 0, top: visuallyOpen ? 0 : -6 }}
-          transition={{ duration: visuallyOpen ? 0.18 : 0.14, ease: motionEase }}
+          initial={{ top: -6 }}
+          animate={{ top: 0 }}
+          transition={{ duration: 0.16, ease: motionEase }}
           style={{
             width: "100%",
             position: "relative",
@@ -359,16 +334,13 @@ export function ContextSelect({
             borderWidth: 1,
             borderColor: colors.line,
             backgroundColor: colors.panel,
-            // GPUiX fades an element's fill but not its shadow, so a shadow
-            // kept through the exit outlived the fading list as an empty dark
-            // box for a frame. It leaves as the close begins.
-            boxShadow: visuallyOpen ? {
+            boxShadow: {
               offsetX: 0,
               offsetY: 4,
               blurRadius: 12,
               spreadRadius: 0,
               color: "#00000066",
-            } : undefined,
+            },
           }}
         >
           {options.map((option, index) => (
