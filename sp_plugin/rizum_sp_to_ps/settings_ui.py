@@ -26,7 +26,7 @@ PSD_SIZE_OPTIONS = [
     ("8K", 8192),
 ]
 RENDER_SCALE_OPTIONS = [("1\u00d7", 1), ("2\u00d7", 2), ("4\u00d7", 4)]
-RENDER_SCALE_HINT = "Renders larger, then scales down"
+RENDER_SCALE_HINT = "Supersampling"
 
 
 def _section_label(QtWidgets, text):
@@ -555,11 +555,10 @@ class SettingsDialog:
         self.psd_size.setFixedWidth(126)
         psd_size_row, psd_size_layout = _settings_frame_row(
             self.QtWidgets,
-            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+            PAINTER_SETTINGS_LAYOUT.row_height.design,
         )
         self._settings_rows.append(psd_size_row)
-        self.psd_size_texts = self._make_text_block("PSD size", "Default for exports")
-        psd_size_layout.addWidget(self.psd_size_texts)
+        psd_size_layout.addWidget(_settings_label(self.QtWidgets, "PSD size", "RizumSettingsItemName"))
         psd_size_layout.addStretch(1)
         psd_size_layout.addWidget(self.psd_size)
         body_layout.addWidget(psd_size_row)

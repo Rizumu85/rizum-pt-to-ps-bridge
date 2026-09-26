@@ -199,15 +199,25 @@ class ExportDialog:
         self.psd_size_combo.setObjectName("RizumExportPsdSize")
         self.render_scale_combo = make_combo_input(RENDER_SCALE_OPTIONS)
         self.render_scale_combo.setObjectName("RizumExportRenderScale")
-        # Each combo names itself, so the row needs no separate labels.
-        self.psd_size_combo.setDisplayParts("PSD size", PSD_SIZE_OPTIONS[0][0])
-        self.render_scale_combo.setDisplayParts("Render at", RENDER_SCALE_OPTIONS[0][0])
-        self.render_scale_combo.setToolTip(
-            "Painter renders this many times the PSD size, smooths edges there, "
-            "then scales down: sharper on small UV islands, slower."
-        )
+        # Short muted labels in the dialog's own colours: the combo's built-in
+        # prefix used the kit's fixed greys, which read off against the
+        # Painter dialog palette.
+        self.psd_size_label = self.QtWidgets.QLabel("Size")
+        self.psd_size_label.setObjectName("RizumExportOptionLabel")
+        self.render_scale_label = self.QtWidgets.QLabel("Render")
+        self.render_scale_label.setObjectName("RizumExportOptionLabel")
+        for widget in (self.render_scale_label, self.render_scale_combo):
+            widget.setToolTip(
+                "Supersampling: Painter renders this many times the PSD size, "
+                "smooths edges there, then scales down."
+            )
         self.size_controls = make_compact_action_bar(
-            [self.psd_size_combo, self.render_scale_combo],
+            [
+                self.psd_size_label,
+                self.psd_size_combo,
+                self.render_scale_label,
+                self.render_scale_combo,
+            ],
             None,
             object_name="RizumExportSizeControls",
             height=PAINTER_SETTINGS_LAYOUT.row_height.design,
@@ -739,6 +749,11 @@ class ExportDialog:
             + f"""
 QFrame#RizumPainterSettingsSurface {{
     background: {theme["surface"]};
+}}
+QLabel#RizumExportOptionLabel {{
+    color: {theme["muted"]};
+    background: transparent;
+    font-size: {item_px}px;
 }}
 
 QWidget#RizumExportTopControls,
