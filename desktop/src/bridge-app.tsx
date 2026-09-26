@@ -495,13 +495,12 @@ export function BridgeApp({
             }
           />
           <div style={{ flexGrow: 1 }} />
-          <IconAction icon="reset" label="Reset mapping" disabled={busy || !hasChanges} onClick={reset} />
+          <IconAction icon="eraser" label="Reset mapping" testId="action:reset" disabled={busy || !hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
           <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ApplyAction
-            count={bridge.mappings.length}
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
             onClick={apply}
           />

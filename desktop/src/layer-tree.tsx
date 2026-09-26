@@ -36,6 +36,7 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
           style={{
             width: 20,
             height: 20,
+            marginTop: 1,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -46,8 +47,10 @@ function LayerThumbnail({ node }: { node: LayerNode }) {
       ) : (
         <div
           style={{
+            // Centred in the 22px slot that leaves room for the mask tile.
             width: 20,
             height: 20,
+            marginTop: 1,
             overflow: "hidden",
             borderRadius: 3,
             borderWidth: 1,
@@ -312,7 +315,8 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
             active: node.locked ? undefined : { cursor: "grabbing" } }}
         >
           <LayerThumbnail node={node} />
-          <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column" }}>
+          {/* MiSans sits low in its line box; the padding lifts the text to the thumbnail's centre. */}
+          <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", paddingBottom: 2 }}>
             {/* Explicit line heights: the default leading stacked two lines taller than the row. */}
             <PrimaryText lineHeight={16}>{node.name}</PrimaryText>
             {mapped || node.locked || node.note ? <text style={{

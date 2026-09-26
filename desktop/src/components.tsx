@@ -24,7 +24,8 @@ import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
 import iconFolder from "../../icons/folder.svg" with { type: "text" }
 import iconRedo from "../../icons/redo.svg" with { type: "text" }
 import iconRefresh from "../../icons/refresh.svg" with { type: "text" }
-import iconReset from "../../icons/reset.svg" with { type: "text" }
+import iconEraser from "../../icons/eraser.svg" with { type: "text" }
+import iconHelp from "../../icons/help.svg" with { type: "text" }
 import iconUndo from "../../icons/undo.svg" with { type: "text" }
 import iconX from "../../icons/x.svg" with { type: "text" }
 
@@ -41,7 +42,9 @@ const icons = {
   folder: iconFolder,
   redo: iconRedo,
   refresh: iconRefresh,
-  reset: iconReset,
+  // Reset mapping clears pending work; a circular arrow read as Reload PSD.
+  eraser: iconEraser,
+  help: iconHelp,
   undo: iconUndo,
   x: iconX,
   paintLayer: iconPaintLayer,
@@ -460,9 +463,10 @@ export function IconAction({
 
 /**
  * Apply is the one commit in the mapper, so it is a labelled primary button
- * with the pending count instead of another toolbar glyph.
+ * instead of another toolbar glyph. The pending count lives in the status
+ * line; in the label it made the button's width jump with every drop.
  */
-export function ApplyAction({ count, disabled, onClick }: { count: number; disabled: boolean; onClick: () => void }) {
+export function ApplyAction({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
   return (
     <div
       testId="apply-mapping"
@@ -478,6 +482,8 @@ export function ApplyAction({ count, disabled, onClick }: { count: number; disab
         height: 28,
         paddingLeft: 14,
         paddingRight: 14,
+        // MiSans sits low in its line box; this centres the word optically.
+        paddingBottom: 3,
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
@@ -514,7 +520,7 @@ export function ApplyAction({ count, disabled, onClick }: { count: number; disab
         fontSize: typography.primarySize,
         fontWeight: 600,
         whiteSpace: "nowrap",
-      }}>{count > 0 ? `Apply ${count}` : "Apply"}</text>
+      }}>Apply</text>
     </div>
   )
 }
@@ -578,34 +584,14 @@ export function MappingHelpPopover() {
 
   return (
     <div style={{ position: "relative", display: "flex", flexShrink: 0 }}>
-      <div
+      {/* The same icon button as the Photoshop header's actions: a smaller,
+          fainter "?" beside them read as a mismatch, not as quieter help. */}
+      <IconAction
+        icon="help"
+        label="How mapping works"
         testId="mapping-help-trigger"
-        aria-label="How mapping works"
         onClick={() => setOpen((current) => !current)}
-        style={{
-          width: 18,
-          height: 18,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: 4,
-          opacity: 0.72,
-          cursor: "pointer",
-          hover: { opacity: 1, backgroundColor: colors.controlHover },
-          active: { backgroundColor: colors.controlActive },
-        }}
-      >
-        <text
-          style={{
-            color: colors.secondary,
-            fontFamily: typography.family,
-            fontSize: 11,
-            fontWeight: 600,
-          }}
-        >
-          ?
-        </text>
-      </div>
+      />
       <AnimatePresence>{open ? (
         <anchored
           key="help"

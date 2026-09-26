@@ -317,7 +317,7 @@ describe("Painter context selectors", () => {
       await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
       await new Promise(resolve => setTimeout(resolve, 100))
       await app.mouse.up(app.getByText("Working"))
-      expect(await app.getByText("Apply 1").count()).toBe(1)
+      expect(await app.getByText("1 pending transfer").count()).toBe(1)
       await app.getByTestId("reload-photoshop").click()
       expect(reload).not.toHaveBeenCalled()
       expect(await app.getByText("Apply or reset pending transfers before changing documents.").count()).toBe(1)
