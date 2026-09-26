@@ -530,6 +530,7 @@ function requestNodes(values: unknown[], parentPath: string, channel: string): L
         hasMask: Boolean(node.mask_asset) || node.has_mask === true,
       },
       children: isGroup ? requestNodes(childValues, nodePath, channel) : undefined,
+      ...(isGroup ? { open: node.collapsed !== true } : {}),
     } satisfies LayerNode
   })
 }

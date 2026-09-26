@@ -1044,6 +1044,9 @@ def _node_record(node, channel_types, settings):
         record.update(_mask_record(node))
     if hasattr(node, "get_geometry_mask"):
         record["geometry_mask"] = _geometry_mask_record(node)
+    if hasattr(node, "is_collapsed"):
+        # Bridge opens folders the way Painter's layer stack shows them.
+        record["collapsed"] = bool(_call_or_attr(node, "is_collapsed", False))
     if hasattr(node, "sub_layers"):
         record["children"] = [
             _node_record(child, channel_types, settings)

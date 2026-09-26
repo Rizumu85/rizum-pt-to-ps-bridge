@@ -39,6 +39,8 @@ export type LayerNode = {
   mergedIntoBase?: boolean
   ref: HostLayerRef
   children?: LayerNode[]
+  /** A folder is shown open where its host shows it open; unknown is open. */
+  open?: boolean
 }
 
 export type TransferMapping = {

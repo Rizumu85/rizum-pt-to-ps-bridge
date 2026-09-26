@@ -131,6 +131,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
     if (layer.children) {
       node.detail = "Group"
       node.children = layerNodes(document, layer.children, layerPath, indexPath)
+      node.open = layer.opened !== false
     }
     return { layer, node }
   })

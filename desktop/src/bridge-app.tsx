@@ -715,11 +715,13 @@ function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string>
   return notes
 }
 
+// Folders open as Painter and Photoshop show them, so a long stack the
+// artist keeps folded does not arrive fully expanded.
 function collectExpandedIds(state: BridgeState): Set<string> {
   const ids = new Set<string>()
   const visit = (nodes: LayerNode[]) => {
     for (const node of nodes) {
-      if (node.kind === "group") ids.add(node.id)
+      if (node.kind === "group" && node.open !== false) ids.add(node.id)
       if (node.children) visit(node.children)
     }
   }
