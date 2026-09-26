@@ -48,10 +48,7 @@ __RIZUM_MASK_RUNTIME__
             var item = request.layers[index];
             try {
                 var target = targets[index];
-                // A folder dropped inside a group is created in it: Photoshop
-                // cannot move a folder into a folder.
-                var parent = isGroup(item) && item.insertion === "inside" ? target : document;
-                var placed = createLayer(document, parent, item, progress);
+                var placed = createLayer(document, document, item, progress);
                 step(item, "moving it to its mapped place", function () { moveMappedLayer(placed, target, item); });
                 // A mapped Painter folder stays a folder: its layers are placed
                 // only after the folder sits at its destination.
@@ -330,17 +327,30 @@ __RIZUM_MASK_RUNTIME__
         // Replay each drop exactly as the desktop preview: group drops append;
         // repeated drops on one layer insert right above or below that layer.
         if (item.insertion === "inside") {
-            if (!isGroup(item)) {
+            if (isGroup(item)) {
+                appendFolder(layer, target);
+            } else {
                 layer.move(target, ElementPlacement.PLACEATEND);
-            } else if (target.layers.length > 1) {
-                // Created at the top of the group; a move beside its last
-                // layer is the one kind Photoshop allows a folder.
-                layer.move(target.layers[target.layers.length - 1], ElementPlacement.PLACEAFTER);
             }
         } else if (item.insertion === "before") {
             layer.move(target, ElementPlacement.PLACEBEFORE);
         } else {
             layer.move(target, ElementPlacement.PLACEAFTER);
+        }
+    }
+
+    // Photoshop refuses to move a folder into a folder, and a folder created
+    // in the group or moved beside its last child left the group: a Painter
+    // folder dropped into "Alpha" landed after it. A layer can go to a
+    // group's end, and a folder can go beside a layer, so a temporary layer
+    // at the end holds the place the folder moves in front of.
+    function appendFolder(folder, group) {
+        var anchor = group.artLayers.add();
+        try {
+            anchor.move(group, ElementPlacement.PLACEATEND);
+            folder.move(anchor, ElementPlacement.PLACEBEFORE);
+        } finally {
+            anchor.remove();
         }
     }
 
