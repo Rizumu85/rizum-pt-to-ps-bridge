@@ -5,6 +5,7 @@ from __future__ import annotations
 import codecs
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -327,6 +328,11 @@ class DesktopBridgeController:
             self._photoshop_job_failed(message)
             return
         self._trace("photoshop_transfer_ready", str(count))
+        if payload.get("saved") is True and self.panel.user_settings.get("cleanup_layer_pngs", True):
+            # Photoshop saved the inserted layers into the PSD, so the PNGs
+            # rendered for them are no longer needed. A failed or unsaved
+            # insert keeps them for a retry or a look.
+            shutil.rmtree(desktop_transfer.transfer_assets_dir(transfer.photoshop_launch), ignore_errors=True)
         self._clear_photoshop_export()
         warnings = list(transfer.warnings) + [str(value) for value in payload.get("warnings", [])]
         if payload.get("saved") is not True and not payload.get("warnings"):

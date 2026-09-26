@@ -93,9 +93,12 @@
         }
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
-        if (result.errors.length === 0) {
+        var cleanup = !exportList || !exportList.settings
+            || exportList.settings.cleanup_layer_pngs !== false;
+        if (result.errors.length === 0 && cleanup) {
             // PSDs live beside the temporary bundle folders, so a fully
             // successful build can leave the user's export directory PSD-only.
+            // Users who keep the layer PNGs turn "Clean up layer PNGs" off.
             cleanupSuccessfulExport(exportListPath, requestPaths);
         }
         writeResult(resultPath, exportListPath, result);

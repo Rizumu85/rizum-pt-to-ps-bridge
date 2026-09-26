@@ -116,6 +116,8 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         ]
 
         self.assertIn("cleanupSuccessfulExport", finally_block)
+        # "Clean up layer PNGs" off keeps the bundles beside the PSDs.
+        self.assertIn("cleanup_layer_pngs !== false", finally_block)
         self.assertIn("removeFolderTree(bundle)", cleanup)
         self.assertIn("removeFileIfPresent(File(exportListPath))", cleanup)
         self.assertIn("removeFileIfPresent(File($.fileName))", cleanup)

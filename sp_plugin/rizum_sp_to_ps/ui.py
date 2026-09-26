@@ -424,6 +424,9 @@ class BridgePanel:
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
             "bit_depth": bit_depth,
             "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
+            # On by default: a finished PSD holds the pixels, and 4K PNGs per
+            # layer filled the export folder with copies nobody opens.
+            "cleanup_layer_pngs": to_bool(store.value("cleanup_layer_pngs", True)),
         }
 
     def save_user_settings(self, values):
@@ -433,6 +436,7 @@ class BridgePanel:
         store.setValue("dilation", int(values.get("dilation") or 8))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
+        store.setValue("cleanup_layer_pngs", bool(values.get("cleanup_layer_pngs", True)))
         bit_depth = values.get("bit_depth")
         if bit_depth:
             store.setValue("bit_depth", int(bit_depth))
@@ -601,6 +605,7 @@ class BridgePanel:
                 "stacks": settings.get("stacks"),
                 "channels": settings.get("channels"),
                 "export_uv_map": bool(settings.get("export_uv_map")),
+                "cleanup_layer_pngs": bool(settings.get("cleanup_layer_pngs", True)),
             },
             "build_requests": [
                 {

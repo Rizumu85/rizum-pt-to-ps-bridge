@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -314,6 +315,11 @@ class _NullContext:
         return False
 
 
+def transfer_assets_dir(launch):
+    """The PNGs rendered for one Photoshop insert, beside its request."""
+    return Path(launch.request_path).parent / "assets"
+
+
 def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
     if not plan.photoshop_exports:
         return None
@@ -328,6 +334,9 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
         context["udim"] = target_udim
 
     output_dir = plan.manifest_path.parent / "painter_to_photoshop"
+    # Each Apply renders its own sources; a previous Apply's PNGs are never
+    # read again, so they must not pile up beside this one.
+    shutil.rmtree(output_dir / "assets", ignore_errors=True)
     rendered = exporter.export_desktop_nodes(
         output_dir / "assets",
         context,
