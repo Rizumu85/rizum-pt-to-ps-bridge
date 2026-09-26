@@ -481,11 +481,11 @@ describe("Painter context selectors", () => {
       testRoot.renderer.flush()
 
       expect(await app.getByText("Drop Photoshop layers here to map").count()).toBe(0)
-      expect(await app.getByText("Map between hosts").count()).toBe(0)
+      expect(await app.getByText("How mapping works").count()).toBe(0)
 
       await app.getByTestId("mapping-help-trigger").click()
-      expect(await app.getByText("Map between hosts").count()).toBeGreaterThan(0)
-      expect(await app.getByText("Upper part of a row: place above it").count()).toBeGreaterThan(0)
+      expect(await app.getByText("How mapping works").count()).toBeGreaterThan(0)
+      expect(await app.getByText("Drop onto a folder to put them inside.").count()).toBeGreaterThan(0)
     } finally {
       testRoot.unmount()
       await app.close()

@@ -571,7 +571,8 @@ function PopoverText({ children }: { children: React.ReactNode }) {
         fontFamily: typography.family,
         fontSize: typography.secondarySize,
         fontWeight: typography.secondaryWeight,
-        whiteSpace: "nowrap",
+        // Sentences wrap inside the popover's fixed width instead of running past it.
+        whiteSpace: "normal",
       }}
     >
       {children}
@@ -636,11 +637,11 @@ export function MappingHelpPopover() {
               },
             }}
           >
-            <PrimaryText>Map between hosts</PrimaryText>
-            <PopoverText>Drag a native layer onto the other host.</PopoverText>
-            <PopoverText>Upper part of a row: place above it</PopoverText>
-            <PopoverText>Lower part: below it, or inside a group</PopoverText>
-            <PopoverText>Apply transfers them and refreshes both trees.</PopoverText>
+            <PrimaryText>How mapping works</PrimaryText>
+            <PopoverText>Drag layers from one side to the other.</PopoverText>
+            <PopoverText>Aim at the top of a row to place them above it, or lower to place them below.</PopoverText>
+            <PopoverText>Drop onto a folder to put them inside.</PopoverText>
+            <PopoverText>Nothing is copied until you press Apply.</PopoverText>
           </motion.div>
         </anchored>
       ) : null}</AnimatePresence>
