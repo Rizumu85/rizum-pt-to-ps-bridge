@@ -588,7 +588,8 @@ class SettingsDialog:
         self.path_field.setObjectName("RizumSettingsMockSelect")
         self.path_field.setFixedHeight(PAINTER_SETTINGS_LAYOUT.control_height.design)
         path_layout = self.QtWidgets.QHBoxLayout(self.path_field)
-        path_layout.setContentsMargins(8, 0, 8, 0)
+        # No inset: the path text starts on the same edge as every row label.
+        path_layout.setContentsMargins(0, 0, 0, 0)
         path_layout.setSpacing(6)
         self.photoshop_path = self.QtWidgets.QLineEdit()
         self.photoshop_path.setObjectName("RizumSettingsPathInput")
@@ -850,8 +851,9 @@ class SettingsDialog:
 
         self.path_field.setFixedHeight(control_height)
         self.photoshop_path.setFixedHeight(max(15, control_height - metric(8, 6)))
-        browse_size = metric(26)
-        self.browse_button.setFixedSize(browse_size, browse_size)
+        # The icon's right edge lands where the toggles and slider end, so the
+        # button is only as wide as its icon; a wide button centred it inward.
+        self.browse_button.setFixedSize(metric(16), metric(26))
         if hasattr(self.browse_button, "setPaintedIconSize"):
             self.browse_button.setPaintedIconSize(metric(14))
         if hasattr(self.browse_button, "setCompactTooltipScale"):
@@ -993,6 +995,8 @@ QPushButton[variant="icon"]:pressed {{
         try:
             settings = self.panel.user_settings
             self.photoshop_path.setText(settings.get("photoshop_path") or "")
+            # Show the path's start (drive and Photoshop version), not its end.
+            self.photoshop_path.setCursorPosition(0)
             self._sync_photoshop_hint()
             self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
             self.dilation_stepper.setValue(
@@ -1039,6 +1043,7 @@ QPushButton[variant="icon"]:pressed {{
         )
         if path:
             self.photoshop_path.setText(path)
+            self.photoshop_path.setCursorPosition(0)
             self._save_live()
 
     def _sync_photoshop_hint(self, *_args):
