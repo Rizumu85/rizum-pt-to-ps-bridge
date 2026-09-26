@@ -233,6 +233,7 @@ export function ContextSelect({
   value,
   options,
   width,
+  minWidth,
   busy = false,
   onValueChange,
 }: {
@@ -240,6 +241,9 @@ export function ContextSelect({
   value: string
   options: ContextOption[]
   width: number
+  /** Lets the select give way down to this width in a narrow window, its
+   *  value ending in an ellipsis, so the toolbar never pushes Apply out. */
+  minWidth?: number
   busy?: boolean
   onValueChange: (value: string) => void
 }) {
@@ -284,12 +288,12 @@ export function ContextSelect({
       onOpenChange={setOpen}
       onValueChange={onValueChange}
       disabled={disabled}
-      style={{ flexShrink: 0 }}
+      style={{ flexShrink: minWidth === undefined ? 0 : 1, width, minWidth: minWidth ?? width }}
     >
       <SelectTrigger
         testId={`context-select:${label}`}
         style={{
-          width,
+          width: "100%",
           height: 26,
           paddingLeft: 9,
           paddingRight: 9,

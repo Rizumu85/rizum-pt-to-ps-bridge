@@ -12,6 +12,25 @@ import { writeFeaturePsd } from "./test-psd"
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
 describe("Painter context selectors", () => {
+  it("keeps Apply inside a window at its minimum width by narrowing the selects", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const root = createTestRoot({ width: 560, height: 480 })
+    const app = await connectTest(root.renderer)
+    try {
+      root.render(<BridgeApp session={session} onConnectPhotoshop={async () => null}
+        onApply={async () => ({ session: null, message: "", failed: false })} />)
+      root.renderer.flush()
+      const apply = await app.getByTestId("apply-mapping").bounds()
+      const stack = await app.getByTestId("context-select:Texture Set:").bounds()
+      expect(apply.x + apply.width).toBeLessThanOrEqual(560 - 15)
+      expect(stack.width).toBeLessThan(176)
+      expect(stack.width).toBeGreaterThanOrEqual(104)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("shows counted Apply progress, host waits, and dismisses on failure without losing mappings", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),

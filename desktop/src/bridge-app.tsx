@@ -80,7 +80,7 @@ export function BridgeApp({
   const [applySteps, setApplySteps] = useState<ApplyStage[]>([])
   const [renderScale, setRenderScale] = useState<RenderScale>(defaultRenderScale)
   const scaleOptions = useMemo(() => renderScalesFor(session.photoshop).map(scale => ({
-    value: String(scale), label: scale === 1 ? "PSD size" : `${scale}\u00d7 PSD`,
+    value: String(scale), label: `${scale}\u00d7`,
   })), [session.photoshop])
   // A PSD too large for a scale offers only what Painter can render.
   const appliedScale = renderScalesFor(session.photoshop).includes(renderScale) ? renderScale : 1
@@ -524,6 +524,7 @@ export function BridgeApp({
             value={activeStackId}
             options={painterStackOptions}
             width={176}
+            minWidth={104}
             busy={busy}
             onValueChange={changePainterStack}
           />
@@ -532,6 +533,7 @@ export function BridgeApp({
             value={activePainterContextId}
             options={channelOptions}
             width={152}
+            minWidth={96}
             busy={busy}
             onValueChange={(contextId) =>
               switchPainterContext(
@@ -549,7 +551,7 @@ export function BridgeApp({
             label="Render:"
             value={String(appliedScale)}
             options={scaleOptions}
-            width={132}
+            width={96}
             busy={busy}
             onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
           />
