@@ -154,9 +154,12 @@ export function transferBetweenHosts(
   const sourceNodes = state[hostCollection(sourceHost)]
   const targetNodes = state[hostCollection(targetHost)]
   const target = findNode(targetNodes, targetId)
-  if (!target || target.ref.host !== targetHost) return state
-  const place = placement ?? defaultPlacement(target)
-  if (place === "inside" && target.kind !== "group") return state
+  if (!target || targetId === sourceId) return state
+  const staged = stagedMapping(state, target, targetHost)
+  if (target.ref.host !== targetHost && !staged) return state
+  const place = placement ?? (staged ? "after" : defaultPlacement(target))
+  // A staged folder does not exist in its target host yet, so nothing can go inside it.
+  if (place === "inside" && (staged || target.kind !== "group")) return state
   const remapping = state.mappings.some(mapping => mapping.sourceId === sourceId)
   // A host target cannot also be moved out of the staging tree: its dependent
   // transfers would no longer have the destination shown in the preview.
@@ -171,21 +174,31 @@ export function transferBetweenHosts(
   const direction: TransferDirection =
     sourceHost === "photoshop" ? "photoshop_to_painter" : "painter_to_photoshop"
 
+  const others = state.mappings.filter(mapping => mapping.sourceId !== sourceId)
+  const record: TransferMapping = staged
+    // A staged row does not exist in its target host until Apply, so a drop
+    // beside it takes the same host anchor and is ordered against it. Rows on
+    // one anchor are inserted in mapping order: "before" and "inside" stack in
+    // that order, "after" in reverse, in both Painter and Photoshop.
+    ? { direction, sourceId, targetId: staged.targetId, placement: staged.placement, source: removed.ref, target: staged.target }
+    : { direction, sourceId, targetId, placement: place, source: removed.ref, target: target.ref }
+  let index = others.length
+  if (staged) {
+    const at = others.indexOf(staged)
+    index = (place === "before") === (staged.placement !== "after") ? at : at + 1
+  }
+
   return {
     photoshop: sourceHost === "photoshop" ? remainingSource : nextTarget,
     painter: sourceHost === "substance_painter" ? remainingSource : nextTarget,
-    mappings: [
-      ...state.mappings.filter(mapping => mapping.sourceId !== sourceId),
-      {
-        direction,
-        sourceId,
-        targetId,
-        placement: place,
-        source: removed.ref,
-        target: target.ref,
-      },
-    ],
+    mappings: [...others.slice(0, index), record, ...others.slice(index)],
   }
+}
+
+/** The mapping that staged this row in the target host, when the row is a staged root. */
+export function stagedMapping(state: BridgeState, node: LayerNode, host: HostId): TransferMapping | null {
+  if (node.ref.host === host) return null
+  return state.mappings.find(mapping => mapping.sourceId === node.id) ?? null
 }
 
 export function removeFromHost(
@@ -222,10 +235,14 @@ export function transferSelection(
   targetId: string,
   placement?: Placement,
 ): BridgeState {
-  const target = findNode(state.photoshop, targetId) ?? findNode(state.painter, targetId)
+  // The panel holding the target decides the direction, not the target's own
+  // host: a row staged by an earlier drop sits in the other host's panel.
+  const inPainter = findNode(state.painter, targetId)
+  const target = inPainter ?? findNode(state.photoshop, targetId)
   if (!target) return state
-  const place = placement ?? defaultPlacement(target)
-  const sourceHost = target.ref.host === "photoshop" ? "substance_painter" : "photoshop"
+  const targetHost: HostId = inPainter ? "substance_painter" : "photoshop"
+  const place = placement ?? (stagedMapping(state, target, targetHost) ? "after" : defaultPlacement(target))
+  const sourceHost = targetHost === "photoshop" ? "substance_painter" : "photoshop"
   const roots = selectionRoots(state, sourceHost, sourceIds).map(node => node.id)
   // After-drops insert against the same anchor; replay bottom-up to preserve
   // the user's top-to-bottom selection order as one undoable batch.

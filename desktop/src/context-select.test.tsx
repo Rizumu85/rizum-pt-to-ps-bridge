@@ -454,7 +454,7 @@ describe("Painter context selectors", () => {
 
       await app.getByTestId("mapping-help-trigger").click()
       expect(await app.getByText("Map between hosts").count()).toBeGreaterThan(0)
-      expect(await app.getByText("Group: place inside").count()).toBeGreaterThan(0)
+      expect(await app.getByText("Upper part of a row: place above it").count()).toBeGreaterThan(0)
     } finally {
       testRoot.unmount()
       await app.close()

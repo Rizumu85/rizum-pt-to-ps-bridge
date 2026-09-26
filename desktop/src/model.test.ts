@@ -44,6 +44,41 @@ function fixture(): BridgeState {
   }
 }
 
+/**
+ * Replays mappings the way Painter and Photoshop insert them at the top level:
+ * in mapping order, directly above, directly below, or appended inside a target.
+ */
+function applied(natives: LayerNode[], mappings: BridgeState["mappings"]): string[] {
+  const order = natives.map(node => node.id)
+  for (const mapping of mappings) {
+    const at = order.indexOf(mapping.targetId)
+    order.splice(mapping.placement === "before" ? at : at + 1, 0, mapping.sourceId)
+  }
+  return order
+}
+
+describe("drops beside rows staged by an earlier drop", () => {
+  const top = "substance_painter:maskout"
+  it.each([
+    ["before", "before", ["photoshop:color", "photoshop:paint", top]],
+    ["before", "after", ["photoshop:paint", "photoshop:color", top]],
+    ["after", "before", [top, "photoshop:color", "photoshop:paint"]],
+    ["after", "after", [top, "photoshop:paint", "photoshop:color"]],
+  ] as const)("a first drop %s the top layer, then one %s it, apply in the previewed order", (first, second, expected) => {
+    const staged = transferBetweenHosts(fixture(), "photoshop:paint", top, first)
+    const next = transferBetweenHosts(staged, "photoshop:color", "photoshop:paint", second)
+    const previewed = next.painter.map(node => node.id).filter(id => id !== "substance_painter:working")
+    expect(previewed).toEqual(expected)
+    expect(next.mappings.every(mapping => mapping.targetId === top)).toBe(true)
+    expect(applied([findNode(fixture().painter, top)!], next.mappings)).toEqual(expected)
+  })
+
+  it("cannot drop inside a staged folder, which the target host does not have yet", () => {
+    const staged = transferBetweenHosts(fixture(), "photoshop:group", "substance_painter:maskout", "before")
+    expect(transferBetweenHosts(staged, "photoshop:cleanup", "photoshop:group", "inside")).toBe(staged)
+  })
+})
+
 describe("transferBetweenHosts", () => {
   it("indexes staged nodes by current panel without changing their source identity", () => {
     const state = transferBetweenHosts(fixture(), "photoshop:paint", "substance_painter:working")

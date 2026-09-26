@@ -225,7 +225,9 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
   const selected = !leaving && selectedIds.has(node.id)
   const draggingHost = usePointer(pointer, state => state.hoveredId === node.id || state.dropTargetId === node.id || selected ? state.draggingHost : null)
   const dragging = draggingHost !== null
-  const acceptsDrop = nativeNode && draggingHost !== null && draggingHost !== host
+  // Native rows and rows staged here by an earlier drop both take drops.
+  const dropCandidate = nativeNode || (!leaving && mappedIds.has(node.id))
+  const acceptsDrop = dropCandidate && draggingHost !== null && draggingHost !== host
   const placement = usePointer(pointer, state => state.dropTargetId === node.id ? state.dropPlacement : null)
   const dropAt = acceptsDrop ? placement : null
   const boundsCache = useContext(RowBoundsContext)!
@@ -237,7 +239,7 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
   const readBounds = (fresh = false) => header.current ? boundsCache.read(header.current.id, fresh) : null
   const release = (event: EventPayload) => {
     const current = pointer.get()
-    if (nativeNode && current.draggingId && current.draggingHost !== host) {
+    if (dropCandidate && current.draggingId && current.draggingHost !== host) {
       // A wheel event or window resize can race the last move. The final drop
       // uses fresh geometry, without forcing every intermediate move to read it.
       onPointerMove({ ...event, pressedButton: 0 }, node.id, () => readBounds(true))

@@ -14,6 +14,7 @@ import {
   indexLayerTrees,
   defaultPlacement,
   removeFromHost,
+  stagedMapping,
   selectionRoots,
   transferSelection,
   selectLayerIds,
@@ -182,14 +183,19 @@ export function BridgeApp({
     // first move can already be in the gutter. Only row events choose a drop.
     if (!rowId) return
     const target = layerIndex.get(rowId)
-    const dropTargetId = target && target.node.ref.host === target.host && source.ref.host !== target.host ? target.node.id : null
+    // A row staged by an earlier drop takes drops above or below it, so the
+    // top of a list stays reachable after something was dropped there.
+    const staged = target ? stagedMapping(bridge, target.node, target.host) : null
+    const dropTargetId = target && source.ref.host !== target.host && target.node.id !== source.id
+      && (target.node.ref.host === target.host || staged) ? target.node.id : null
     let placement: Placement | null = null
     if (target && dropTargetId) {
-      placement = defaultPlacement(target.node)
+      placement = staged ? "after" : defaultPlacement(target.node)
       const box = readBounds?.()
       if (box && box.height > 0 && event.y !== undefined) {
         const share = (event.y - box.y) / box.height
-        placement = target.node.kind === "group" ? share < 0.3 ? "before" : "inside" : share < 0.4 ? "before" : "after"
+        placement = staged ? share < 0.5 ? "before" : "after"
+          : target.node.kind === "group" ? share < 0.3 ? "before" : "inside" : share < 0.4 ? "before" : "after"
       }
     }
     treePointer.set({

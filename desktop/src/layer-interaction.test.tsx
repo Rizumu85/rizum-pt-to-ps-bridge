@@ -255,6 +255,35 @@ describe("layer tree interaction", () => {
     } finally { await close() }
   })
 
+  it("drops above a layer staged at the top, and applies that order", async () => {
+    const { app, root, apply, close } = await setup()
+    const dropOnUpperHalf = async (source: string, targetId: string) => {
+      const row = await app.getByTestId(`layer-row:${targetId}`).bounds()
+      const point = { x: row.x + row.width / 2, y: row.y + row.height * 0.2 }
+      await app.mouse.down(app.getByText(source))
+      await app.mouse.move(point, { pressedButton: 0 })
+      await app.mouse.up(point)
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      root.renderer.dispatchNativeEvents()
+    }
+    try {
+      await dropOnUpperHalf("Paint edit", "substance_painter:sp-locator")
+      await dropOnUpperHalf("Color pass", "photoshop:ps:100")
+      const first = await app.getByTestId("layer-row:photoshop:ps:101").bounds()
+      const second = await app.getByTestId("layer-row:photoshop:ps:100").bounds()
+      const locator = await app.getByTestId("layer-row:substance_painter:sp-locator").bounds()
+      expect(first.y).toBeLessThan(second.y)
+      expect(second.y).toBeLessThan(locator.y)
+      await app.getByTestId("apply-mapping").click()
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      const mappings = apply.mock.calls[0][0].mappings
+      expect(mappings.map((mapping: { sourceId: string }) => mapping.sourceId)).toEqual(["photoshop:ps:101", "photoshop:ps:100"])
+      expect(mappings.every((mapping: { targetId: string; placement: string }) =>
+        mapping.targetId === "substance_painter:sp-locator" && mapping.placement === "before")).toBe(true)
+    } finally { await close() }
+  })
+
   it("does not dim a pressed row before the drag threshold or leave insertion lines after clicks", async () => {
     const { app, root, close } = await setup()
     try {
