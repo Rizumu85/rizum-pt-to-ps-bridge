@@ -263,7 +263,12 @@ class GeometryMaskBaker:
             image.fill(black)
 
         painter = QtGui.QPainter(image)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        # Rasterize hard. Anti-aliased, the black island fill and the white
+        # selection fill blended twice along the same edge and left it darker
+        # than the white padding around it, a faint line in Photoshop. The
+        # mask PNG is edge-smoothed afterwards like every payload, so it is
+        # anti-aliased once, at the user's smoothing strength.
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
         dilation = max(0, int(dilation or 0))
         if padding_mode != "infinite" and dilation:
             # The Geometry Mask is generated outside mapexport, so reproduce

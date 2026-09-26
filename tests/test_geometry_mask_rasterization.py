@@ -98,6 +98,27 @@ class GeometryMaskRasterizationTests(unittest.TestCase):
         self.assertEqual(QtGui.qRed(plain.pixel(16, 32)), 0)
         self.assertEqual(QtGui.qRed(dilated.pixel(16, 32)), 255)
 
+    def test_selected_island_edges_do_not_dip_between_white_areas(self):
+        # Filling every island black, then the selection white, left the
+        # island's anti-aliased edge darker than the white padding around it:
+        # a faint line inside the layer's silhouette in Photoshop.
+        baker = GeometryMaskBaker()
+        names = frozenset({"mesh"})
+        baker._faces = [
+            (names, "material", ((0.3, 0.3), (0.71, 0.33), (0.68, 0.7))),
+            (names, "material", ((0.3, 0.3), (0.68, 0.7), (0.32, 0.69))),
+        ]
+        for padding, dilation in (("Transparent", 6), ("Infinite", 0)):
+            png_bytes, _ = baker._rasterize(
+                {"mesh"}, {"material"}, {"u": 0, "v": 0}, 64, 64,
+                padding=padding, dilation=dilation,
+            )
+            image = QtGui.QImage.fromData(png_bytes, "PNG")
+            # Rows and columns crossing the island edge into the white padding.
+            across = [QtGui.qRed(image.pixel(x, 32)) for x in range(16, 48)]
+            across += [QtGui.qRed(image.pixel(32, y)) for y in range(16, 48)]
+            self.assertEqual(min(across), 255, padding)
+
     def test_infinite_padding_fills_empty_uv_space_but_not_excluded_meshes(self):
         baker = GeometryMaskBaker()
         baker._faces = [
