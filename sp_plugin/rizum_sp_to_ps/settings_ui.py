@@ -605,8 +605,7 @@ class SettingsDialog:
         self.path_field.setObjectName("RizumSettingsMockSelect")
         self.path_field.setFixedHeight(PAINTER_SETTINGS_LAYOUT.control_height.design)
         path_layout = self.QtWidgets.QHBoxLayout(self.path_field)
-        # No inset: the path text starts on the same edge as every row label.
-        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setContentsMargins(8, 0, 8, 0)
         path_layout.setSpacing(6)
         self.photoshop_path = self.QtWidgets.QLineEdit()
         self.photoshop_path.setObjectName("RizumSettingsPathInput")
@@ -878,9 +877,19 @@ class SettingsDialog:
 
         self.path_field.setFixedHeight(control_height)
         self.photoshop_path.setFixedHeight(max(15, control_height - metric(8, 6)))
-        # The icon's right edge lands where the toggles and slider end, so the
-        # button is only as wide as its icon; a wide button centred it inward.
-        self.browse_button.setFixedSize(metric(16), metric(26))
+        # QLineEdit centres the font's whole line box, which left the capitals
+        # of Painter's UI font below the folder icon's centre. Shift the text
+        # so cap height, what the eye aligns, sits on the field's centre.
+        path_metrics = self.photoshop_path.fontMetrics()
+        cap_offset = path_metrics.ascent() - path_metrics.descent() - path_metrics.capHeight()
+        self.photoshop_path.setTextMargins(
+            0,
+            max(0, -cap_offset),
+            0,
+            max(0, cap_offset),
+        )
+        browse_size = metric(26)
+        self.browse_button.setFixedSize(browse_size, browse_size)
         if hasattr(self.browse_button, "setPaintedIconSize"):
             self.browse_button.setPaintedIconSize(metric(14))
         if hasattr(self.browse_button, "setCompactTooltipScale"):
