@@ -309,7 +309,7 @@ describe("Painter context selectors", () => {
     const reload = vi.fn(async () => session)
     try {
       root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
-        onConnectPhotoshop={async () => null} onReloadPhotoshop={reload} />)
+        onConnectPhotoshop={async () => null} onLoadPhotoshop={reload} />)
       root.renderer.flush()
       expect(await app.getByText("Apply").count()).toBe(1)
       await app.mouse.down(app.getByText("Paint edit"))
@@ -323,7 +323,7 @@ describe("Painter context selectors", () => {
       expect(await app.getByText("Apply or reset pending transfers before changing documents.").count()).toBe(1)
       await app.getByTestId("action:reset").click()
       await app.getByTestId("reload-photoshop").click()
-      await vi.waitFor(() => expect(reload).toHaveBeenCalledWith(session))
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledWith(session, session.photoshop!.path))
     } finally { root.unmount(); await app.close() }
   })
 
@@ -431,6 +431,37 @@ describe("Painter context selectors", () => {
     }
   })
 
+  it("brings a target's own PSD along when the target changes, and keeps a shared one", async () => {
+    const psd = path.join(fixtureDir, "photoshop_document.psd")
+    const session = await loadBridgeSession({
+      photoshopDocument: psd,
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    })
+    // M_body uses the connected PSD on both channels; M_clothes has none yet.
+    for (const context of session.painterContexts) context.photoshopDocument = context.textureSet === "M_body" ? psd : null
+    const empty = { ...session, photoshop: null, state: { ...session.state, photoshop: [] }, photoshopSubtitle: "No document connected" }
+    const load = vi.fn(async () => empty)
+    const testRoot = createTestRoot({ width: 652, height: 484 })
+    const app = await connectTest(testRoot.renderer)
+    try {
+      testRoot.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })}
+        onConnectPhotoshop={async () => null} onLoadPhotoshop={load} />)
+      testRoot.renderer.flush()
+      await app.getByTestId("context-select:Channel:").click()
+      await app.getByTestId("context-option:Channel::1").click()
+      expect(load).not.toHaveBeenCalled()
+      expect(await app.getByText("Paint edit").count()).toBe(1)
+      await app.getByTestId("context-select:Texture Set:").click()
+      await app.getByTestId("context-option:Texture Set::1").click()
+      await vi.waitFor(() => expect(load).toHaveBeenCalledWith(session, null))
+      await vi.waitFor(async () => expect(await app.getByTestId("connect-photoshop").count()).toBe(1))
+      expect(await app.getByText("Fabric").count()).toBeGreaterThan(0)
+    } finally {
+      testRoot.unmount()
+      await app.close()
+    }
+  })
+
   it("keeps mapping instructions behind the help popover", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
@@ -489,7 +520,8 @@ describe("Painter context selectors", () => {
       await vi.waitFor(async () => expect(await app.getByText("Paint edit").count()).toBe(1))
       expect(await app.getByText("No document connected").count()).toBe(0)
       expect(await app.getByText("Locator").count()).toBeGreaterThan(0)
-      expect(connect).toHaveBeenCalledWith(session)
+      // The shown Painter target goes along, so Painter remembers the PSD for it.
+      expect(connect).toHaveBeenCalledWith(session, session.painterContexts.find(context => context.id === session.initialPainterContextId))
     } finally {
       testRoot.unmount()
       await app.close()

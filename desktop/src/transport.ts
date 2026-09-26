@@ -20,8 +20,11 @@ import {
 type JsonObject = Record<string, unknown>
 
 export type SessionOptions = {
-  photoshopDocument?: string
+  /** A document to open; null opens none; left out, the Painter target's own PSD. */
+  photoshopDocument?: string | null
   painterSnapshot?: string
+  /** Painter's map of which PSD each texture set or channel uses. */
+  documents?: string
   output?: string
 }
 
@@ -33,6 +36,8 @@ export type PainterContext = {
   channelLabel: string
   subtitle: string
   nodes: LayerNode[]
+  /** The PSD Painter remembers for this target, if any. */
+  photoshopDocument: string | null
 }
 
 export type BridgeSession = {
@@ -41,6 +46,7 @@ export type BridgeSession = {
   /** Normalized Photoshop blend modes Painter imports as-is; null for older snapshots. */
   importBlendModes: Set<string> | null
   targetSnapshotPath: string
+  documentsPath?: string
   outputPath: string
   photoshopSubtitle: string
   painterContexts: PainterContext[]
@@ -64,7 +70,7 @@ export function parseSessionOptions(
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]
     const value = argv[index + 1]
-    if (!["--psd", "--painter", "--output"].includes(flag)) {
+    if (!["--psd", "--painter", "--documents", "--output"].includes(flag)) {
       throw new Error(`Unknown desktop argument: ${flag}`)
     }
     if (!value || value.startsWith("--")) {
@@ -73,6 +79,7 @@ export function parseSessionOptions(
 
     if (flag === "--psd") values.photoshopDocument = value
     if (flag === "--painter") values.painterSnapshot = value
+    if (flag === "--documents") values.documents = value
     if (flag === "--output") values.output = value
     index += 1
   }
@@ -87,19 +94,22 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
   if (!options.painterSnapshot) throw new Error("Pass --painter <painter_snapshot.json> to open PT Bridge")
   const targetSnapshotPath = path.resolve(options.painterSnapshot)
   const target = await readJsonObject(targetSnapshotPath)
-  const photoshop = options.photoshopDocument
-    ? await readPhotoshopDocument(options.photoshopDocument)
-    : null
-  const contexts = painterContexts(target)
-  const sourceContext = photoshop ? await photoshopSidecar(photoshop.path) : {}
+  const contexts = painterContexts(target, options.documents ? await readDocumentMap(options.documents) : new Map())
   const active = objectValue(target.active_context)
   const activeContexts = contexts.filter(context =>
     context.textureSet === textValue(active.texture_set) && context.stack === textValue(active.stack))
-  // Painter's current working stack takes priority over the connected PSD's origin.
-  // Older snapshots have no active context and keep their document-based selection.
-  const initialContext = activeContexts.length
-    ? matchingPainterContext(activeContexts, sourceContext) ?? activeContexts[0]
-    : matchingPainterContext(contexts, sourceContext) ?? contexts[0]
+  const working = activeContexts.length ? activeContexts : contexts
+  // Painter's current working stack comes first. Opening without a named
+  // document takes that target's remembered PSD; a named one (just connected
+  // or reloaded) also picks the channel its PSD was exported from.
+  const documentPath = options.photoshopDocument === undefined
+    ? working[0]?.photoshopDocument ?? null
+    : options.photoshopDocument
+  const photoshop = documentPath ? await readPhotoshopDocument(documentPath) : null
+  const sourceContext = photoshop ? await photoshopSidecar(photoshop.path) : {}
+  const initialContext = options.photoshopDocument
+    ? matchingPainterContext(working, sourceContext) ?? working[0]
+    : working[0]
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
   const outputPath = path.resolve(
@@ -113,6 +123,7 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
       ? new Set(target.photoshop_blend_modes.map((mode) => normalizedBlendMode(String(mode))))
       : null,
     targetSnapshotPath,
+    documentsPath: options.documents ? path.resolve(options.documents) : undefined,
     outputPath,
     photoshopSubtitle: photoshop ? photoshop.name : "No document connected",
     painterContexts: contexts,
@@ -278,8 +289,9 @@ export async function applyTransfer(
   onProgress?.({ message: "Refreshing layer lists..." })
   const next = await loadBridgeSession({
     // Photoshop inserts are saved into the same file, so it is read again too.
-    photoshopDocument: session.photoshop?.path,
+    photoshopDocument: session.photoshop?.path ?? null,
     painterSnapshot: reply.snapshot,
+    documents: session.documentsPath,
     output: session.outputPath,
   })
   return { session: next, message: reply.message, failed }
@@ -289,14 +301,19 @@ export async function applyTransfer(
 export async function connectPhotoshop(
   session: BridgeSession,
   link: PainterLink,
+  context: PainterContext | null,
 ): Promise<BridgeSession | null> {
-  const reply = await link.request("connect_photoshop")
+  // Painter remembers the PSD for the target the mapper is showing.
+  const reply = await link.request("connect_photoshop", context
+    ? { texture_set: context.textureSet, stack: context.stack, channel: context.channel }
+    : {})
   if (reply.type === "photoshop_connect_cancelled") return null
   if (reply.type === "photoshop_connect_failed") throw new Error(reply.message)
   if (reply.type !== "photoshop_connected") throw new Error(`Painter sent an unexpected connect reply: ${reply.type}`)
   return loadBridgeSession({
     photoshopDocument: reply.psd,
     painterSnapshot: session.targetSnapshotPath,
+    documents: session.documentsPath,
     output: session.outputPath,
   })
 }
@@ -384,7 +401,29 @@ async function writeAtomicJson(filePath: string, payload: unknown): Promise<void
   await rename(temporaryPath, filePath)
 }
 
-function painterContexts(snapshot: JsonObject): PainterContext[] {
+/** Painter and the mapper spell one file's path differently on Windows. */
+export function sameDocument(first: string | null, second: string | null): boolean {
+  if (!first || !second) return first === second
+  const normal = (file: string) => {
+    const resolved = path.resolve(file)
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  }
+  return normal(first) === normal(second)
+}
+
+/** Painter's per-target PSDs, keyed like the contexts they belong to. */
+async function readDocumentMap(file: string): Promise<Map<string, string>> {
+  const map = await readJsonObject(path.resolve(file))
+  const documents = new Map<string, string>()
+  for (const value of arrayValue(map.documents)) {
+    const record = objectValue(value)
+    const psd = textValue(record.psd)
+    if (psd) documents.set(painterContextKey(textValue(record.texture_set), textValue(record.stack), textValue(record.channel)), psd)
+  }
+  return documents
+}
+
+function painterContexts(snapshot: JsonObject, documents: Map<string, string>): PainterContext[] {
   if (snapshot.schema_version !== 1 || snapshot.request_type !== "painter_snapshot") {
     throw new Error("Painter snapshot must use the painter_snapshot schema_version 1 contract")
   }
@@ -411,6 +450,7 @@ function painterContexts(snapshot: JsonObject): PainterContext[] {
       channelLabel,
       subtitle: painterContextSubtitle(textureSet, stack, channelLabel),
       nodes,
+      photoshopDocument: documents.get(painterContextKey(textureSet, stack, channel)) ?? null,
     } satisfies PainterContext
   })
 

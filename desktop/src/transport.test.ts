@@ -383,15 +383,39 @@ describe("Painter link", () => {
       output: path.join(os.tmpdir(), "pt-bridge-link.json"),
     })
     const psd = path.join(fixtureDir, "photoshop_document.psd")
-    const connected = await connectPhotoshop(session, {
-      request: async () => ({ type: "photoshop_connected", psd }),
+    const request = vi.fn(async () => ({ type: "photoshop_connected" as const, psd }))
+    const context = session.painterContexts[0]
+    const connected = await connectPhotoshop(session, { request }, context)
+    // Painter remembers the PSD for the target the mapper shows.
+    expect(request).toHaveBeenCalledWith("connect_photoshop", {
+      texture_set: context.textureSet, stack: context.stack, channel: context.channel,
     })
     expect(connected?.photoshop?.path).toBe(psd)
     expect(connected?.targetSnapshotPath).toBe(session.targetSnapshotPath)
     expect(connected?.outputPath).toBe(session.outputPath)
     await expect(connectPhotoshop(session, {
       request: async () => ({ type: "photoshop_connect_cancelled" }),
-    })).resolves.toBeNull()
+    }, context)).resolves.toBeNull()
+  })
+
+  it("opens each target's remembered PSD, and none where Painter has none", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-documents-"))
+    const psd = path.join(fixtureDir, "photoshop_document.psd")
+    const snapshot = JSON.parse(await readFile(path.join(fixtureDir, "painter_snapshot.json"), "utf8"))
+    const [first] = snapshot.contexts
+    const documents = path.join(directory, "photoshop_documents.json")
+    await writeFile(documents, JSON.stringify({ schema_version: 1, documents: [
+      { texture_set: first.texture_set, stack: first.stack ?? "", channel: first.channel, psd },
+    ] }))
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"), documents,
+    })
+    const remembered = session.painterContexts.find(context => context.channel === first.channel && context.textureSet === first.texture_set)!
+    expect(remembered.photoshopDocument).toBe(psd)
+    expect(session.painterContexts.filter(context => context !== remembered).every(context => context.photoshopDocument === null)).toBe(true)
+    expect(session.documentsPath).toBe(path.resolve(documents))
+    const none = await loadBridgeSession({ painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"), documents, photoshopDocument: null })
+    expect(none.photoshop).toBeNull()
   })
 })
 

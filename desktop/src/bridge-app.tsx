@@ -25,7 +25,7 @@ import {
   type Placement,
 } from "./model"
 import { colors, metrics, typography } from "./theme"
-import { normalizedBlendMode, type ApplyOutcome, type ApplyProgress, type BridgeSession, type PainterContext } from "./transport"
+import { normalizedBlendMode, sameDocument, type ApplyOutcome, type ApplyProgress, type BridgeSession, type PainterContext } from "./transport"
 import {
   ApplyAction,
   ConnectPhotoshopAction,
@@ -46,12 +46,13 @@ export function BridgeApp({
   session: initialSession,
   onApply,
   onConnectPhotoshop,
-  onReloadPhotoshop,
+  onLoadPhotoshop,
 }: {
   session: BridgeSession
   onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void) => Promise<ApplyOutcome>
-  onConnectPhotoshop: (session: BridgeSession) => Promise<BridgeSession | null>
-  onReloadPhotoshop?: (session: BridgeSession) => Promise<BridgeSession>
+  onConnectPhotoshop: (session: BridgeSession, context: PainterContext | null) => Promise<BridgeSession | null>
+  /** Reads a PSD afresh, or none for null: a reload, or a target with its own PSD. */
+  onLoadPhotoshop?: (session: BridgeSession, document: string | null) => Promise<BridgeSession>
 }) {
   const renderer = useGpuixRequired()
   const [session, setSession] = useState(initialSession)
@@ -273,6 +274,17 @@ export function BridgeApp({
       setFailed(true)
       return
     }
+    // A target with its own PSD brings it along: PSDs belong to a texture set,
+    // or to one channel where the artist connected a different one there.
+    if (onLoadPhotoshop && !sameDocument(context.photoshopDocument, session.photoshop?.path ?? null)) {
+      void replacePhotoshop(
+        "Reading this target's Photoshop document...",
+        () => onLoadPhotoshop(session, context.photoshopDocument),
+        "",
+        { contextId: context.id, message: `Target changed · ${context.subtitle}` },
+      )
+      return
+    }
     const next = bridgeStateForContext(session, context)
     // Target references belong to one Painter context; carrying mappings across
     // a context switch would silently apply them to a different stack/channel.
@@ -325,10 +337,10 @@ export function BridgeApp({
 
   // Taking a new session keeps the Painter target the user chose; mappings
   // are always empty here, so nothing staged can land on the wrong document.
-  const adoptSession = (next: BridgeSession, message: string) => {
+  const adoptSession = (next: BridgeSession, message: string, contextId = activePainterContextId) => {
     endDrag(true)
     selectionAnchor.current = null
-    const context = next.painterContexts.find((candidate) => candidate.id === activePainterContextId)
+    const context = next.painterContexts.find((candidate) => candidate.id === contextId)
       ?? next.painterContexts.find((candidate) => candidate.id === next.initialPainterContextId)
       ?? null
     const state = bridgeStateForContext(next, context)
@@ -347,6 +359,7 @@ export function BridgeApp({
     working: string,
     load: () => Promise<BridgeSession | null>,
     cancelled: string,
+    target?: { contextId: string; message: string },
   ) => {
     if (pending.current) return
     if (bridge.mappings.length > 0) {
@@ -361,7 +374,7 @@ export function BridgeApp({
     endDrag(true)
     try {
       const next = await load()
-      if (next) adoptSession(next, next.status)
+      if (next) adoptSession(next, target?.message ?? next.status, target?.contextId)
       else setStatus(cancelled)
     } catch (error) {
       setFailed(true)
@@ -374,7 +387,7 @@ export function BridgeApp({
 
   const connectPhotoshop = () => replacePhotoshop(
     "Choose a Photoshop document in Painter...",
-    () => onConnectPhotoshop(session),
+    () => onConnectPhotoshop(session, activePainterContext),
     "Photoshop connection cancelled",
   )
 
@@ -382,7 +395,7 @@ export function BridgeApp({
   // is the way to pick them up without choosing the document again.
   const reloadPhotoshop = () => replacePhotoshop(
     "Reading the saved PSD...",
-    async () => onReloadPhotoshop ? onReloadPhotoshop(session) : null,
+    async () => onLoadPhotoshop && session.photoshop ? onLoadPhotoshop(session, session.photoshop.path) : null,
     "",
   )
 
@@ -527,7 +540,7 @@ export function BridgeApp({
             headerAction={
               session.photoshop !== null ? (
                 <div style={{ display: "flex", flexDirection: "row", gap: 2 }}>
-                  {onReloadPhotoshop ? <IconAction
+                  {onLoadPhotoshop ? <IconAction
                     icon="refresh"
                     label="Reload the saved PSD"
                     testId="reload-photoshop"

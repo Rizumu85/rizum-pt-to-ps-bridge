@@ -58,7 +58,7 @@ function setup() {
     path: "fixture.psd", name: "fixture", width: 1024, height: 1024, bitDepth: 8,
     nodes: session.state.photoshop, layers: new Map(), clipped: new Map(), merged: new Set(), colors: new Map(),
   }
-  session.painterContexts = [{ id: "body", textureSet: "body", stack: "", channel: "basecolor", channelLabel: "Base Color", subtitle: "body", nodes: session.state.painter }]
+  session.painterContexts = [{ id: "body", textureSet: "body", stack: "", channel: "basecolor", channelLabel: "Base Color", subtitle: "body", nodes: session.state.painter, photoshopDocument: null }]
   session.initialPainterContextId = "body"
   const root = memoryRoot()
   const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))

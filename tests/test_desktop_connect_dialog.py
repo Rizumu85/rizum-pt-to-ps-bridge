@@ -34,6 +34,18 @@ class DesktopConnectDialogTests(unittest.TestCase):
         # Connections start from an open mapper, which stays open for the reply.
         self.process = Mock()
         self.controller._process = self.process
+        root = Path(self.directory.name)
+        self.controller._snapshot_path = root / "painter_snapshot.json"
+        self.controller._snapshot_path.write_text(json.dumps({
+            "project": {"uuid": "project-1"},
+            "contexts": [
+                {"texture_set": "M_body", "stack": "", "channel": "BaseColor"},
+                {"texture_set": "M_body", "stack": "", "channel": "Normal"},
+                {"texture_set": "M_head", "stack": "", "channel": "BaseColor"},
+            ],
+        }), encoding="utf-8")
+        self.controller._documents_path = root / "photoshop_documents.json"
+        self.controller._write_document_map()
 
     def tearDown(self):
         if not self.controller._closing:
@@ -46,7 +58,8 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def replies(self):
         return [json.loads(call.args[0].decode("utf-8")) for call in self.process.write.call_args_list]
 
-    def choose(self, path, during=None):
+    def choose(self, path, during=None, channel="BaseColor"):
+        self.controller._connect_context = {"texture_set": "M_body", "stack": "", "channel": channel}
         def picker(*_args):
             if during:
                 during()
@@ -55,6 +68,15 @@ class DesktopConnectDialogTests(unittest.TestCase):
             self.controller._connect_photoshop()
         return dialog
 
+    def documents(self):
+        payload = json.loads(self.controller._documents_path.read_text(encoding="utf-8"))
+        return {(item["texture_set"], item["channel"]): item["psd"] for item in payload["documents"]}
+
+    def psd(self, name):
+        path = Path(self.directory.name) / name
+        path.touch()
+        return path
+
     def test_picker_uses_the_system_dialog_filtered_to_photoshop_documents(self):
         dialog = self.choose(None)
         args = dialog.call_args.args
@@ -62,20 +84,34 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertEqual(args[3], "Photoshop Document (*.psd *.psb)")
 
     def test_accepting_a_psd_connects_the_open_mapper_without_photoshop(self):
-        source = Path(self.directory.name) / "external.psd"
-        source.touch()
+        source = self.psd("external.psd")
         self.choose(source)
         self.assertEqual(self.replies(), [{"type": "photoshop_connected", "psd": str(source)}])
         self.panel.launch_photoshop.assert_not_called()
-        self.assertEqual(self.controller._recent_photoshop_document(), source)
         self.assertTrue(self.settings.value("photoshop_document_dir", "", str).endswith(Path(self.directory.name).name))
 
+    def test_first_psd_serves_the_whole_texture_set_and_only_it(self):
+        source = self.psd("body.psd")
+        self.choose(source, channel="Normal")
+        self.assertEqual(self.documents(), {
+            ("M_body", "BaseColor"): str(source), ("M_body", "Normal"): str(source), ("M_head", "BaseColor"): None,
+        })
+
+    def test_another_psd_on_a_channel_overrides_that_channel_until_the_default_returns(self):
+        body, normal = self.psd("body.psd"), self.psd("body_normal.psd")
+        self.choose(body)
+        self.choose(normal, channel="Normal")
+        self.assertEqual(self.documents()[("M_body", "BaseColor")], str(body))
+        self.assertEqual(self.documents()[("M_body", "Normal")], str(normal))
+        self.choose(body, channel="Normal")
+        self.assertEqual(self.documents()[("M_body", "Normal")], str(body))
+
     def test_remembered_psd_that_moved_opens_bridge_disconnected(self):
-        source = Path(self.directory.name) / "external.psd"
-        source.touch()
+        source = self.psd("external.psd")
         self.choose(source)
         source.unlink()
-        self.assertIsNone(self.controller._recent_photoshop_document())
+        self.controller._write_document_map()
+        self.assertIsNone(self.documents()[("M_body", "BaseColor")])
 
     def test_cancel_replies_to_open_mapper(self):
         self.choose(None, during=lambda: self.assertFalse(self.panel.dock_bridge_button.isEnabled()))
@@ -88,7 +124,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.choose(source, during=self.controller._take_process)
         self.assertEqual(self.replies(), [])
         self.assertTrue(self.panel.dock_bridge_button.isEnabled())
-        self.assertIsNone(self.controller._recent_photoshop_document())
+        self.assertIsNone(self.documents()[("M_body", "BaseColor")])
 
     def begin_transfer(self):
         # Apply is terminal for the mapper; Painter continues without it.
@@ -192,7 +228,6 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def apply_request(self, result=None, error=None):
         manifest = Path(self.directory.name) / "desktop_transfer.json"
         manifest.write_text("{}", encoding="utf-8")
-        self.controller._snapshot_path = Path(self.directory.name) / "painter_snapshot.json"
         def apply(*_args, **_kwargs):
             self.assertFalse(self.panel.dock_bridge_button.isEnabled())
             if error:

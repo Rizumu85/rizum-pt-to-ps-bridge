@@ -35,13 +35,14 @@ render(
   <BridgeApp
     session={session}
     onApply={(state, contextId, current, onProgress) => applyTransfer(current, state, contextId, painterLink, onProgress)}
-    onConnectPhotoshop={(current) => {
+    onConnectPhotoshop={(current, context) => {
       allowPainterForeground()
-      return connectPhotoshop(current, painterLink)
+      return connectPhotoshop(current, painterLink, context)
     }}
-    onReloadPhotoshop={(current) => loadBridgeSession({
-      photoshopDocument: current.photoshop!.path,
+    onLoadPhotoshop={(current, document) => loadBridgeSession({
+      photoshopDocument: document,
       painterSnapshot: current.targetSnapshotPath,
+      documents: current.documentsPath,
       output: current.outputPath,
     })}
   />,

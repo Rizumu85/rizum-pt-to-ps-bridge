@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import desktop_transfer, exporter
 from .mapper_process import mapper_process_class
+from .photoshop_documents import SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY, DocumentMemory
 from .photoshop_job import PhotoshopJob
 from .ui_dialogs import CompactProgressDialog
 
@@ -18,7 +19,6 @@ from .ui_dialogs import CompactProgressDialog
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
 PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
-PHOTOSHOP_DOCUMENT_KEY = "photoshop_document_path"
 PHOTOSHOP_SUFFIXES = {".psd", ".psb"}
 DESKTOP_REQUEST_MARKER = "@ptbridge "
 IDLE_TOOLTIP = "Map layers between Painter and Photoshop"
@@ -34,6 +34,9 @@ class DesktopBridgeController:
         self._show_message_callback = show_message
         self._process = None
         self._snapshot_path = None
+        self._documents_path = None
+        self._project_key = None
+        self._connect_context = {}
         self._closing = False
         self._applying_transfer = False
         self._photoshop_job = None
@@ -75,9 +78,9 @@ class DesktopBridgeController:
             self._show("Bridge", "Painter project is still loading or not editable.")
             return
 
-        self._launch_desktop(self._recent_photoshop_document())
+        self._launch_desktop()
 
-    def _launch_desktop(self, psd_path):
+    def _launch_desktop(self):
         try:
             executable = _desktop_executable()
             session_dir = exporter.default_output_dir(
@@ -93,21 +96,23 @@ class DesktopBridgeController:
                 snapshot_path,
                 self.panel.user_settings,
             )
+            self._snapshot_path = snapshot_path
+            self._documents_path = session_dir / "photoshop_documents.json"
+            self._write_document_map()
         except Exception as exc:
             self._show("Bridge", str(exc))
             return
 
-        self._snapshot_path = snapshot_path
         self._stdout_buffer = ""
         self._stdout_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         arguments = [
             "--painter",
             str(snapshot_path),
+            "--documents",
+            str(self._documents_path),
             "--output",
             str(transfer_path),
         ]
-        if psd_path is not None:
-            arguments[0:0] = ["--psd", str(psd_path)]
         process = mapper_process_class(self.QtCore)(executable, arguments)
         # Each signal names its process, so a late one from a closed session
         # cannot reach the mapper that replaced it.
@@ -144,16 +149,28 @@ class DesktopBridgeController:
         self.button.setEnabled(reason is None)
         self.button.setToolTip(reason or IDLE_TOOLTIP)
 
-    def _recent_photoshop_document(self):
+    def _document_memory(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
-        saved = settings.value(PHOTOSHOP_DOCUMENT_KEY, "", str) or ""
-        path = Path(saved) if saved else None
-        if path is not None and not path.is_file():
-            # A moved or deleted PSD opens Bridge disconnected instead of failing.
-            settings.remove(PHOTOSHOP_DOCUMENT_KEY)
-            settings.sync()
-            return None
-        return path
+        return DocumentMemory(settings.value(PHOTOSHOP_DOCUMENTS_KEY, "", str) or "")
+
+    def _write_document_map(self):
+        """Tell the mapper which PSD each Painter context in its snapshot uses."""
+        snapshot = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
+        project = snapshot.get("project") or {}
+        self._project_key = project.get("uuid") or project.get("path") or "unsaved"
+        memory = self._document_memory()
+        documents = []
+        for context in snapshot.get("contexts") or []:
+            psd = memory.resolve(
+                self._project_key, context.get("texture_set"), context.get("stack") or "", context.get("channel"),
+            )
+            documents.append({
+                "texture_set": context.get("texture_set"),
+                "stack": context.get("stack") or "",
+                "channel": context.get("channel"),
+                "psd": psd,
+            })
+        exporter.write_json_atomic(self._documents_path, {"schema_version": 1, "documents": documents})
 
     def _connect_photoshop(self):
         self._trace("opening_photoshop_picker")
@@ -198,11 +215,22 @@ class DesktopBridgeController:
                 "message": f"{source_path.name} is not a Photoshop document.",
             })
             return
+        context = self._connect_context
+        memory = self._document_memory()
+        memory.remember(
+            self._project_key,
+            context.get("texture_set"),
+            context.get("stack") or "",
+            context.get("channel"),
+            str(source_path),
+        )
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue(PHOTOSHOP_DIR_KEY, str(source_path.parent))
-        # The mapper reads the PSD itself, so connecting never starts Photoshop.
-        settings.setValue(PHOTOSHOP_DOCUMENT_KEY, str(source_path))
+        settings.setValue(PHOTOSHOP_DOCUMENTS_KEY, memory.dumps())
         settings.sync()
+        # The mapper reads the PSD itself, so connecting never starts Photoshop.
+        # The refreshed map tells it which of its other contexts share this PSD.
+        self._write_document_map()
         self._reply_to_desktop({"type": "photoshop_connected", "psd": str(source_path)})
 
     def _reply_to_desktop(self, payload):
@@ -387,6 +415,10 @@ class DesktopBridgeController:
             return
         # Leave the stdout signal before opening a modal owner or editing Painter.
         if request_type == "connect_photoshop":
+            # The PSD is remembered for the Painter target the mapper shows.
+            self._connect_context = {
+                key: request.get(key) for key in ("texture_set", "stack", "channel")
+            }
             self.QtCore.QTimer.singleShot(0, self._open_photoshop_picker)
         elif request_type == "apply" and request.get("manifest"):
             manifest = Path(request["manifest"])
@@ -445,6 +477,7 @@ class DesktopBridgeController:
             # The mapper stays open after Apply, so it needs Painter's new
             # layer tree to keep mapping against what is really there now.
             exporter.write_painter_snapshot(self._snapshot_path, self.panel.user_settings)
+            self._write_document_map()
             reply["snapshot"] = str(self._snapshot_path)
         except Exception as exc:
             reply["message"] = f"{message}\n\nPainter layers could not be refreshed: {exc}"
