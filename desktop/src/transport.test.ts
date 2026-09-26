@@ -331,13 +331,15 @@ describe("Painter link", () => {
     await expect(reply).resolves.toEqual({ type: "photoshop_connect_failed", message: "Photoshop is busy" })
   })
 
-  it("rejects pending and later requests once Painter closes stdin", async () => {
+  it("rejects pending and later requests once Painter closes stdin, and reports the close once", async () => {
     const pipe = painterPipe()
-    const link = createPainterLink(pipe.input, () => {})
+    const closed = vi.fn()
+    const link = createPainterLink(pipe.input, () => {}, closed)
     const pending = link.request("connect_photoshop")
     pipe.end()
     await expect(pending).rejects.toThrow("Painter closed the Bridge connection")
     await expect(link.request("connect_photoshop")).rejects.toThrow("Painter closed the Bridge connection")
+    expect(closed).toHaveBeenCalledOnce()
   })
 
   it("applies through Painter and reloads both trees from its reply", async () => {

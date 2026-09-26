@@ -25,7 +25,9 @@ try {
 
 // Keep stdin buffered during asynchronous file loading. Starting its flow
 // earlier loses the automation handshake before GPUiX subscribes in render().
-const painterLink = createPainterLink(process.stdin, (line) => process.stdout.write(line))
+// The mapper can do nothing once Painter's end of the pipe is gone, and an
+// orphan kept its window and files open after Painter quit or crashed.
+const painterLink = createPainterLink(process.stdin, (line) => process.stdout.write(line), () => process.exit(0))
 
 // Painter releases the dock action on process exit, not window disappearance.
 // Keep GPUiX's native last-window-close shutdown (requires 0.9.0 on Windows).

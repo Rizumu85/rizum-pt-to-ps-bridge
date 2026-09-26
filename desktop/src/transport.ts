@@ -176,6 +176,7 @@ export type ApplyOutcome = {
 export function createPainterLink(
   input: Readable,
   write: (line: string) => void,
+  onClosed?: () => void,
 ): PainterLink {
   let waiting: { resolve: (reply: PainterReply) => void; reject: (error: Error) => void; onProgress?: (progress: ApplyProgress) => void } | null = null
   let closed = false
@@ -189,8 +190,10 @@ export function createPainterLink(
     else current.resolve(outcome)
   }
   const close = () => {
+    if (closed) return
     closed = true
     settle(new Error("Painter closed the Bridge connection"))
+    onClosed?.()
   }
 
   input.on("data", (chunk: string | Uint8Array) => {
