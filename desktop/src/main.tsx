@@ -39,8 +39,8 @@ render(
   <BridgeApp
     session={session}
     defaultRenderScale={defaultRenderScale}
-    onApply={(state, contextId, current, onProgress, renderScale) =>
-      applyTransfer(current, state, contextId, painterLink, onProgress, renderScale)}
+    onApply={(state, contextId, current, onProgress, renderScale, signal) =>
+      applyTransfer(current, state, contextId, painterLink, onProgress, renderScale, signal)}
     onConnectPhotoshop={(current, context) => {
       allowPainterForeground()
       return connectPhotoshop(current, painterLink, context)

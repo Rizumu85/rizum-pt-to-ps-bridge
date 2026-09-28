@@ -22,6 +22,9 @@ SETTINGS_APP = "PTBridge"
 PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
 PHOTOSHOP_SUFFIXES = {".psd", ".psb"}
 DESKTOP_REQUEST_MARKER = "@ptbridge "
+# The mapper's Cancel while Painter renders. It is read on the pipe's own
+# thread, since Painter's UI thread is busy with the render it stops.
+CANCEL_APPLY_LINE = (DESKTOP_REQUEST_MARKER + '{"type":"cancel_apply"}').encode("utf-8")
 IDLE_TOOLTIP = "Map layers between Painter and Photoshop"
 
 
@@ -117,7 +120,9 @@ class DesktopBridgeController:
             "--render-scale",
             str(self.panel.user_settings.get("render_scale") or 1),
         ]
-        process = mapper_process_class(self.QtCore)(executable, arguments)
+        process = mapper_process_class(self.QtCore)(
+            executable, arguments, interrupt_line=CANCEL_APPLY_LINE,
+        )
         # Each signal names its process, so a late one from a closed session
         # cannot reach the mapper that replaced it.
         process.output.connect(lambda chunk, owner=process: self._desktop_output(owner, chunk))
@@ -421,6 +426,9 @@ class DesktopBridgeController:
         except (ValueError, AttributeError):
             request, request_type = {}, None
         self._trace("desktop_request", str(request_type))
+        if request_type == "cancel_apply":
+            # Acted on by the pipe's reader thread already; there is no reply.
+            return
         if self._picking or self._photoshop_job is not None or self._applying_transfer:
             self._reply_to_desktop({"type": "failed", "message": "Painter is still busy with the last request."})
             return
@@ -445,13 +453,29 @@ class DesktopBridgeController:
             return
         self._applying_transfer = True
         self._sync_button()
+        process = self._process
+        # Not cleared here: a Cancel pressed while the mapper still waited
+        # for Painter arrives before this runs and must still count.
+        cancelled = lambda: process is not None and process.interrupted.is_set()
+
+        def progress(payload):
+            self._apply_progress(payload)
+            return not cancelled()
+
         try:
             self._apply_progress({"message": "Preparing Painter transfer..."})
             result = desktop_transfer.apply_transfer_manifest(
                 manifest_path,
                 settings=self.panel.user_settings,
-                progress_callback=self._apply_progress,
+                progress_callback=progress,
+                cancelled=cancelled,
             )
+        except exporter.ExportCancelled:
+            self._finish_apply(
+                "apply_cancelled",
+                "Apply cancelled. Nothing was changed in Painter or Photoshop.",
+            )
+            return
         except Exception as exc:
             self._finish_apply("apply_failed", str(exc))
             return
@@ -476,6 +500,9 @@ class DesktopBridgeController:
 
     def _finish_apply(self, reply_type, message):
         """Report an Apply to the open mapper with a fresh Painter snapshot."""
+        if self._process is not None:
+            # Every Apply ends here, so a Cancel never outlives its own Apply.
+            self._process.interrupted.clear()
         if self._process is None:
             # The mapper was closed while Photoshop worked; Painter is the only
             # place left to report the outcome.

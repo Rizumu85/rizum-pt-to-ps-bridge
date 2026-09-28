@@ -169,7 +169,17 @@ const stageTitles: Record<ApplyStage, string> = {
 // overall percentage; saving and host waits remain indeterminate. The user
 // asked that a bar starting over be told apart as a new step, so every step is
 // titled and numbered, and a step never restarts its own count.
-export function ApplyProgressDialog({ progress, steps }: { progress: ApplyProgress; steps: readonly ApplyStage[] }) {
+// Cancel stops an Apply only while no document has changed: reading the PSD
+// and Painter's render. Once Painter or Photoshop is being written, stopping
+// would leave it half-applied, so the button waits and says why.
+const cancellableStages: ReadonlySet<ApplyStage | undefined> = new Set([undefined, "read", "render"])
+
+export function ApplyProgressDialog({ progress, steps, cancelling = false, onCancel }: {
+  progress: ApplyProgress
+  steps: readonly ApplyStage[]
+  cancelling?: boolean
+  onCancel?: () => void
+}) {
   const track = useRef<PublicInstance>(null)
   const counted = progress.total !== undefined && progress.total > 0 && progress.completed !== undefined
   const fraction = counted ? Math.max(0, Math.min(1, progress.completed! / progress.total!)) : null
@@ -192,12 +202,60 @@ export function ApplyProgressDialog({ progress, steps }: { progress: ApplyProgre
           {fraction === null ? <WorkingSweep key="sweep" track={track} /> : <div
             testId="apply-progress-fill" style={{ height: 4, width: `${fraction * 100}%`, backgroundColor: colors.text }} />}
         </div>
-        {/* Kept while a step waits, so the card does not jump between counts. */}
-        <div style={{ opacity: counted ? 1 : 0 }}>
-          <SecondaryText>{counted ? `${progress.completed} / ${progress.total}` : "0 / 0"}</SecondaryText>
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          {/* Kept while a step waits, so the card does not jump between counts. */}
+          <div style={{ opacity: counted ? 1 : 0 }}>
+            <SecondaryText>{counted ? `${progress.completed} / ${progress.total}` : "0 / 0"}</SecondaryText>
+          </div>
+          {onCancel ? <CancelAction
+            cancelling={cancelling}
+            writing={!cancellableStages.has(progress.stage)}
+            onClick={onCancel}
+          /> : null}
         </div>
       </div>
     </div>
+  )
+}
+
+function CancelAction({ cancelling, writing, onClick }: { cancelling: boolean; writing: boolean; onClick: () => void }) {
+  const disabled = cancelling || writing
+  const button = (
+    <div
+      testId="apply-cancel"
+      role="button"
+      aria-disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      style={{
+        height: 26,
+        paddingLeft: 12,
+        paddingRight: 12,
+        // MiSans sits low in its line box; this centres the word optically.
+        paddingBottom: 2,
+        display: "flex",
+        alignItems: "center",
+        borderRadius: metrics.rowRadius,
+        backgroundColor: colors.control,
+        opacity: disabled ? 0.48 : 1,
+        cursor: disabled ? "default" : "pointer",
+        hover: disabled ? undefined : { backgroundColor: colors.controlHover },
+        active: disabled ? undefined : { backgroundColor: colors.controlActive },
+      }}
+    >
+      <PrimaryText>{cancelling ? "Cancelling..." : "Cancel"}</PrimaryText>
+    </div>
+  )
+  if (!writing || cancelling) return button
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6} style={{
+        paddingTop: 5, paddingRight: 8, paddingBottom: 5, paddingLeft: 8,
+        borderRadius: 5, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.control,
+      }}>
+        <SecondaryText>Writing into Painter and Photoshop; stopping now would leave them half-applied</SecondaryText>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

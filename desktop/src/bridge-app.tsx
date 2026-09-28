@@ -50,7 +50,7 @@ export function BridgeApp({
   onLoadPhotoshop,
 }: {
   session: BridgeSession
-  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void, renderScale: RenderScale) => Promise<ApplyOutcome>
+  onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void, renderScale: RenderScale, signal: AbortSignal) => Promise<ApplyOutcome>
   /** Settings' default. The window changes it for its own Applies only, since
    *  not every transfer is worth a larger render. */
   defaultRenderScale?: RenderScale
@@ -79,6 +79,8 @@ export function BridgeApp({
   const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: "Preparing mapped items..." })
   const [applySteps, setApplySteps] = useState<ApplyStage[]>([])
   const [renderScale, setRenderScale] = useState<RenderScale>(defaultRenderScale)
+  const applyAbort = useRef<AbortController | null>(null)
+  const [cancelling, setCancelling] = useState(false)
   const scaleOptions = useMemo(() => renderScalesFor(session.photoshop).map(scale => ({
     value: String(scale), label: `${scale}\u00d7`,
   })), [session.photoshop])
@@ -342,12 +344,15 @@ export function BridgeApp({
     setApplying(true)
     const steps = stagesFor(bridge.mappings)
     setApplySteps(steps)
+    const abort = new AbortController()
+    applyAbort.current = abort
+    setCancelling(false)
     setApplyProgress({ stage: steps[0], message: "Preparing mapped items..." })
     setFailed(false)
     setStatus("Applying in Painter...")
     try {
       const outcome = await onApply(bridge, activePainterContextId, session, (next) =>
-        setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })), appliedScale)
+        setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })), appliedScale, abort.signal)
       if (outcome.session) adoptSession(outcome.session, outcome.message)
       else setStatus(outcome.message)
       setFailed(outcome.failed)
@@ -666,7 +671,8 @@ export function BridgeApp({
         </motion.div>
         </RowMotionContext.Provider>
         <DragOverlay bridge={bridge} gesture={press} pointer={pointer} store={treePointer} />
-        {applying ? <ApplyProgressDialog progress={applyProgress} steps={applySteps} /> : null}
+        {applying ? <ApplyProgressDialog progress={applyProgress} steps={applySteps} cancelling={cancelling}
+          onCancel={() => { setCancelling(true); applyAbort.current?.abort() }} /> : null}
       </div>
     </TooltipProvider>
   )

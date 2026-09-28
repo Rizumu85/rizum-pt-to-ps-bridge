@@ -46,6 +46,21 @@ class MapperProcessTests(unittest.TestCase):
         self.assertEqual(finished, [(0, "")])
         self.assertNotIn("project.spp", output.decode())
 
+    def test_an_interrupt_line_is_seen_without_the_ui_thread(self):
+        # Painter renders on its UI thread, so Cancel must reach it through
+        # the reader thread: nothing here processes Qt events until the end.
+        line = b'@ptbridge {"type":"cancel_apply"}'
+        process = mapper_process_class(QtCore)(
+            sys.executable,
+            ["-c", "import sys, time; sys.stdout.write('noise\\n@ptbridge {\"type\":\"cancel_apply\"}\\n'); sys.stdout.flush(); time.sleep(2)"],
+            interrupt_line=line,
+        )
+        process.start()
+        try:
+            self.assertTrue(process.interrupted.wait(10))
+        finally:
+            process.stop()
+
     def test_pipes_carry_stdin_stdout_and_stderr_in_order(self):
         source = "import sys; line = sys.stdin.readline(); print('got', line.strip()); sys.stderr.write('warn'); sys.exit(3)"
         output, finished = self.run_child(source, stdin=b"hello\n")

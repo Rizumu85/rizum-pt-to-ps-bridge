@@ -184,10 +184,12 @@ export type PainterReply =
   | { type: "photoshop_connected"; psd: string }
   | { type: "photoshop_connect_cancelled" }
   | { type: "photoshop_connect_failed"; message: string }
-  | { type: "applied" | "apply_failed"; message: string; snapshot: string | null }
+  | { type: "applied" | "apply_failed" | "apply_cancelled"; message: string; snapshot: string | null }
 
 export type PainterLink = {
   request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>, onProgress?: (progress: ApplyProgress) => void) => Promise<PainterReply>
+  /** Asks Painter to stop the pending Apply; it answers that Apply, not this. */
+  cancelApply: () => void
 }
 
 /**
@@ -211,7 +213,14 @@ export type ApplyOutcome = {
   session: BridgeSession | null
   message: string
   failed: boolean
+  /** Stopped before either document changed; the mappings are still pending. */
+  cancelled?: boolean
 }
+
+const cancelledOutcome = (message = "Apply cancelled. Nothing was changed in Painter or Photoshop."): ApplyOutcome =>
+  ({ session: null, message, failed: false, cancelled: true })
+
+class ApplyCancelled extends Error {}
 
 export function createPainterLink(
   input: Readable,
@@ -254,6 +263,11 @@ export function createPainterLink(
   input.on("error", close)
 
   return {
+    cancelApply() {
+      // Painter reads this on its pipe thread, since its UI thread is busy
+      // rendering; the line must match what Painter looks for exactly.
+      if (!closed && waiting) write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type: "cancel_apply" })}\n`)
+    },
     request(type, fields = {}, onProgress) {
       if (closed) return Promise.reject(new Error("Painter closed the Bridge connection"))
       if (waiting) return Promise.reject(new Error("A Painter request is already pending"))
@@ -286,10 +300,10 @@ function parsePainterReply(line: string): PainterReply | Error {
   if (reply.type === "photoshop_connect_failed") {
     return { type: "photoshop_connect_failed", message: textValue(reply.message) || "Photoshop connection failed" }
   }
-  if (reply.type === "applied" || reply.type === "apply_failed") {
+  if (reply.type === "applied" || reply.type === "apply_failed" || reply.type === "apply_cancelled") {
     return {
       type: reply.type,
-      message: textValue(reply.message) || (reply.type === "applied" ? "Applied" : "Apply failed"),
+      message: textValue(reply.message) || (reply.type === "applied" ? "Applied" : reply.type === "apply_cancelled" ? "Apply cancelled" : "Apply failed"),
       snapshot: textValue(reply.snapshot) || null,
     }
   }
@@ -308,10 +322,28 @@ export async function applyTransfer(
   link: PainterLink,
   onProgress?: (progress: ApplyProgress) => void,
   renderScale: RenderScale = 1,
+  signal?: AbortSignal,
 ): Promise<ApplyOutcome> {
-  const manifest = await writeTransferManifest(session, state, painterContextId, onProgress, renderScale)
+  let manifest: string
+  try {
+    manifest = await writeTransferManifest(session, state, painterContextId, onProgress, renderScale, signal)
+  } catch (error) {
+    if (error instanceof ApplyCancelled) return cancelledOutcome()
+    throw error
+  }
+  if (signal?.aborted) return cancelledOutcome()
   onProgress?.({ message: "Waiting for Painter..." })
-  const reply = await link.request("apply", { manifest }, onProgress)
+  const cancel = () => link.cancelApply()
+  signal?.addEventListener("abort", cancel)
+  let reply: PainterReply
+  try {
+    reply = await link.request("apply", { manifest }, onProgress)
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+  }
+  // Painter stops only while nothing has been written, so the tree and the
+  // mappings stand as they were; the refreshed snapshot is not needed.
+  if (reply.type === "apply_cancelled") return cancelledOutcome(reply.message)
   if (reply.type !== "applied" && reply.type !== "apply_failed") {
     throw new Error(`Painter sent an unexpected Apply reply: ${reply.type}`)
   }
@@ -355,6 +387,7 @@ export async function writeTransferManifest(
   painterContextId: string,
   onProgress?: (progress: ApplyProgress) => void,
   renderScale: RenderScale = 1,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
   if (state.mappings.length === 0) throw new Error("Map at least one layer before Apply")
@@ -375,6 +408,7 @@ export async function writeTransferManifest(
     if (mapping.direction === "photoshop_to_painter") {
       const node = findNode(state.painter, mapping.sourceId)
       if (!node || !session.photoshop) throw new Error("A mapped Photoshop layer is no longer available")
+      if (signal?.aborted) throw new ApplyCancelled()
       onProgress?.({ stage: "read", message: `Layer “${node.name}”`, completed: read, total: reads })
       source = await renderPhotoshopTransfer(session.photoshop, node, assets, warnings)
       read += 1

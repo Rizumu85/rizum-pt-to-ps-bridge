@@ -258,6 +258,13 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._show_message_callback.assert_not_called()
         self.assertEqual(self.controller._process, self.process)
 
+    def test_cancel_gets_no_reply_even_while_painter_is_busy(self):
+        # The reader thread acts on Cancel; an answer here would settle the
+        # mapper's pending Apply as a failure.
+        self.controller._applying_transfer = True
+        self.controller._desktop_request('{"type":"cancel_apply"}')
+        self.assertEqual(self.replies(), [])
+
     def test_apply_waits_for_photoshop_before_replying(self):
         request_path = Path(self.directory.name) / "photoshop_transfer.json"
         request_path.write_text("{}", encoding="utf-8")

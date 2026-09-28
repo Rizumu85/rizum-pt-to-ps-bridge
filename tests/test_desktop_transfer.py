@@ -349,6 +349,19 @@ class DesktopTransferTests(unittest.TestCase):
         probe = QtGui.QImage(request["placement_probe"])
         self.assertEqual((probe.width(), probe.height()), (2048, 2048))
 
+    def test_cancel_after_the_render_stops_before_painter_is_edited(self):
+        from sp_plugin.rizum_sp_to_ps import desktop_transfer, exporter
+
+        painter = SimpleNamespace(project=SimpleNamespace(
+            is_open=lambda: True, is_in_edition_state=lambda: True,
+            get_uuid=lambda: "project-1", file_path=lambda: "C:/projects/example.spp",
+        ))
+        with mock.patch.object(desktop_transfer, "_prepare_photoshop_transfer", return_value=None), \
+                mock.patch.object(desktop_transfer, "apply_transfer_plan") as apply:
+            with self.assertRaises(exporter.ExportCancelled):
+                desktop_transfer.apply_transfer_manifest(self.manifest, painter=painter, cancelled=lambda: True)
+        apply.assert_not_called()
+
     def test_photoshop_target_without_layer_id_is_addressed_by_position(self):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))
         payload["transfers"] = [{

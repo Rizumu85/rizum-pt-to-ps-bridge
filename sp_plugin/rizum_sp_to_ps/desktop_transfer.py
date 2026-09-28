@@ -167,7 +167,7 @@ def load_transfer_plan(manifest_path):
     )
 
 
-def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress_callback=None):
+def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress_callback=None, cancelled=None):
     """Execute local Painter work and prepare any Photoshop-side handoff."""
     plan = load_transfer_plan(manifest_path)
     if painter is None:
@@ -179,6 +179,11 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress
             ) from exc
     _validate_project(plan, painter.project)
     launcher = _prepare_photoshop_transfer(plan, settings or {}, progress_callback)
+    # Cancel is honoured until here, while rendering has changed no document.
+    # Past this point Painter and then Photoshop are edited, and stopping
+    # part way would leave either half-applied.
+    if cancelled is not None and cancelled():
+        raise exporter.ExportCancelled("Apply cancelled before anything was changed.")
     result = apply_transfer_plan(plan, painter, progress_callback)
     return TransferResult(
         imported_count=result.imported_count,

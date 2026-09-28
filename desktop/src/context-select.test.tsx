@@ -31,6 +31,45 @@ describe("Painter context selectors", () => {
     } finally { root.unmount(); await app.close() }
   })
 
+  it("cancels while nothing is written, and holds Cancel once Painter is written", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+    })
+    const root = createTestRoot({ width: 652, height: 560 })
+    const app = await connectTest(root.renderer)
+    let report!: (progress: ApplyProgress) => void
+    let signal!: AbortSignal
+    let finish!: (outcome: ApplyOutcome) => void
+    try {
+      root.render(<BridgeApp session={session} onConnectPhotoshop={async () => null}
+        onApply={(_state, _context, _session, onProgress, _scale, abort) => {
+          report = onProgress
+          signal = abort
+          return new Promise(resolve => { finish = resolve })
+        }} />)
+      await app.mouse.down(app.getByText("Paint edit"))
+      await app.mouse.move(app.getByText("Working"), { pressedButton: 0 })
+      await app.mouse.up(app.getByText("Working"))
+      await app.getByTestId("apply-mapping").click()
+      report({ stage: "import", message: "Layer", completed: 1, total: 4 })
+      root.renderer.flush()
+      await vi.waitFor(async () => expect(await app.getByText("Importing into Painter").count()).toBe(1))
+      await app.getByTestId("apply-cancel").click()
+      expect(signal.aborted).toBe(false)
+      report({ stage: "read", message: "Layer", completed: 1, total: 4 })
+      root.renderer.flush()
+      await vi.waitFor(async () => expect(await app.getByText("Reading Photoshop layers").count()).toBe(1))
+      await app.getByTestId("apply-cancel").click()
+      expect(signal.aborted).toBe(true)
+      expect(await app.getByText("Cancelling...").count()).toBe(1)
+      finish({ session: null, failed: false, cancelled: true, message: "Apply cancelled" })
+      await vi.waitFor(async () => expect(await app.getByTestId("apply-progress").count()).toBe(0))
+      // Nothing was written, so the mapping is still waiting to be applied.
+      expect(await app.getByText("Pending").count()).toBe(1)
+    } finally { root.unmount(); await app.close() }
+  })
+
   it("shows counted Apply progress, host waits, and dismisses on failure without losing mappings", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),

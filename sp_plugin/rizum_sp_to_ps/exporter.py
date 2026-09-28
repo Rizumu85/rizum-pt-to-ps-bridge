@@ -350,13 +350,15 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
     done = 0
 
     def forward(event):
+        # Returning the callback's answer lets Bridge's Cancel stop the render.
         if event.get("detail"):
-            progress_callback({
+            return progress_callback({
                 "stage": "render",
                 "message": event["detail"],
                 "completed": done + int(event.get("value") or 0),
                 "total": total,
             })
+        return None
 
     node_exporter = stack_node_export.StackNodeExporter()
     geometry_baker = geometry_mask.GeometryMaskBaker()

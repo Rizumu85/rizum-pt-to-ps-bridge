@@ -24,10 +24,15 @@ def mapper_process_class(QtCore):
         # Exit code and everything the mapper wrote to stderr.
         finished = QtCore.Signal(int, str)
 
-        def __init__(self, executable, arguments):
+        def __init__(self, executable, arguments, interrupt_line=None):
             super().__init__()
             self._command = [str(executable), *map(str, arguments)]
             self._popen = None
+            # Set by the reader thread itself when the mapper writes
+            # interrupt_line. Painter renders on its UI thread, so the output
+            # signal would only arrive once the work it asks to stop is done.
+            self._interrupt_line = interrupt_line
+            self.interrupted = threading.Event()
 
         def start(self):
             """Start the mapper; raises OSError when it cannot start. Connect signals first."""
@@ -48,7 +53,12 @@ def mapper_process_class(QtCore):
         def _pump(self, stderr, errors):
             # Signals cross to Painter's thread queued and in order, so every
             # output chunk is handled before finished.
+            pending = b""
             for chunk in iter(lambda: self._popen.stdout.read1(65536), b""):
+                if self._interrupt_line is not None:
+                    *lines, pending = (pending + chunk).split(b"\n")
+                    if any(line.strip() == self._interrupt_line for line in lines):
+                        self.interrupted.set()
                 self.output.emit(chunk)
             stderr.join()
             code = self._popen.wait()

@@ -380,6 +380,7 @@ describe("Painter link", () => {
         requests.push({ kind, ...fields })
         return { type, message: `${type} message`, snapshot: path.join(fixtureDir, "painter_snapshot.json") }
       },
+      cancelApply: () => {},
     })
 
     const done = await applyTransfer(session, mapped, session.initialPainterContextId, reply("applied"))
@@ -391,6 +392,49 @@ describe("Painter link", () => {
     const failed = await applyTransfer(session, mapped, session.initialPainterContextId, reply("apply_failed"))
     expect(failed).toMatchObject({ message: "apply_failed message", failed: true })
     expect(failed.session).not.toBeNull()
+  })
+
+  it("cancels an Apply: before Painter is asked, and while Painter renders", async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-cancel-"))
+    const session = await loadBridgeSession({
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(outputDir, "desktop_transfer.json"),
+    })
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
+    const request = vi.fn()
+    const early = new AbortController()
+    early.abort()
+    const before = await applyTransfer(session, mapped, session.initialPainterContextId, { request, cancelApply: () => {} }, undefined, 1, early.signal)
+    expect(before).toMatchObject({ cancelled: true, failed: false, session: null })
+    expect(request).not.toHaveBeenCalled()
+
+    const during = new AbortController()
+    const cancelApply = vi.fn()
+    const link = {
+      cancelApply,
+      request: async () => {
+        during.abort()
+        return { type: "apply_cancelled" as const, message: "Stopped", snapshot: null }
+      },
+    }
+    const stopped = await applyTransfer(session, mapped, session.initialPainterContextId, link, undefined, 1, during.signal)
+    expect(cancelApply).toHaveBeenCalledOnce()
+    // The mappings stay pending: nothing was written, so the tree is not reloaded.
+    expect(stopped).toMatchObject({ cancelled: true, failed: false, session: null, message: "Stopped" })
+  })
+
+  it("writes Cancel as the exact line Painter's pipe thread looks for, only while a request waits", async () => {
+    const input = new PassThrough()
+    const lines: string[] = []
+    const link = createPainterLink(input, line => lines.push(line))
+    link.cancelApply()
+    expect(lines).toEqual([])
+    const pending = link.request("apply", { manifest: "m.json" })
+    link.cancelApply()
+    expect(lines[1]).toBe(`${PAINTER_REQUEST_MARKER}{"type":"cancel_apply"}\n`)
+    input.write(JSON.stringify({ type: "apply_cancelled", message: "Stopped", snapshot: null }) + "\n")
+    await expect(pending).resolves.toMatchObject({ type: "apply_cancelled" })
   })
 
   it("rejects a request Painter reports as failed", async () => {
@@ -409,7 +453,7 @@ describe("Painter link", () => {
     const psd = path.join(fixtureDir, "photoshop_document.psd")
     const request = vi.fn(async () => ({ type: "photoshop_connected" as const, psd }))
     const context = session.painterContexts[0]
-    const connected = await connectPhotoshop(session, { request }, context)
+    const connected = await connectPhotoshop(session, { request, cancelApply: () => {} }, context)
     // Painter remembers the PSD for the target the mapper shows.
     expect(request).toHaveBeenCalledWith("connect_photoshop", {
       texture_set: context.textureSet, stack: context.stack, channel: context.channel,
@@ -419,6 +463,7 @@ describe("Painter link", () => {
     expect(connected?.outputPath).toBe(session.outputPath)
     await expect(connectPhotoshop(session, {
       request: async () => ({ type: "photoshop_connect_cancelled" }),
+      cancelApply: () => {},
     }, context)).resolves.toBeNull()
   })
 
