@@ -20,8 +20,9 @@ class DesktopNodeExportTests(unittest.TestCase):
         }
         captured = {}
 
-        def build_request(item_preview, bundle, _settings):
+        def build_request(item_preview, bundle, settings):
             captured["node"] = deepcopy(item_preview["layers"][0])
+            captured["settings"] = dict(settings)
             node = deepcopy(item_preview["layers"][0])
             render(node, Path(bundle) / "png")
             return {"layers": [node]}
@@ -57,8 +58,10 @@ class DesktopNodeExportTests(unittest.TestCase):
                 directory,
                 {"texture_set": "M_body", "stack": "", "channel": "BaseColor"},
                 [layer["uid_hex"]],
-                {"channels": ["Normal"]},
+                {"channels": ["Normal"], "export_uv_map": True},
             )
+            # A transfer inserts into an existing PSD: no UV wireframe to draw.
+            self.assertNotIn("export_uv_map", captured["settings"])
             return captured["node"], result
 
     def test_group_crosses_as_a_folder_of_its_layers(self):

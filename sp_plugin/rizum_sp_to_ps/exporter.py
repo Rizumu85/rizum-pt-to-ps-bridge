@@ -287,6 +287,9 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
     export_settings = dict(settings or {})
     for key in ("texture_sets", "stacks", "channels"):
         export_settings.pop(key, None)
+    # The UV wireframe tops a new export's PSD; a transfer inserts layers into
+    # an existing one and never placed it, so drawing it per item was waste.
+    export_settings.pop("export_uv_map", None)
 
     modules = _load_painter_modules()
     stack_records = list(_iter_stack_records(modules, export_settings))
