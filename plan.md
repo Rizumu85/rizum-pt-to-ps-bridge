@@ -62,8 +62,8 @@ ordinary sRGB documents (`design.md §4`, `analysis.md §6.2-6.3`).
       layers that could not be reproduced.
 - [ ] Bridge: read-only Photoshop pass that renders the backdrop below each
       insertion point; rewrite inserted layers against it.
-- [ ] Settings: Blend modes row beside Size and Render at, with the export
-      dialog override.
+- [x] Settings: Blend modes row beside Size and Render at. It is a standing
+      preference, so the export dialog does not repeat it.
 - [ ] Photoshop to Painter: stop importing Hue and Luminosity as Tint and
       Value.
 - [ ] Host-test with the ramp probe and a production project.

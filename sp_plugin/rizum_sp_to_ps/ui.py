@@ -11,6 +11,7 @@ from .exporter import (
     default_output_dir,
     write_build_bundles,
 )
+from . import painter_look
 from .edge_smoothing import DEFAULT_STRENGTH
 from .photoshop_automation import find_photoshop_executable, write_photoshop_launcher
 from .photoshop_job import PhotoshopJob
@@ -610,6 +611,7 @@ class BridgePanel:
             "cleanup_layer_pngs": self.user_settings.get("cleanup_layer_pngs", True),
             "psd_size": self.user_settings.get("psd_size"),
             "render_scale": self.user_settings.get("render_scale", 1),
+            "blend_modes": self.user_settings.get("blend_modes", painter_look.DEFAULT_BLEND_MODES),
             # The Export dialog's size choices apply to this export only.
             **(overrides or {}),
         }

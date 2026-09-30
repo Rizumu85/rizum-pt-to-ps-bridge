@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import edge_smoothing
+from . import edge_smoothing, painter_look
 from .ui_kit import (
     PLUGIN_VERSION,
     PAINTER_DIALOG_STYLE,
@@ -24,6 +24,14 @@ PSD_SIZE_OPTIONS = [("Texture Set", None)] + [
 ]
 RENDER_SCALE_OPTIONS = [("1\u00d7", 1), ("2\u00d7", 2), ("4\u00d7", 4)]
 RENDER_SCALE_HINT = "Supersampling"
+BLEND_MODES_OPTIONS = [
+    ("Match Painter", painter_look.MATCH_PAINTER),
+    ("Keep modes", painter_look.KEEP_BLEND_MODES),
+]
+BLEND_MODES_HINTS = {
+    painter_look.MATCH_PAINTER: "Some layers become Normal",
+    painter_look.KEEP_BLEND_MODES: "Colors can drift from Painter",
+}
 
 
 def _section_label(QtWidgets, text):
@@ -574,6 +582,23 @@ class SettingsDialog:
         render_layout.addWidget(self.render_scale)
         body_layout.addWidget(render_row)
 
+        self.blend_modes = make_combo_input(BLEND_MODES_OPTIONS)
+        self.blend_modes.setFitToContents(False)
+        self.blend_modes.setFixedWidth(126)
+        blend_row, blend_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(blend_row)
+        self.blend_modes_texts = self._make_text_block(
+            "Blend modes",
+            BLEND_MODES_HINTS[painter_look.DEFAULT_BLEND_MODES],
+        )
+        blend_layout.addWidget(self.blend_modes_texts)
+        blend_layout.addStretch(1)
+        blend_layout.addWidget(self.blend_modes)
+        body_layout.addWidget(blend_row)
+
         self.export_uv_map = _make_settings_toggle(
             self.QtCore,
             self.QtGui,
@@ -734,6 +759,8 @@ class SettingsDialog:
         self.bit_depth.currentIndexChanged.connect(self._save_live)
         self.psd_size.currentIndexChanged.connect(self._save_live)
         self.render_scale.currentIndexChanged.connect(self._save_live)
+        self.blend_modes.currentIndexChanged.connect(self._sync_blend_modes)
+        self.blend_modes.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
         self.smoothing_slider.valueChanged.connect(self._sync_smoothing)
         # Dragging previews every step; the setting is written once, on release.
@@ -909,8 +936,20 @@ class SettingsDialog:
             + metric(6, 5),
         )
         self.bit_depth.setFitToContents(False)
-        self.bit_depth.setFixedWidth(max(metric(126, 95), localized_width))
-        for combo in (self.psd_size, self.render_scale):
+        # The PSD combos share one width so their right edges line up; it has
+        # to hold Blend modes' longest option, not only the one showing.
+        self.blend_modes.setCompactHeight(control_height)
+        blend_metrics = self.blend_modes._label.fontMetrics()
+        blend_width = (
+            max(blend_metrics.horizontalAdvance(text) for text, _value in BLEND_MODES_OPTIONS)
+            + combo_margins.left()
+            + combo_margins.right()
+            + self.bit_depth.layout().spacing()
+            + self.bit_depth._arrow_size
+            + metric(6, 5)
+        )
+        self.bit_depth.setFixedWidth(max(metric(126, 95), localized_width, blend_width))
+        for combo in (self.psd_size, self.render_scale, self.blend_modes):
             combo.setCompactHeight(control_height)
             combo.setFixedWidth(self.bit_depth.width())
         self.dilation_reveal.setExpandedHeight(
@@ -1098,8 +1137,18 @@ QPushButton[variant="icon"]:pressed {{
             self.psd_size.setCurrentIndex(index if index >= 0 else 0)
             index = self.render_scale.findData(settings.get("render_scale", 1))
             self.render_scale.setCurrentIndex(index if index >= 0 else 0)
+            index = self.blend_modes.findData(
+                settings.get("blend_modes", painter_look.DEFAULT_BLEND_MODES)
+            )
+            self.blend_modes.setCurrentIndex(index if index >= 0 else 0)
+            self._sync_blend_modes()
         finally:
             self._loading_values = False
+
+    def _sync_blend_modes(self, *_args):
+        self.blend_modes_texts._rizum_meta_label.setText(
+            BLEND_MODES_HINTS.get(self.blend_modes.currentData(), "")
+        )
 
     def _sync_smoothing(self, *_args):
         strength = self.smoothing_slider.value()
@@ -1149,6 +1198,7 @@ QPushButton[variant="icon"]:pressed {{
             "bit_depth": self.bit_depth.currentData(),
             "psd_size": self.psd_size.currentData(),
             "render_scale": self.render_scale.currentData(),
+            "blend_modes": self.blend_modes.currentData(),
             "edge_smoothing": self.smoothing_slider.value(),
             "cleanup_layer_pngs": self.cleanup_layer_pngs.isChecked(),
         }
