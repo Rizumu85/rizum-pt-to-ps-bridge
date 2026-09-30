@@ -620,9 +620,6 @@ Painter traversal and PNG export do not silently depend on the same spelling.
 These are no longer blocked on missing local API docs. They require live host
 validation during implementation:
 
-- Confirm the exact `batchPlay` descriptor for enabling Photoshop's
-  document-level "Blend RGB Colors Using Gamma 1.0" setting. If it works,
-  no per-layer compensation LUT is needed for PS-representable blend modes.
 - Record or port the exact `batchPlay` sequence for converting a temporary
   grayscale layer into a target layer mask. The old ExtendScript descriptor
   sequence in `ps-export_Rizum v1.1.8/ps-export-Rizum/footer.jsx` is the
