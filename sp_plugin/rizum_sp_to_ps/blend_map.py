@@ -13,9 +13,12 @@ SYNC_BOTH = "both"
 SYNC_SP_TO_PS_ONLY = "sp_to_ps_only"
 SYNC_NONE = "none"
 
+# Keys are Painter's BlendingMode member names, spelled as Painter spells them
+# ("Passthrough", not "PassThrough"): the export looks modes up by these
+# names and the import resolves them with getattr on the enum.
 DIRECT_BLEND_MODES = {
     "Normal": "NORMAL",
-    "PassThrough": "PASSTHROUGH",
+    "Passthrough": "PASSTHROUGH",
     "Multiply": "MULTIPLY",
     "Screen": "SCREEN",
     "Overlay": "OVERLAY",

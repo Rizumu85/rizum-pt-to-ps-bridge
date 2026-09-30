@@ -94,7 +94,7 @@ class _LayerStack:
         )
         self.NodeStack = SimpleNamespace(Content="content", Mask="mask", Substack="substack")
         self.MaskBackground = SimpleNamespace(Black="black")
-        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", PassThrough="passthrough")
+        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", Passthrough="passthrough")
 
     def get_node_by_uid(self, uid):
         if uid != 0x1A:
