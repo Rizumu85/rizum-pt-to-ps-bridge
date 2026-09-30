@@ -373,10 +373,12 @@ Reproducing a partially covered pixel under sRGB blending often needs more
 coverage than Painter used (up to about 3.5x at very soft edges). When Match
 Painter look raises coverage it keeps the layer's structure where it can:
 
-- The layer mask stays a mask; only its edge values change.
-- Layer opacity below 100% is folded into the mask (or the pixel alpha when
-  the layer has no mask) and the Photoshop opacity becomes 100%, because one
-  opacity value cannot carry a per-pixel correction.
+- Layer opacity below 100% is folded into the layer's pixel alpha and the
+  Photoshop opacity becomes 100%, because one opacity value cannot carry a
+  per-pixel correction. The user chose pixel alpha over the mask so the mask
+  keeps meaning only what Painter's mask meant.
+- Extra coverage goes into pixel alpha first. The mask stays a mask; its
+  values change only on soft mask edges where pixel alpha is already full.
 
 Keep blend modes never changes coverage, masks, or opacity.
 
