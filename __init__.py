@@ -28,6 +28,7 @@ def reload_plugin():
 
     from sp_plugin import rizum_sp_to_ps as bridge_package
     from sp_plugin.rizum_sp_to_ps import (
+        blend_map,
         desktop_bridge,
         desktop_transfer,
         edge_smoothing,
@@ -35,6 +36,7 @@ def reload_plugin():
         export_ui,
         exporter,
         mapper_process,
+        painter_look,
         photoshop_automation,
         photoshop_documents,
         photoshop_job,
@@ -53,6 +55,8 @@ def reload_plugin():
     for module in (
         edge_smoothing,
         payload_resample,
+        blend_map,
+        painter_look,
         exporter,
         photoshop_automation,
         photoshop_job,

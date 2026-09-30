@@ -56,22 +56,29 @@ def photoshop_to_painter_blend_modes():
     modes.update({"hue": "Tint", "luminosity": "Value"})
     return modes
 
+# Export-only: measured identical to Photoshop's Linear Light, but a Photoshop
+# Linear Light layer should still import as Painter's own LinearLight.
+EXACT_EXPORT_ALIASES = {
+    "SignedAddition": "LINEARLIGHT",
+}
+
+# No Photoshop mode has these formulas. Match Painter look rewrites their
+# pixels (painter_look.py), so they stay layers; Keep blend modes bakes them
+# with the closest Photoshop mode.
 APPROXIMATE_BLEND_MODES = {
     "Tint": "HUE",
     "Value": "LUMINOSITY",
-    "SignedAddition": "LINEARDODGE",
     "InverseDivide": "DIVIDE",
     "InverseSubtract": "SUBTRACT",
-    "Replace": "NORMAL",
 }
 
+# Not modelled by the Painter-look compositor either, so always baked.
 ALWAYS_BAKE_MODES = {
+    "Replace",
     "NormalMapCombine",
     "NormalMapDetail",
     "NormalMapInverseDetail",
 }
-
-DEFAULT_BAKE_MODES = set(APPROXIMATE_BLEND_MODES) | ALWAYS_BAKE_MODES
 
 
 @dataclass(frozen=True)
@@ -91,7 +98,7 @@ class BlendDecision:
         return data
 
 
-def map_blend_mode(painter_mode, preserve_all_layers=False):
+def map_blend_mode(painter_mode, match_painter_look=True):
     """Return the Photoshop blend mode and bake policy for a Painter mode."""
     mode = _mode_name(painter_mode)
 
@@ -107,10 +114,10 @@ def map_blend_mode(painter_mode, preserve_all_layers=False):
             ("Painter Disable mode hides this contribution.",),
         ).to_dict()
 
-    if mode in DIRECT_BLEND_MODES:
+    if mode in DIRECT_BLEND_MODES or mode in EXACT_EXPORT_ALIASES:
         return BlendDecision(
             mode,
-            DIRECT_BLEND_MODES[mode],
+            DIRECT_BLEND_MODES.get(mode) or EXACT_EXPORT_ALIASES[mode],
             KEEP_EDITABLE,
             SYNC_BOTH,
         ).to_dict()
@@ -126,21 +133,15 @@ def map_blend_mode(painter_mode, preserve_all_layers=False):
 
     if mode in APPROXIMATE_BLEND_MODES:
         ps_mode = APPROXIMATE_BLEND_MODES[mode]
-        if preserve_all_layers:
-            return BlendDecision(
-                mode,
-                ps_mode,
-                KEEP_EDITABLE,
-                SYNC_BOTH,
-                (f"{mode} is approximated with Photoshop {ps_mode}.",),
-            ).to_dict()
+        if match_painter_look:
+            return BlendDecision(mode, ps_mode, KEEP_EDITABLE, SYNC_SP_TO_PS_ONLY).to_dict()
 
         return BlendDecision(
             mode,
             ps_mode,
             BAKE,
             SYNC_SP_TO_PS_ONLY,
-            (f"{mode} is baked in default mode to avoid color drift.",),
+            (f"{mode} has no Photoshop equivalent; baked with {ps_mode}.",),
         ).to_dict()
 
     return BlendDecision(
@@ -152,7 +153,7 @@ def map_blend_mode(painter_mode, preserve_all_layers=False):
     ).to_dict()
 
 
-def decide_node_blending(blend_modes, preserve_all_layers=False):
+def decide_node_blending(blend_modes, match_painter_look=True):
     """Collapse per-channel Painter blend modes into node-level decisions."""
     if not blend_modes:
         return {
@@ -164,7 +165,7 @@ def decide_node_blending(blend_modes, preserve_all_layers=False):
         }
 
     decisions = {
-        channel: map_blend_mode(mode, preserve_all_layers)
+        channel: map_blend_mode(mode, match_painter_look)
         for channel, mode in blend_modes.items()
     }
     policies = {decision["bake_policy"] for decision in decisions.values()}

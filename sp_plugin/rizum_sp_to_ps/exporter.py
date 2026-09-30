@@ -15,6 +15,7 @@ from . import (
     payload_resample,
     export_naming,
     geometry_mask,
+    painter_look,
     pixel_export,
     png_color_metadata,
     stack_node_export,
@@ -246,6 +247,18 @@ def write_build_bundles(
             if _count_layer_assets(build_request["layers"]) == 0:
                 shutil.rmtree(bundle_path, ignore_errors=True)
                 continue
+            _notify_progress(
+                progress_callback,
+                stage="bundles",
+                value=index - 1,
+                total=total,
+                text=f"Matching Painter's look {index} of {total}: {_request_label(request)}",
+            )
+            # Only a new PSD has the whole Painter stack as each layer's
+            # backdrop; Bridge inserts into a PSD that may have drifted.
+            build_request["painter_look"] = painter_look.rewrite_request(
+                build_request, settings
+            )
 
             request_path = bundle_path / BUILD_REQUEST_FILENAME
             build_request["build_request_file"] = str(request_path)
@@ -1038,7 +1051,7 @@ def _node_record(node, channel_types, settings):
         record.update(
             decide_node_blending(
                 record["blend_mode"],
-                preserve_all_layers=settings.get("preserve_all_layers", False),
+                match_painter_look=painter_look.matches_painter(settings),
             )
         )
 

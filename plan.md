@@ -50,14 +50,15 @@ ordinary sRGB documents (`design.md §4`, `analysis.md §6.2-6.3`).
 
 - [x] Probe Painter group isolation: Normal-mode groups with non-Normal
       children, group opacity, and group masks.
-- [ ] Native compositor and pixel rewrite in `native/`: Painter's linear
+- [x] Native compositor and pixel rewrite in `native/`: Painter's linear
       model with premultiplied alpha, the Normal coverage solve, the
       Multiply/Divide rewrite, and conversion to Normal; Python ctypes wrapper.
-- [ ] Blend map: replace `preserve_all_layers` with the Blend modes setting,
+- [x] Blend map: replace `preserve_all_layers` with the Blend modes setting,
       convert SoftLight/Saturation/Color, map SignedAddition to LinearLight,
       and remove `compensation.py`.
-- [ ] Export: composite backdrops from the exported assets, rewrite
-      color-channel layers, verify against Painter's channel render, and name
+- [x] Export: composite backdrops from the exported assets and rewrite
+      color and data channel layers (the normal channel keeps today's export).
+- [ ] Export: verify the composite against Painter's channel render and name
       layers that could not be reproduced.
 - [ ] Bridge: read-only Photoshop pass that renders the backdrop below each
       insertion point; rewrite inserted layers against it.
