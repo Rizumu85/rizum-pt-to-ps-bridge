@@ -45,7 +45,7 @@ Host findings that still constrain the implementation:
 |---|---|---|
 | Substance Painter Python API | `pt-python-doc-md/substance_painter/` | Covered for traversal, export, resources, UI, events, layer-stack mutation, color management, and JS bridge |
 | Legacy Painter JS API | `javascript-doc/` | Covered for the required map-export fallbacks: `alg.mapexport.save`, `alg.mapexport.exportPath`, and `alg.mapexport.channelIdentifiers` |
-| Host-recorded Action Manager descriptors | Not included as ready-to-use project files | Must be recorded or validated in Photoshop for layer-mask pixel transfer and the RGB blend-gamma setting |
+| Host-recorded Action Manager descriptors | Not included as ready-to-use project files | Must be recorded or validated in Photoshop for layer-mask pixel transfer |
 
 ---
 
@@ -361,9 +361,6 @@ mutation, UI, events, and logging are Python-native.
 
 ## 5. Open questions
 
-- **"Blend RGB Colors Using Gamma 1.0" settability** through an Action
-  Manager descriptor — see §6.3. Big potential payoff; keep it off until a
-  build can set it without a host modal error.
 - **Current Painter normal-map orientation getter**: `NormalMapFormat` is
   documented for project creation settings, but no direct getter for the
   currently opened project was found in the local `project.md`. Store the
@@ -391,73 +388,90 @@ When `alg.mapexport.save` writes a PNG:
 - Data channel → PNG is **raw** (no conversion)
 - Normal channel → PNG is raw in the project's normal orientation
 
-### 6.2 The fundamental SP↔PS blend mismatch
+### 6.2 Measured blend behavior (2026-09-30)
 
-- **SP**: layers composite in *Working* (linear sRGB) space. Tonemap + sRGB
-  encode happens once at the end for display/export.
-- **PS**: by default, blends in *sRGB gamma-encoded* space. `Multiply` of
-  two sRGB values is not the same visual result as `Multiply` of their
-  linear-space equivalents.
+Painter's documentation states that all blend modes run in linear space. This
+was measured directly, which also pins down each formula. Method:
 
-This is why `design.md §4 method B` (per-layer pre-compensation) is hard
-in general — there's no scalar correction that makes an sRGB-space
-multiply yield a linear-space multiply's result for arbitrary input.
+- A temporary Painter instance built a plane project whose base fill is a
+  horizontal 0..255 ramp and whose top fill is a vertical ramp, so one texture
+  covers every (backdrop, layer) pair. A second pair of hue/value sweeps
+  covered the HSV modes. Every Painter mode was exported at 100% and 50%
+  opacity as a 16-bit BaseColor PNG.
+- Photoshop 26.1 rebuilt the same two layers in scratch documents through
+  COM, for every Photoshop mode and both opacities, in three variants: a
+  default sRGB document, a 16-bit linear (gamma 1.0) document, and a default
+  sRGB document with "Blend RGB Colors Using Gamma 1.0" switched on by hand
+  and restored afterwards.
 
-### 6.3 Key finding: PS's "Blend RGB Colors Using Gamma 1.0" toggle
+Results (maximum error in 8-bit levels against Painter):
 
-Photoshop supports document-level **"Blend RGB Colors Using Gamma 1.0"**
-(Edit → Color Settings → More Options → Custom). When enabled for a
-document:
+| Mode | sRGB PSD | Linear 16-bit PSD | sRGB + gamma 1.0 setting |
+|---|---|---|---|
+| Normal 50% | 60 | 1.1 | 1.1 |
+| Multiply 100% / 50% | 8 / 60 | 0.9 / 1.1 | 8 / 2.5 |
+| Screen 100% | 27 | 0.9 | 27 |
+| Overlay 100% / 50% | 118 / 38 | 0.9 / 1.0 | 118 / 51 |
+| ColorDodge 100% / 50% | 202 / 96 | 1.0 / 1.0 | 202 / 151 |
+| Other RGB modes 100% | 65 to 244 | 0.9 (4.4 on isolated divide-by-zero pixels) | same as sRGB |
+| SoftLight 100% | 37 | 38 | 37 |
 
-- PS decodes sRGB → linear → blends → re-encodes
-- This is **exactly what SP does**
-- Result: Multiply/Screen/LinearDodge/LinearBurn/Darken/Lighten/ColorBurn/
-  ColorDodge/Difference/Exclusion all produce SP-matching output **with
-  zero per-layer pre-compensation**
+The ~1 level floor comes from the 8-bit test inputs. Conclusions:
 
-If this setting is writable through an Action Manager descriptor, method B collapses from
-"approximate per-mode compensation LUT" to "one document-level toggle at
-PSD creation time". The action command is something along the lines of:
+- **Every Painter RGB mode is its standard formula applied to linear values**,
+  mixed with the backdrop by coverage in linear space:
+  `out = enc((1 - a) * lin(B) + a * f(lin(B), lin(C)))`, clamped to 0..1.
+  Overlay is backdrop-keyed and HardLight layer-keyed, exactly as in
+  Photoshop. SignedAddition is `b + 2c - 1`, identical to LinearLight.
+  InverseDivide is `c / b`, InverseSubtract `c - b`.
+- **SoftLight** is `b + (2c - 1)(sqrt(b) - b)` for `c > 0.5` and
+  `b - (1 - 2c) b (1 - b)` otherwise; Photoshop's SoftLight is a different
+  curve, so no document setting makes them agree.
+- **Tint, Saturation, Color, Value** replace HSV components of the linear
+  backdrop with the layer's (hue; saturation; hue and saturation; value) and
+  then **double the value**, clamped. The doubling is reproducible across
+  every sample (ratio 2.000); Photoshop's Hue/Saturation/Color/Luminosity use a
+  luminosity model and cannot match.
+- **"Blend RGB Colors Using Gamma 1.0" only linearizes the coverage mix.**
+  Blend formulas still run on sRGB values, so it fixes Normal, Darken and
+  Lighten edges and nothing else, and makes some partially covered modes
+  worse. It is application-wide and not stored in the PSD.
+- **A linear-profile PSD matches**, but Photoshop 26.1 still shows the old
+  user complaints: a typed hex `808080` is stored as linear 128 (displayed as
+  sRGB ~188), and Save As TGA writes the linear values with no profile, so
+  engines read them dark. CSP reads PSDs only up to 8-bit.
 
-```javascript
-// Not yet verified — M3 implementation will validate
-{ _obj: "set",
-  _target: [{_ref: "property", _property: "colorSettings"},
-            {_ref: "document", _enum: "ordinal"}],
-  to: { _obj: "colorSettings", rgbColorBlendGamma: 1.0 } }
-```
+Data channels are raw in both apps, so only the formula differences (SoftLight,
+HSV, Inverse modes, normal-map modes) apply to them.
 
-**Action for M3**: verify this via "Record Action Commands" on a document
-where we toggle the setting manually. If it works:
+### 6.3 Pixel rewrite for sRGB PSDs
 
-- Default export mode ("Bake unsupported modes") sets `rgbColorBlendGamma = 1.0`
-  on every PSD; no per-layer math needed for representable blend modes
-- "Preserve all layers" mode does the same; SP-only modes (Tint, Value,
-  SignedAddition, etc.) still map to closest PS equivalent with `[!]`
-  prefix
+With the backdrop known, a layer can be given pixels that reproduce Painter
+under Photoshop's sRGB blending (`design.md §4`). Notation: `B` backdrop,
+`T` Painter's result, both sRGB; `a` Painter coverage (pixel alpha x mask x
+opacity); `C` layer color; `lin` / `enc` the sRGB transfer functions.
 
-If this setting is **not** writable from a script:
+- **Normal** (and Darken/Lighten where the layer wins): Photoshop gives
+  `(1 - A) B + A F`. Solve for the smallest `A >= a` that keeps
+  `F = B + (T - B) / A` inside 0..1 on every channel. Keeping `A = a` and
+  clamping `F` leaves errors up to 60 levels on 9-16% of soft-edge pairs
+  (dark backdrop under a light layer); raising `A` is exact and needs at most
+  about 3.5x the original coverage.
+- **Multiply** is gamma-invariant for a pure power curve, so the backdrop
+  drops out: `C' = 1 - (1 - enc(1 - a + a lin(C))) / a` at the original
+  coverage. Residual error is at most ~8 levels, from the linear toe of the
+  sRGB curve. **Divide** follows the same pattern.
+- **Every other mode** has no backdrop-independent rewrite (Normal's best
+  backdrop-independent fit still misses by 24-35 levels), so Match Painter
+  look writes `T` as a Normal layer over the known backdrop.
+- **Backdrop alpha**: the bottom of a stack and isolated groups start
+  transparent, so the compositor tracks premultiplied alpha in both spaces.
+- **Painter group isolation** (Normal-mode groups compositing children against
+  a transparent backdrop) has not been measured yet and must be probed before
+  rewriting children of isolated groups.
 
-- Fall back to empirical per-mode compensation LUT calibrated in M3
-- Accept that Overlay/SoftLight/HardLight family will have residual drift
-
-### 6.3.1 Adobe community blend-mode clarification
-
-Adobe staff clarified in a Substance 3D Painter community thread that Painter
-blend modes should mostly behave like Photoshop blend modes, but Painter uses
-different color-space management and can therefore show differences. The same
-reply also calls out two structural details that matter for this bridge:
-
-- Painter layers have per-channel blending, so BaseColor, Normal, Roughness,
-  and other channels must read and export the blend mode for the specific
-  channel being built.
-- A Painter group also has its own blending mode, and the group result can be
-  different from applying a blend mode only on the contained layer.
-
-This supports the current M3 plan rather than replacing it. We still need the
-Photoshop gamma-1.0 validation because the color-space difference is the likely
-source of BaseColor drift. We also need group construction to preserve group
-blend modes instead of flattening every group to Pass Through.
+Painter's bundled Python has no numpy, so the compositor and rewrite belong in
+the native library that already hosts edge smoothing (`native/`).
 
 ### 6.4 Sync-back color space handling
 

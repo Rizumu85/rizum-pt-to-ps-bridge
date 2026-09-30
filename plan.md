@@ -29,9 +29,6 @@ into PSDs.
 
 - [ ] Host-test PSD fidelity gaps: nested groups, baked unsupported modes,
       color-layer behavior, and normal-channel output.
-- [ ] Validate whether an Action Manager descriptor can set document-level
-      "Blend RGB Colors Using Gamma 1.0" without host modal errors. Keep it off
-      until proven safe.
 
 ## Direction 3: Desktop Mapper
 
@@ -45,3 +42,27 @@ and Photoshop and applies them only on an explicit Apply.
       layers are locked, folders arrive as folders; see `design.md §6.1`).
 - [ ] Host-test PSD connect and Apply on production PSDs, including files
       without persistent layer ids and 16-bit documents.
+
+## Direction 4: Painter-Look PSDs
+
+Goal: PSDs from Export and Bridge look like Painter at hand-off while staying
+ordinary sRGB documents (`design.md §4`, `analysis.md §6.2-6.3`).
+
+- [ ] Probe Painter group isolation: Normal-mode groups with non-Normal
+      children, group opacity, and group masks.
+- [ ] Native compositor and pixel rewrite in `native/`: Painter's linear
+      model with premultiplied alpha, the Normal coverage solve, the
+      Multiply/Divide rewrite, and conversion to Normal; Python ctypes wrapper.
+- [ ] Blend map: replace `preserve_all_layers` with the Blend modes setting,
+      convert SoftLight/Saturation/Color, map SignedAddition to LinearLight,
+      and remove `compensation.py`.
+- [ ] Export: composite backdrops from the exported assets, rewrite
+      color-channel layers, verify against Painter's channel render, and name
+      layers that could not be reproduced.
+- [ ] Bridge: read-only Photoshop pass that renders the backdrop below each
+      insertion point; rewrite inserted layers against it.
+- [ ] Settings: Blend modes row beside Size and Render at, with the export
+      dialog override.
+- [ ] Photoshop to Painter: stop importing Hue and Luminosity as Tint and
+      Value.
+- [ ] Host-test with the ramp probe and a production project.

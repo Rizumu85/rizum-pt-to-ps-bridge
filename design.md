@@ -324,49 +324,90 @@ and is therefore not the default for PSD construction.
 
 ## 4. Color fidelity strategy
 
-**Primary mechanism (new in v2)**: set the PSD's document-level
-**"Blend RGB Colors Using Gamma 1.0"** when building it. PS will then
-decode sRGB → linear → blend → re-encode, matching SP's linear
-compositing exactly. All PS-representable linear-friendly blend modes
-produce SP-identical output with **zero per-layer pre-compensation**. See
-`analysis.md §6.3` for details.
+**The PSD is the deliverable.** Painter is where the user previews and paints
+in real time; the PSD is what they finish in Photoshop or another 2D painting
+app (CSP, etc.) and what the final textures are flattened from. Two user
+decisions follow:
 
-**Fallback** if Photoshop scripting cannot toggle this setting:
-empirical per-mode pre-compensation LUT. Some blend modes in the
-Overlay/SoftLight/HardLight family will have residual drift.
+- The PSD stays an ordinary sRGB document at the channel's export bit depth,
+  so it opens in CSP (which reads PSDs only up to 8-bit), the color picker
+  shows normal values, and Save As TGA/PNG gives the right texture.
+- What must match Painter is the **look at hand-off**. Later edits follow the
+  2D app's own blending rules, which is what the artist sees there.
 
-Adobe's public Painter support guidance aligns with this design: Painter blend
-modes should mostly match Photoshop, but color-space management can produce
-differences. Treat that as validation of the gamma/blend-fidelity work, not as
-proof that raw Photoshop defaults are enough.
+Painter blends in linear space; Photoshop and CSP blend in sRGB space
+(`analysis.md §6.2`). The bridge therefore rewrites pixels, not documents:
+every layer's backdrop is known when it is written, so each layer can be given
+the color and coverage that reproduce its Painter look under sRGB blending.
 
-### 4.1 Default: "Bake unsupported modes" (A+B hybrid)
+Data channels (Roughness, Metallic, Height, ...) blend raw values in both
+apps, so they need no color rewrite; only modes whose formula Photoshop lacks
+are converted there.
 
-- PS-representable blend modes (Normal, Multiply, Screen, LinearDodge,
-  LinearBurn, Darken, Lighten, ColorBurn, ColorDodge, Difference,
-  Exclusion, Overlay, SoftLight, HardLight, VividLight, LinearLight,
-  PinLight, Color, Saturation, PassThrough[group-only]) → kept as editable
-  PS layers. Accuracy comes from the gamma 1.0 toggle above.
-- SP-only modes (`SignedAddition`, `InverseDivide`, `InverseSubtract`,
-  `Tint`, `Value`, `NormalMapCombine`, `NormalMapDetail`,
-  `NormalMapInverseDetail`, `Replace`) → that layer **plus everything
-  below it in its enclosing stack** is baked to a single Normal raster
-  layer. Remaining layers above stay editable.
+### 4.1 Blend mode setting
 
-### 4.2 Toggle: "Preserve all layers" (B-only)
+One export setting, **Blend modes**, next to the other PSD format settings.
+It replaces the unused `preserve_all_layers` switch.
 
-- Every SP layer → exactly one PS layer, no baking.
-- Unrepresentable SP-only modes map to the closest PS equivalent (with
-  `[!]` prefix in the PS layer name): `Tint` → `HUE`, `Value` →
-  `LUMINOSITY`, `SignedAddition` → `LINEARDODGE`, etc. Full mapping in
-  `analysis.md §3.6`.
-- Explicitly accepts color drift on those specific layers.
+| Option | Behavior |
+|---|---|
+| **Match Painter look** (default) | The PSD looks like Painter at hand-off. Layers whose look their own mode cannot reproduce become Normal layers. |
+| **Keep blend modes** | Every layer keeps a Photoshop blend mode so it can still be tuned; colors shift where sRGB blending differs. |
 
-### 4.3 Rejected: option C (rewrite SP viewport shader)
+Per class of Painter mode, for color-managed channels:
 
-SP layer blending happens inside the Substance Engine, not in any
-user-controllable shader. The view shader sees already-composited channel
-textures. Impossible to rewrite from a plugin.
+| Painter mode | Match Painter look | Keep blend modes |
+|---|---|---|
+| Normal, Darken, Lighten | Mode kept. Opaque pixels already match; partially covered pixels get the color and coverage that reproduce Painter (§4.2). | Mode kept; color-only correction of partially covered pixels, coverage untouched. |
+| Multiply, Divide | Mode kept. Color rewritten per pixel from its coverage; this holds for any backdrop, so later edits below stay correct. | Same. |
+| Screen, Overlay, HardLight, LinearDodge, LinearBurn, ColorBurn, ColorDodge, VividLight, LinearLight, PinLight, Difference, Exclusion, Subtract, SignedAddition | Converted to a Normal layer carrying the layer's Painter result over its backdrop. | Mode kept (SignedAddition maps exactly to LinearLight); colors drift. |
+| SoftLight, Tint, Saturation, Color, Value, InverseDivide, InverseSubtract, normal-map modes, Replace | Converted to Normal as above. | Also converted: Photoshop has no mode with the same formula. |
+
+A converted layer freezes its backdrop into its pixels: editing layers below
+it later does not update the area it covers. That is the price of an exact
+hand-off, and the reason Keep blend modes exists.
+
+### 4.2 Coverage and masks
+
+Reproducing a partially covered pixel under sRGB blending often needs more
+coverage than Painter used (up to about 3.5x at very soft edges). When Match
+Painter look raises coverage it keeps the layer's structure where it can:
+
+- The layer mask stays a mask; only its edge values change.
+- Layer opacity below 100% is folded into the mask (or the pixel alpha when
+  the layer has no mask) and the Photoshop opacity becomes 100%, because one
+  opacity value cannot carry a per-pixel correction.
+
+Keep blend modes never changes coverage, masks, or opacity.
+
+### 4.3 Backdrop source
+
+- **Export** builds a new PSD from the Painter stack, so each layer's backdrop
+  is the Painter composite below it, computed by the bridge from the exported
+  layer, mask, and opacity data. The bridge checks its composite against
+  Painter's own channel render and names the layers it could not reproduce.
+- **Bridge** inserts into a PSD that may have drifted from Painter: layers
+  that needed no edits are often never sent back, and the layer order may
+  differ. So the backdrop is the PSD's own composite below the insertion
+  point, which Photoshop renders in a read-only pass before anything is
+  written. Inside an isolated (non Pass Through) Photoshop group the backdrop
+  is the group's content below the insertion point.
+
+No hidden Painter reference layer is added to the PSD.
+
+### 4.4 Rejected approaches
+
+- **Linear (gamma 1.0) PSD.** At 16-bit it matches Painter for every mode but
+  SoftLight, yet it only works in Photoshop: CSP cannot open 16-bit PSDs and
+  other apps ignore the embedded profile; the color picker and hex values are
+  linear; Save As TGA/PNG writes linear values that look dark in engines; and
+  8-bit linear documents band in the shadows.
+- **Photoshop's "Blend RGB Colors Using Gamma 1.0".** It only moves the
+  coverage mix to linear space; blend-mode formulas still run in sRGB, so
+  Multiply, Screen, Overlay and the rest are unchanged at 100% and some get
+  worse when partially covered. It is also an application-wide setting.
+- **Rewriting Painter's viewport shader.** Painter's layer blending happens in
+  the Substance Engine, not in a user-controllable shader.
 
 ---
 
