@@ -621,7 +621,9 @@ __RIZUM_MASK_RUNTIME__
     function writeSidecar(request) {
         // The desktop mapper reads this to open a connected PSD on the Painter
         // texture set, stack and channel it was built from.
-        var file = File(String(request.psd_file).replace(/\.[^.\\/]*$/, "") + ".rizum.json");
+        // ExtendScript ends a regex at an unescaped "/" even inside a class
+        // after "\\", which failed the whole script to parse; keep it escaped.
+        var file = File(String(request.psd_file).replace(/\.[^.\\\/]*$/, "") + ".rizum.json");
         if (!file.open("w")) {
             throw new Error("Could not write " + file.fsName);
         }

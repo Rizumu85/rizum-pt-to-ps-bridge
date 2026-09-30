@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -137,6 +138,14 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertIn('".rizum.json"', writer)
         for key in ("texture_set", "stack", "channel"):
             self.assertIn(f'\\"{key}\\": " + jsonQuote(request.{key}', writer)
+
+    def test_scripts_avoid_regex_classes_extendscript_cannot_parse(self):
+        # ExtendScript ends a regex literal at "/" after "\\" even inside a
+        # character class, and a parse error means Photoshop never runs the
+        # script at all.
+        unparseable = re.compile(r"(?<!\\)\\\\/\]")
+        for script in (PROJECT_ROOT / "sp_plugin" / "rizum_sp_to_ps").glob("*.jsx"):
+            self.assertIsNone(unparseable.search(script.read_text(encoding="utf-8")), script.name)
 
 
 if __name__ == "__main__":
