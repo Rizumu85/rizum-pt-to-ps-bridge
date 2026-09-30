@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 const EPS: f32 = 1e-6;
-const STRIP_ROWS: usize = 32;
+// Rows per work item. Each thread holds every layer's rows at once, so this
+// stays small: 40 layers of an 8K PSD would otherwise need gigabytes.
+const STRIP_ROWS: usize = 4;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -471,7 +473,7 @@ struct LeafOutput {
 }
 
 fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File>, Option<File>)>],
-             group_masks: &[Option<File>], row0: usize, rows: usize, clipped: &[AtomicU64]) -> Result<(), String> {
+             group_masks: &[Option<File>], row0: usize, rows: usize, stats: &Stats) -> Result<(), String> {
     let width = program.width;
     let transfer = Transfer { srgb: program.srgb };
     // Load inputs for this strip.
@@ -580,7 +582,7 @@ fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File
                                     rgb[i] = clamp01(v);
                                 }
                                 if clipped_here {
-                                    clipped[index].fetch_add(1, Ordering::Relaxed);
+                                    stats.clipped[index].fetch_add(1, Ordering::Relaxed);
                                 }
                             }
                             // Extra coverage goes into pixel alpha first; the
@@ -631,6 +633,15 @@ fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File
                     let alpha_q = quantize(alpha, depth);
                     out.content[pixel * 4..pixel * 4 + 4].copy_from_slice(&[rgb_q[0], rgb_q[1], rgb_q[2], alpha_q]);
                     let mask_q = new_mask.map(|m| quantize(m, leaf.mask.as_ref().map_or(depth, |r| r.depth)));
+                    let step = 0.5 / if depth == 8 { 255.0 } else { 65535.0 };
+                    let content_changed = (0..3).any(|i| (rgb_q[i] - c[i]).abs() > step) || (alpha_q - c[3]).abs() > step;
+                    let mask_changed = match (mask_q, mask_value) {
+                        (Some(new), Some(old)) => (new - old).abs() > step,
+                        _ => false,
+                    };
+                    if content_changed || mask_changed {
+                        stats.changed[index].fetch_add(1, Ordering::Relaxed);
+                    }
                     if let (Some(buffer), Some(m)) = (out.mask.as_mut(), mask_q) {
                         buffer[pixel] = m;
                     }
@@ -657,7 +668,15 @@ fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File
     Ok(())
 }
 
-fn run(program: &Program, threads: usize, clipped: &[AtomicU64]) -> Result<(), String> {
+struct Stats {
+    /// Pixels the solve had to clip, so they do not match Painter exactly.
+    clipped: Vec<AtomicU64>,
+    /// Pixels whose output differs from the payload, so an unchanged
+    /// payload need not be re-encoded.
+    changed: Vec<AtomicU64>,
+}
+
+fn run(program: &Program, threads: usize, stats: &Stats) -> Result<(), String> {
     let open_input = |raw: &Raw| File::open(&raw.path).map_err(|e| format!("{}: {e}", raw.path));
     let open_output = |raw: &Raw| {
         OpenOptions::new().write(true).open(&raw.path).map_err(|e| format!("{}: {e}", raw.path))
@@ -722,7 +741,7 @@ fn run(program: &Program, threads: usize, clipped: &[AtomicU64]) -> Result<(), S
                         return;
                     }
                     let rows = STRIP_ROWS.min(program.height - row0);
-                    if let Err(message) = run_strip(program, &files, &group_masks, row0, rows, clipped) {
+                    if let Err(message) = run_strip(program, &files, &group_masks, row0, rows, stats) {
                         failed.store(true, Ordering::Relaxed);
                         *error.lock().unwrap() = Some(message);
                         return;
@@ -739,15 +758,15 @@ fn run(program: &Program, threads: usize, clipped: &[AtomicU64]) -> Result<(), S
 
 /// Runs a program. Returns 0 on success; otherwise writes a message into
 /// `error` (UTF-8, truncated to `error_len`) and returns its full length.
-/// `clipped` receives, per program line, how many pixels could not be
-/// reproduced exactly; it must hold one slot per line after the header.
+/// `stats` receives two counts per program line after the header: pixels
+/// that could not match Painter exactly, then pixels that changed.
 #[no_mangle]
 pub extern "C" fn rizum_painter_look_run(
     program: *const u8,
     program_len: usize,
     threads: usize,
-    clipped: *mut u64,
-    clipped_len: usize,
+    stats: *mut u64,
+    stats_len: usize,
     error: *mut u8,
     error_len: usize,
 ) -> u64 {
@@ -758,17 +777,22 @@ pub extern "C" fn rizum_painter_look_run(
         let text = std::str::from_utf8(unsafe { std::slice::from_raw_parts(program, program_len) })
             .map_err(|_| "program is not UTF-8".to_string())?;
         let parsed = parse_program(text)?;
-        if clipped_len != parsed.ops.len() {
-            return Err(format!("expected {} statistic slots", parsed.ops.len()));
+        if stats_len != parsed.ops.len() * 2 {
+            return Err(format!("expected {} statistic slots", parsed.ops.len() * 2));
         }
-        let counters: Vec<AtomicU64> = (0..parsed.ops.len()).map(|_| AtomicU64::new(0)).collect();
+        let counters = Stats {
+            clipped: (0..parsed.ops.len()).map(|_| AtomicU64::new(0)).collect(),
+            changed: (0..parsed.ops.len()).map(|_| AtomicU64::new(0)).collect(),
+        };
         run(&parsed, threads.max(1), &counters)?;
-        Ok(counters.iter().map(|c| c.load(Ordering::Relaxed)).collect())
+        Ok(counters.clipped.iter().zip(&counters.changed)
+            .flat_map(|(clipped, changed)| [clipped.load(Ordering::Relaxed), changed.load(Ordering::Relaxed)])
+            .collect())
     })();
     match result {
         Ok(counts) => {
-            if !clipped.is_null() {
-                unsafe { std::slice::from_raw_parts_mut(clipped, counts.len()) }.copy_from_slice(&counts);
+            if !stats.is_null() {
+                unsafe { std::slice::from_raw_parts_mut(stats, counts.len()) }.copy_from_slice(&counts);
             }
             0
         }

@@ -98,10 +98,14 @@ def rewrite_request(build_request, settings, work_dir=None):
             formats[png] = _write_raw(png, raw, kind, (width, height))
         header = f"P\t{width}\t{height}\t{'srgb' if srgb else 'raw'}"
         program = "\n".join([header, *_resolve_lines(plan, formats)]) + "\n"
-        clipped = _run_native(program, len(plan.lines))
+        clipped, changed = _run_native(program, len(plan.lines))
 
         encoding = "srgb" if srgb else "raw"
         for leaf in emitting:
+            if not changed[leaf.line]:
+                # Most opaque Normal layers come out as they went in; re-encoding
+                # dozens of 4K PNGs for nothing is most of the pass's time.
+                continue
             content_png = leaf.node["asset"]["path"]
             _read_raw(leaf.out_content_raw, content_png, formats[content_png], (width, height))
             png_color_metadata.normalize_png(content_png, encoding)
@@ -363,19 +367,20 @@ def _native_library():
 
 
 def _run_native(program, line_count):
-    """Run a program; returns the clipped-pixel count for each program line."""
+    """Run a program; returns per-line (clipped, changed) pixel counts."""
     encoded = program.encode("utf-8")
-    counts = (ctypes.c_uint64 * line_count)()
+    counts = (ctypes.c_uint64 * (line_count * 2))()
     error = ctypes.create_string_buffer(2048)
     status = _native_library().rizum_painter_look_run(
         encoded,
         len(encoded),
         max(1, os.cpu_count() or 1),
         counts,
-        line_count,
+        line_count * 2,
         error,
         len(error),
     )
     if status:
         raise RuntimeError(f"Painter-look rewrite failed: {error.value.decode('utf-8', 'replace')}")
-    return list(counts)
+    values = list(counts)
+    return values[0::2], values[1::2]
