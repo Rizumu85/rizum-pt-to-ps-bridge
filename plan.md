@@ -48,7 +48,7 @@ and Photoshop and applies them only on an explicit Apply.
 Goal: PSDs from Export and Bridge look like Painter at hand-off while staying
 ordinary sRGB documents (`design.md §4`, `analysis.md §6.2-6.3`).
 
-- [ ] Probe Painter group isolation: Normal-mode groups with non-Normal
+- [x] Probe Painter group isolation: Normal-mode groups with non-Normal
       children, group opacity, and group masks.
 - [ ] Native compositor and pixel rewrite in `native/`: Painter's linear
       model with premultiplied alpha, the Normal coverage solve, the

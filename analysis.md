@@ -466,9 +466,18 @@ opacity); `C` layer color; `lin` / `enc` the sRGB transfer functions.
   look writes `T` as a Normal layer over the known backdrop.
 - **Backdrop alpha**: the bottom of a stack and isolated groups start
   transparent, so the compositor tracks premultiplied alpha in both spaces.
-- **Painter group isolation** (Normal-mode groups compositing children against
-  a transparent backdrop) has not been measured yet and must be probed before
-  rewriting children of isolated groups.
+- **Groups and masks** (measured the same way, all within ~1 level):
+  - A Normal-mode group is isolated: its children composite against a
+    transparent backdrop, so a Multiply or Screen child there shows its own
+    color, and the group result then composites by coverage. Photoshop Normal
+    groups behave the same way, only in sRGB.
+  - A Pass Through group lets children blend with what is below it; its
+    opacity mixes the group result with that backdrop.
+  - A group's own blend mode (e.g. Multiply) applies to its composite.
+  - Masks are raw coverage values, multiplied with opacity like any coverage.
+  - An empty stack is transparent: a Multiply layer over nothing shows its own
+    color. The export flattens what stays transparent over the channel's
+    default color (BaseColor: sRGB 231).
 
 Painter's bundled Python has no numpy, so the compositor and rewrite belong in
 the native library that already hosts edge smoothing (`native/`).
