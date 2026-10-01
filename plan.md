@@ -60,7 +60,7 @@ ordinary sRGB documents (`design.md §4`, `analysis.md §6.2-6.3`).
       color and data channel layers (the normal channel keeps today's export).
 - [ ] Export: verify the composite against Painter's channel render and name
       layers that could not be reproduced.
-- [ ] Bridge: read-only Photoshop pass that renders the backdrop below each
+- [x] Bridge: read-only Photoshop pass that renders the backdrop below each
       insertion point; rewrite inserted layers against it.
 - [x] Settings: Blend modes row beside Size and Render at. It is a standing
       preference, so the export dialog does not repeat it.

@@ -394,6 +394,13 @@ Keep blend modes never changes coverage, masks, or opacity.
   point, which Photoshop renders in a read-only pass before anything is
   written. Inside an isolated (non Pass Through) Photoshop group the backdrop
   is the group's content below the insertion point.
+  - The read is its own Apply step, "Matching Painter's look", after the
+    render; it changes no document, so Cancel still works there.
+  - Inserts dropped at one place are rewritten together, each over the ones
+    that end up below it. Places are all read from the PSD as it was before
+    the Apply, so where inserts at two different places overlap, the upper
+    one does not account for the lower one.
+  - The normal channel skips the step, as Export does.
 
 No hidden Painter reference layer is added to the PSD.
 

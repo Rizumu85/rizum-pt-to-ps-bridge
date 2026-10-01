@@ -466,6 +466,11 @@ opacity); `C` layer color; `lin` / `enc` the sRGB transfer functions.
   look writes `T` as a Normal layer over the known backdrop.
 - **Backdrop alpha**: the bottom of a stack and isolated groups start
   transparent, so the compositor tracks premultiplied alpha in both spaces.
+  Over a partly transparent backdrop (0 < alpha < 1) Photoshop's result
+  alpha fixes the layer's coverage, so the color solve has no freedom left
+  and can clip. It is exact wherever what lies below a layer is opaque; in
+  texture PSDs a partly transparent composite occurs only around the bottom
+  layers' soft edges, outside an opaque base.
 - **Groups and masks** (measured the same way, all within ~1 level):
   - A Normal-mode group is isolated: its children composite against a
     transparent backdrop, so a Multiply or Screen child there shows its own
