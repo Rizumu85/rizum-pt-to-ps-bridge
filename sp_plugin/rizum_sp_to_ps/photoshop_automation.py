@@ -18,6 +18,7 @@ TRANSFER_PROGRESS_FILENAME = "photoshop_transfer_progress.json"
 _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
 _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 _MASK_RUNTIME_TOKEN = "__RIZUM_MASK_RUNTIME__"
+_TARGET_RUNTIME_TOKEN = "__RIZUM_TARGET_RUNTIME__"
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,14 @@ def _embed_mask_runtime(template):
     # Both scripts build layer masks; one shared copy keeps them in step.
     runtime = (Path(__file__).parent / "photoshop_masks.jsx").read_text(encoding="utf-8")
     return template.replace(_MASK_RUNTIME_TOKEN, runtime)
+
+
+def _embed_target_runtime(template):
+    if template.count(_TARGET_RUNTIME_TOKEN) != 1:
+        raise RuntimeError("Photoshop template has an invalid target runtime token")
+    # Every Bridge script finds the PSD and its layers with this one copy.
+    runtime = (Path(__file__).parent / "photoshop_targets.jsx").read_text(encoding="utf-8")
+    return template.replace(_TARGET_RUNTIME_TOKEN, runtime)
 
 
 def find_photoshop_executable(configured=""):
@@ -121,7 +130,7 @@ def write_photoshop_transfer_launcher(request_path):
     if template.count(_TRANSFER_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop transfer template has an invalid request token")
 
-    script = _embed_mask_runtime(_embed_json_runtime(template)).replace(
+    script = _embed_target_runtime(_embed_mask_runtime(_embed_json_runtime(template))).replace(
         _TRANSFER_REQUEST_TOKEN,
         json.dumps(str(request), ensure_ascii=True),
     )
@@ -132,3 +141,4 @@ def write_photoshop_transfer_launcher(request_path):
     progress_path.unlink(missing_ok=True)
     launcher_path.write_text(script, encoding="utf-8")
     return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)
+
