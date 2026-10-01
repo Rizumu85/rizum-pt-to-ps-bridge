@@ -19,12 +19,16 @@ class PhotoshopJob:
     of background timers otherwise.
     """
 
-    def __init__(self, QtCore, parent, launch, *, on_progress, on_done, on_failed):
+    def __init__(self, QtCore, parent, launch, *, on_progress, on_done, on_failed,
+                 cancelled=None, on_cancelled=None):
         self.launch = launch
         self.started = False
         self._on_progress = on_progress
         self._on_done = on_done
         self._on_failed = on_failed
+        # A read-only script can be abandoned: its result is simply ignored.
+        self._cancelled = cancelled
+        self._on_cancelled = on_cancelled
         self._started_at = 0.0
         self._timer = QtCore.QTimer(parent)
         self._timer.setInterval(POLL_INTERVAL_MS)
@@ -50,6 +54,10 @@ class PhotoshopJob:
 
     def poll(self):
         if not self.active:
+            return
+        if self._cancelled is not None and self._cancelled():
+            self.stop()
+            self._on_cancelled()
             return
         if not self.launch.result_path.is_file():
             progress = _read_json(self.launch.progress_path)

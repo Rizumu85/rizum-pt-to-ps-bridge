@@ -93,7 +93,7 @@ class PainterLookTests(unittest.TestCase):
             "layers": layers,
         }
 
-    def painter_reference(self, request):
+    def painter_reference(self, request, start=None):
         """Painter's linear composite of the untouched request, per pixel."""
         sources = {}
 
@@ -124,12 +124,12 @@ class PainterLookTests(unittest.TestCase):
                     state = over(state, color, cov, mode)
                 return state
 
-            rgb, a = run(request["layers"], ([0.0] * 3, 0.0))
+            rgb, a = run(request["layers"], start(x, y) if start else ([0.0] * 3, 0.0))
             return [enc(v / a) for v in rgb], a
 
         return pixel
 
-    def photoshop_composite(self, request):
+    def photoshop_composite(self, request, start=None):
         """Photoshop's sRGB composite of the rewritten request (Pass Through folders)."""
         def pixel(x, y):
             def run(nodes, state):
@@ -149,7 +149,7 @@ class PainterLookTests(unittest.TestCase):
                     state = over(state, [r, g, b], alpha, mode)
                 return state
 
-            rgb, a = run(request["layers"], ([0.0] * 3, 0.0))
+            rgb, a = run(request["layers"], start(x, y) if start else ([0.0] * 3, 0.0))
             return [v / a for v in rgb], a
 
         return pixel
@@ -171,6 +171,48 @@ class PainterLookTests(unittest.TestCase):
             worst = max(
                 abs(a - b)
                 for key, (color, _alpha) in expected.items()
+                for a, b in zip(color, photoshop(*key)[0])
+            )
+            self.assertLess(worst * 255, 2.5)
+
+    def test_bridge_items_match_painter_over_the_psds_own_backdrop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            request = self.build(directory)
+            # A Bridge insert of the group and one layer, over what the PSD
+            # already shows there. Exactness holds where the backdrop is
+            # opaque; where what lies below a layer is partly transparent,
+            # Photoshop's alpha fixes its coverage and colors can clip, so
+            # the left columns are only rewritten, not checked.
+            backdrop = QtGui.QImage(SIZE, SIZE, QtGui.QImage.Format.Format_RGBA8888)
+            for y in range(SIZE):
+                for x in range(SIZE):
+                    r, g, b = pattern(x, y, 9)
+                    backdrop.setPixelColor(x, y, QtGui.QColor.fromRgbF(r, g, b, 1.0 if x > 3 else 0.0))
+            backdrop_png = str(Path(directory) / "backdrop.png")
+            self.assertTrue(backdrop.save(backdrop_png, "PNG"))
+            below = self.read(backdrop_png)
+
+            def painter_start(x, y):
+                r, g, b, a = below(x, y)
+                return [lin(v) * a for v in (r, g, b)], a
+
+            def photoshop_start(x, y):
+                r, g, b, a = below(x, y)
+                return [v * a for v in (r, g, b)], a
+
+            inserted = {**request, "layers": request["layers"][:2]}
+            painter = self.painter_reference(inserted, painter_start)
+            expected = {(x, y): painter(x, y) for x in range(SIZE) for y in range(SIZE)}
+
+            items = [{**request, "layers": [layer]} for layer in inserted["layers"]]
+            summary = painter_look.rewrite_insertion(items, {}, backdrop_png)
+
+            self.assertEqual(summary["rewritten_layers"], 3)
+            photoshop = self.photoshop_composite(inserted, photoshop_start)
+            worst = max(
+                abs(a - b)
+                for key, (color, _alpha) in expected.items()
+                if key[0] > 3
                 for a, b in zip(color, photoshop(*key)[0])
             )
             self.assertLess(worst * 255, 2.5)

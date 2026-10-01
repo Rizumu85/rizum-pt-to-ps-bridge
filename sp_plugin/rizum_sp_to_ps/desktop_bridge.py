@@ -45,6 +45,7 @@ class DesktopBridgeController:
         self._applying_transfer = False
         self._photoshop_job = None
         self._pending_transfer_result = None
+        self._pending_prepared = None
         self._photoshop_progress_dialog = None
         self._photoshop_phase = None
         self._picking = False
@@ -362,6 +363,7 @@ class DesktopBridgeController:
         job = self._photoshop_job
         self._photoshop_job = None
         self._pending_transfer_result = None
+        self._pending_prepared = None
         self._photoshop_phase = None
         dialog = self._photoshop_progress_dialog
         self._photoshop_progress_dialog = None
@@ -451,37 +453,126 @@ class DesktopBridgeController:
     def _apply_desktop_transfer(self, manifest_path):
         if self._closing:
             return
-        self._applying_transfer = True
-        self._sync_button()
+        self._apply_progress({"message": "Preparing Painter transfer..."})
+        prepared = self._run_apply_step(
+            lambda progress, cancelled: desktop_transfer.begin_transfer(
+                manifest_path,
+                settings=self.panel.user_settings,
+                progress_callback=progress,
+                cancelled=cancelled,
+            )
+        )
+        if prepared is None:
+            return
+        if prepared.backdrop_launch is not None:
+            self._start_backdrop_job(prepared)
+        else:
+            self._continue_apply(prepared, None)
+
+    def _apply_cancelled(self):
+        # Every Painter render is checked against the mapper's Cancel here and
+        # while Photoshop reads the backdrops.
         process = self._process
         # Not cleared here: a Cancel pressed while the mapper still waited
         # for Painter arrives before this runs and must still count.
-        cancelled = lambda: process is not None and process.interrupted.is_set()
+        return lambda: process is not None and process.interrupted.is_set()
+
+    def _run_apply_step(self, step):
+        """Run one synchronous Apply step, answering the mapper if it fails."""
+        self._applying_transfer = True
+        self._sync_button()
+        cancelled = self._apply_cancelled()
 
         def progress(payload):
             self._apply_progress(payload)
             return not cancelled()
 
         try:
-            self._apply_progress({"message": "Preparing Painter transfer..."})
-            result = desktop_transfer.apply_transfer_manifest(
-                manifest_path,
-                settings=self.panel.user_settings,
-                progress_callback=progress,
-                cancelled=cancelled,
-            )
+            return step(progress, cancelled)
         except exporter.ExportCancelled:
-            self._finish_apply(
-                "apply_cancelled",
-                "Apply cancelled. Nothing was changed in Painter or Photoshop.",
-            )
-            return
+            self._report_apply_cancelled()
         except Exception as exc:
             self._finish_apply("apply_failed", str(exc))
-            return
         finally:
             self._applying_transfer = False
             self._sync_button()
+        return None
+
+    def _report_apply_cancelled(self):
+        self._finish_apply(
+            "apply_cancelled",
+            "Apply cancelled. Nothing was changed in Painter or Photoshop.",
+        )
+
+    def _start_backdrop_job(self, prepared):
+        """Have Photoshop report what lies below the inserts; nothing is written."""
+        self._apply_progress({"stage": "match", "message": "Reading the Photoshop document..."})
+        try:
+            launched, message = self.panel.launch_photoshop(prepared.backdrop_launch.launcher_path)
+        except Exception as exc:
+            launched, message = False, str(exc)
+        if not launched:
+            self._finish_apply("apply_failed", message)
+            return
+        self._trace("photoshop_backdrop_requested", str(prepared.backdrop_launch.launcher_path))
+        self._pending_prepared = prepared
+        self._photoshop_job = PhotoshopJob(
+            self.QtCore,
+            self.panel.widget,
+            prepared.backdrop_launch,
+            on_progress=self._update_backdrop_progress,
+            on_done=self._backdrop_ready,
+            on_failed=self._backdrop_failed,
+            cancelled=self._apply_cancelled(),
+            on_cancelled=self._backdrop_cancelled,
+        )
+        self._photoshop_job.start()
+        self._sync_button()
+
+    def _update_backdrop_progress(self, payload):
+        total, completed = payload.get("total", 0), payload.get("completed", 0)
+        if payload.get("phase") == "reading_backdrop" and isinstance(total, int) and total > 0:
+            self._apply_progress({
+                "stage": "match", "message": "Reading the Photoshop document...",
+                "completed": completed, "total": total,
+            })
+
+    def _take_backdrop_job(self):
+        prepared = self._pending_prepared
+        self._pending_prepared = None
+        job = self._photoshop_job
+        self._photoshop_job = None
+        if job is not None:
+            job.stop()
+        self._sync_button()
+        return prepared
+
+    def _backdrop_ready(self, payload):
+        prepared = self._take_backdrop_job()
+        if prepared is not None and not self._closing:
+            self._continue_apply(prepared, payload)
+
+    def _backdrop_failed(self, message):
+        self._take_backdrop_job()
+        if not self._closing:
+            self._finish_apply("apply_failed", message)
+
+    def _backdrop_cancelled(self):
+        self._take_backdrop_job()
+        if not self._closing:
+            self._report_apply_cancelled()
+
+    def _continue_apply(self, prepared, backdrop_result):
+        result = self._run_apply_step(
+            lambda progress, cancelled: desktop_transfer.finish_transfer(
+                prepared,
+                backdrop_result,
+                progress_callback=progress,
+                cancelled=cancelled,
+            )
+        )
+        if result is None:
+            return
         if result.photoshop_launch is not None:
             self._start_photoshop_job(
                 result.photoshop_launch, f"Insert {result.exported_count} layer(s)", result,

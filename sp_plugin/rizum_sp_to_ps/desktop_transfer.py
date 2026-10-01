@@ -8,7 +8,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import exporter, photoshop_automation
+from . import exporter, painter_look, photoshop_automation
 from .blend_map import normalized_blend_name, photoshop_to_painter_blend_modes
 
 
@@ -93,6 +93,37 @@ class TransferPlan:
 
 
 @dataclass(frozen=True)
+class InsertionPoint:
+    """One place in the PSD that Bridge inserts Painter layers at."""
+
+    key: str
+    target_layer_id: int | None
+    target_index_path: tuple[int, ...]
+    target_name: str
+    insertion: str
+    # Indexes into the rendered items, in the order they end up in Photoshop,
+    # top first.
+    items: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PreparedTransfer:
+    """An Apply after Painter's render, before either document is changed.
+
+    When Photoshop still has to report what lies below the inserts, the
+    Apply waits for ``backdrop_launch`` and finishes with its result.
+    """
+
+    plan: TransferPlan
+    painter: object
+    settings: dict
+    rendered: tuple = ()
+    output_dir: Path | None = None
+    points: tuple[InsertionPoint, ...] = ()
+    backdrop_launch: photoshop_automation.PhotoshopScriptLaunch | None = None
+
+
+@dataclass(frozen=True)
 class TransferResult:
     """Summary returned after both host handoffs are prepared."""
 
@@ -167,8 +198,12 @@ def load_transfer_plan(manifest_path):
     )
 
 
-def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress_callback=None, cancelled=None):
-    """Execute local Painter work and prepare any Photoshop-side handoff."""
+def begin_transfer(manifest_path, settings=None, painter=None, progress_callback=None, cancelled=None):
+    """Render what an Apply sends to Photoshop, changing no document yet.
+
+    Returns the prepared Apply; when it needs Photoshop's backdrops, run its
+    ``backdrop_launch`` and pass the result to ``finish_transfer``.
+    """
     plan = load_transfer_plan(manifest_path)
     if painter is None:
         try:
@@ -178,13 +213,36 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress
                 "Desktop transfers must be applied inside Substance 3D Painter."
             ) from exc
     _validate_project(plan, painter.project)
-    launcher = _prepare_photoshop_transfer(plan, settings or {}, progress_callback)
-    # Cancel is honoured until here, while rendering has changed no document.
-    # Past this point Painter and then Photoshop are edited, and stopping
-    # part way would leave either half-applied.
-    if cancelled is not None and cancelled():
-        raise exporter.ExportCancelled("Apply cancelled before anything was changed.")
-    result = apply_transfer_plan(plan, painter, progress_callback)
+    settings = dict(settings or {})
+    rendered, output_dir = _render_photoshop_items(plan, settings, progress_callback)
+    points = ()
+    backdrop_launch = None
+    if rendered and painter_look.rewrites_channel(plan.channel):
+        points = _insertion_points(plan)
+        backdrop_launch = _write_backdrop_request(plan, points, output_dir)
+    _raise_if_cancelled(cancelled)
+    return PreparedTransfer(
+        plan=plan,
+        painter=painter,
+        settings=settings,
+        rendered=tuple(rendered),
+        output_dir=output_dir,
+        points=points,
+        backdrop_launch=backdrop_launch,
+    )
+
+
+def finish_transfer(prepared, backdrop_result=None, progress_callback=None, cancelled=None):
+    """Rewrite against Photoshop's backdrops, edit Painter, and hand off the insert."""
+    plan = prepared.plan
+    if prepared.points:
+        _rewrite_inserts(prepared, backdrop_result, progress_callback)
+    elif prepared.rendered and progress_callback is not None:
+        # The mapper lists this step for every insert; say why it is empty.
+        progress_callback({"stage": "match", "message": f"Not needed for the {plan.channel} channel"})
+    launcher = _write_transfer_request(prepared) if prepared.rendered else None
+    _raise_if_cancelled(cancelled)
+    result = apply_transfer_plan(plan, prepared.painter, progress_callback)
     return TransferResult(
         imported_count=result.imported_count,
         exported_count=len(plan.photoshop_exports),
@@ -195,6 +253,14 @@ def apply_transfer_manifest(manifest_path, settings=None, painter=None, progress
         warnings=plan.warnings + result.warnings,
         photoshop_launch=launcher,
     )
+
+
+def _raise_if_cancelled(cancelled):
+    # Cancel is honoured until Painter is edited: rendering and reading the
+    # PSD change no document. Past that point Painter and then Photoshop are
+    # edited, and stopping part way would leave either half-applied.
+    if cancelled is not None and cancelled():
+        raise exporter.ExportCancelled("Apply cancelled before anything was changed.")
 
 
 def apply_transfer_plan(plan, painter, progress_callback=None):
@@ -349,9 +415,9 @@ def transfer_assets_dir(launch):
     return Path(launch.request_path).parent / "assets"
 
 
-def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
+def _render_photoshop_items(plan, settings, progress_callback=None):
     if not plan.photoshop_exports:
-        return None
+        return [], None
 
     context = {
         "texture_set": plan.texture_set,
@@ -366,7 +432,7 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
     # Each Apply renders its own sources; a previous Apply's PNGs are never
     # read again, so they must not pile up beside this one.
     shutil.rmtree(output_dir / "assets", ignore_errors=True)
-    settings = {**settings, "render_scale": plan.render_scale}
+    settings["render_scale"] = plan.render_scale
     width, height = plan.photoshop_document.get("width"), plan.photoshop_document.get("height")
     if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
         # Layers are rendered for the PSD they go into. Painter's own size
@@ -383,31 +449,128 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
         raise DesktopTransferError(
             "Painter did not render every mapped Photoshop transfer source."
         )
+    return rendered, output_dir
 
+
+def _insertion_points(plan):
+    """Group the inserts by the place they land, each in its final order."""
+    grouped = {}
+    for index, item in enumerate(plan.photoshop_exports):
+        target = str(item.target_layer_id) if item.target_layer_id is not None else "/".join(map(str, item.target_index_path))
+        key = f"{target}|{item.insertion}"
+        grouped.setdefault(key, (item, []))[1].append(index)
+    points = []
+    for key, (item, indexes) in grouped.items():
+        # The insert replays each drop in turn: "before" places right above
+        # the target and "inside" at the folder's end, so later drops land
+        # below earlier ones; "after" places right below it, so later drops
+        # land above.
+        ordered = tuple(reversed(indexes)) if item.insertion == "after" else tuple(indexes)
+        points.append(InsertionPoint(
+            key=key,
+            target_layer_id=item.target_layer_id,
+            target_index_path=tuple(item.target_index_path),
+            target_name=item.target_name,
+            insertion=item.insertion,
+            items=ordered,
+        ))
+    return tuple(points)
+
+
+def _write_backdrop_request(plan, points, output_dir):
+    request_path = output_dir / "photoshop_backdrop.json"
+    exporter.write_json_atomic(request_path, {
+        "schema_version": 1,
+        "request_type": "photoshop_backdrop_request",
+        "document": plan.photoshop_document,
+        "points": [
+            {
+                "key": point.key,
+                "target_layer_id": point.target_layer_id,
+                "target_index_path": list(point.target_index_path),
+                "target_name": point.target_name,
+                "insertion": point.insertion,
+            }
+            for point in points
+        ],
+    })
+    return photoshop_automation.write_photoshop_backdrop_launcher(request_path)
+
+
+def _rewrite_inserts(prepared, backdrop_result, progress_callback=None):
+    """Make each insert look in the PSD as it does in Painter (design.md §4.3).
+
+    Inserts at one place are rewritten together over the PSD's content there.
+    Places are read from the PSD as it was before this Apply, so where two
+    new inserts at different places overlap, the upper one does not see the
+    lower one; reading again after every insert would cost a Photoshop round
+    trip per place.
+    """
+    backdrops = {}
+    if not isinstance(backdrop_result, dict) or backdrop_result.get("success") is not True:
+        errors = (backdrop_result or {}).get("errors") if isinstance(backdrop_result, dict) else None
+        detail = "; ".join(str(error.get("message")) for error in errors or [] if isinstance(error, dict))
+        raise DesktopTransferError(
+            "Photoshop could not read what lies below the inserts" + (f": {detail}" if detail else ".")
+        )
+    for entry in backdrop_result.get("backdrops") or []:
+        if isinstance(entry, dict) and entry.get("key"):
+            backdrops[str(entry["key"])] = entry.get("png")
+    for index, point in enumerate(prepared.points, start=1):
+        if point.key not in backdrops:
+            raise DesktopTransferError(f"Photoshop did not read the place for {point.target_name}.")
+        if progress_callback is not None:
+            progress_callback({
+                "stage": "match", "message": "Matching Painter's look...",
+                "completed": index - 1, "total": len(prepared.points),
+            })
+        backdrop = backdrops[point.key]
+        try:
+            painter_look.rewrite_insertion(
+                [prepared.rendered[item]["build_request"] for item in point.items],
+                prepared.settings,
+                backdrop,
+            )
+        finally:
+            if backdrop:
+                Path(backdrop).unlink(missing_ok=True)
+    if progress_callback is not None:
+        progress_callback({
+            "stage": "match", "message": "Matching Painter's look...",
+            "completed": len(prepared.points), "total": len(prepared.points),
+        })
+
+
+def _write_transfer_request(prepared):
+    plan = prepared.plan
     layers = []
-    for item, asset in zip(plan.photoshop_exports, rendered):
+    for item, rendered in zip(plan.photoshop_exports, prepared.rendered):
+        # A rewritten insert carries its own mode and opacity: Match Painter
+        # look folds opacity into the pixels and may turn the layer Normal.
+        node = exporter.transfer_node(rendered["build_request"]["layers"][0], plan.channel) or rendered
+        rewritten = bool(prepared.points)
         layers.append(
             {
                 "order": item.order,
                 "name": item.name,
                 "source_uid": format(item.source_uid, "x"),
                 "source_kind": item.source_kind,
-                "png": asset["png"],
-                "mask_png": asset.get("mask_png"),
+                "png": node["png"],
+                "mask_png": node.get("mask_png"),
                 # Children arrive top to bottom, the order Photoshop shows.
-                "children": asset.get("children") or [],
+                "children": node.get("children") or [],
                 "target_layer_id": item.target_layer_id,
                 "target_index_path": list(item.target_index_path),
                 "target_name": item.target_name,
                 "target_kind": item.target_kind,
                 "insertion": item.insertion,
-                "blend_mode": item.blend_mode,
-                "opacity": item.opacity,
+                "blend_mode": node["blend_mode"] if rewritten else item.blend_mode,
+                "opacity": node["opacity"] if rewritten else item.opacity,
                 "visible": item.visible,
             }
         )
 
-    request_path = output_dir / "photoshop_transfer.json"
+    request_path = prepared.output_dir / "photoshop_transfer.json"
     request = {
         "schema_version": 1,
         "request_type": "painter_to_photoshop_transfer",
@@ -415,8 +578,10 @@ def _prepare_photoshop_transfer(plan, settings, progress_callback=None):
         "context": plan.photoshop_context,
         "layers": layers,
     }
-    if "psd_resolution" in settings:
-        request["placement_probe"] = str(_write_placement_probe(output_dir, settings["psd_resolution"]))
+    if "psd_resolution" in prepared.settings:
+        request["placement_probe"] = str(
+            _write_placement_probe(prepared.output_dir, prepared.settings["psd_resolution"])
+        )
     exporter.write_json_atomic(request_path, request)
     return photoshop_automation.write_photoshop_transfer_launcher(request_path)
 

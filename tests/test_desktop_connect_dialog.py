@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +11,10 @@ from PySide6 import QtCore, QtWidgets
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import DesktopBridgeController
 from sp_plugin.rizum_sp_to_ps.desktop_transfer import TransferResult
 from sp_plugin.rizum_sp_to_ps.ui_kit import install_compact_tooltip
-from sp_plugin.rizum_sp_to_ps.photoshop_automation import write_photoshop_transfer_launcher
+from sp_plugin.rizum_sp_to_ps.photoshop_automation import (
+    write_photoshop_backdrop_launcher,
+    write_photoshop_transfer_launcher,
+)
 
 
 class DesktopConnectDialogTests(unittest.TestCase):
@@ -34,6 +38,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._launch_desktop = Mock()
         # Connections start from an open mapper, which stays open for the reply.
         self.process = Mock()
+        self.process.interrupted = threading.Event()
         self.controller._process = self.process
         root = Path(self.directory.name)
         self.controller._snapshot_path = root / "painter_snapshot.json"
@@ -234,8 +239,10 @@ class DesktopConnectDialogTests(unittest.TestCase):
             if error:
                 raise error
             return result
+        prepared = SimpleNamespace(backdrop_launch=None)
         with (
-            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest", side_effect=apply),
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.begin_transfer", return_value=prepared),
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.finish_transfer", side_effect=apply),
             patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.exporter.write_painter_snapshot") as snapshot,
         ):
             self.controller._apply_desktop_transfer(manifest)
@@ -275,6 +282,53 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertIn("inserted 1 Painter layer(s) into Photoshop", reply["message"])
         self.assertIsNone(self.controller._photoshop_job)
 
+    def start_backdrop_apply(self):
+        """An Apply that needs Photoshop's backdrops; returns (launch, finish mock)."""
+        manifest = Path(self.directory.name) / "desktop_transfer.json"
+        manifest.write_text("{}", encoding="utf-8")
+        request = Path(self.directory.name) / "painter_to_photoshop" / "photoshop_backdrop.json"
+        request.parent.mkdir()
+        request.write_text("{}", encoding="utf-8")
+        launch = write_photoshop_backdrop_launcher(request)
+        prepared = SimpleNamespace(backdrop_launch=launch)
+        finish = Mock(return_value=TransferResult(0, 0, (), (), None))
+        self.patches = [
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.begin_transfer", return_value=prepared),
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.finish_transfer", finish),
+            patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.exporter.write_painter_snapshot"),
+        ]
+        for active in self.patches:
+            active.start()
+            self.addCleanup(active.stop)
+        self.controller._apply_desktop_transfer(manifest)
+        return launch, finish
+
+    def test_apply_reads_photoshops_backdrops_before_changing_anything(self):
+        launch, finish = self.start_backdrop_apply()
+
+        # Photoshop reads first; neither document is touched until it answers,
+        # and Painter stays free meanwhile.
+        self.panel.launch_photoshop.assert_called_once_with(launch.launcher_path)
+        finish.assert_not_called()
+        self.assertFalse(self.panel.dock_bridge_button.isEnabled())
+        payload = {"success": True, "backdrops": [{"key": "3|before", "png": None}], "errors": []}
+        launch.result_path.write_text(json.dumps(payload), encoding="utf-8")
+        self.poll()
+
+        self.assertEqual(finish.call_args.args[1], payload)
+        self.assertEqual(self.replies()[-1]["type"], "applied")
+        self.assertIsNone(self.controller._photoshop_job)
+
+    def test_cancel_while_photoshop_reads_changes_nothing(self):
+        _launch, finish = self.start_backdrop_apply()
+
+        self.process.interrupted.set()
+        self.poll()
+
+        finish.assert_not_called()
+        self.assertEqual(self.replies()[-1]["type"], "apply_cancelled")
+        self.assertIsNone(self.controller._photoshop_job)
+
     def test_failed_apply_still_refreshes_the_mapper(self):
         self.apply_request(error=RuntimeError("Painter target moved"))
         reply = self.replies()[-1]
@@ -286,7 +340,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
     def test_closing_the_mapper_needs_no_apply(self):
         process = SimpleNamespace()
         self.controller._process = process
-        with patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.apply_transfer_manifest") as apply:
+        with patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.begin_transfer") as apply:
             self.controller._desktop_finished(process, 0, "")
         apply.assert_not_called()
         self.controller._show_message_callback.assert_not_called()

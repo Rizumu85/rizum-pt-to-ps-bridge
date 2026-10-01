@@ -49,6 +49,10 @@ SKIPPED_CHANNELS = {"normal"}
 CLIPPED_WARNING_SHARE = 0.001
 
 
+def rewrites_channel(channel):
+    return str(channel or "").casefold() not in SKIPPED_CHANNELS
+
+
 def matches_painter(settings):
     return (settings or {}).get("blend_modes", DEFAULT_BLEND_MODES) != KEEP_BLEND_MODES
 
@@ -74,7 +78,29 @@ class _Plan:
     inputs: list = field(default_factory=list)  # (png path, raw path, kind)
 
 
-def rewrite_request(build_request, settings, work_dir=None):
+def rewrite_insertion(build_requests, settings, backdrop_png=None, work_dir=None):
+    """Rewrite Bridge items inserted at one place in a PSD, over its content.
+
+    ``build_requests`` holds one rendered item each, in the order they end up
+    in Photoshop, top first; each sits on the ones below it and all of them on
+    ``backdrop_png``, the PSD's own composite below the insertion point. None
+    means nothing is below (an empty document or an isolated folder's bottom).
+    """
+    if not build_requests:
+        return {"mode": "skipped", "reason": "nothing to insert"}
+    first = build_requests[0]
+    stacked = {
+        "channel": first.get("channel"),
+        "color_management": first["color_management"],
+        "export_settings": first["export_settings"],
+        # Node dicts are shared with their own requests, so each request's
+        # layers are rewritten in place.
+        "layers": [request["layers"][0] for request in build_requests],
+    }
+    return rewrite_request(stacked, settings, work_dir=work_dir, backdrop_png=backdrop_png)
+
+
+def rewrite_request(build_request, settings, work_dir=None, backdrop_png=None):
     """Rewrite a build request's payloads in place; returns a summary.
 
     Runs after every payload is at the PSD's size (after smoothing and
@@ -82,7 +108,7 @@ def rewrite_request(build_request, settings, work_dir=None):
     will actually read.
     """
     channel = str(build_request.get("channel") or "")
-    if channel.casefold() in SKIPPED_CHANNELS:
+    if not rewrites_channel(channel):
         return {"mode": "skipped", "reason": f"{channel} channel"}
     match = matches_painter(settings)
     srgb = build_request["color_management"]["encoding"] == "srgb"
@@ -96,8 +122,12 @@ def rewrite_request(build_request, settings, work_dir=None):
         formats = {}
         for png, raw, kind in plan.inputs:
             formats[png] = _write_raw(png, raw, kind, (width, height))
-        header = f"P\t{width}\t{height}\t{'srgb' if srgb else 'raw'}"
-        program = "\n".join([header, *_resolve_lines(plan, formats)]) + "\n"
+        header = [f"P\t{width}\t{height}\t{'srgb' if srgb else 'raw'}"]
+        if backdrop_png:
+            backdrop_raw = str(Path(scratch) / "backdrop.raw")
+            depth, stride = _write_raw(backdrop_png, backdrop_raw, "content", (width, height))
+            header.append(f"K\t{backdrop_raw}\t{depth}\t{stride}")
+        program = "\n".join([*header, *_resolve_lines(plan, formats)]) + "\n"
         clipped, changed = _run_native(program, len(plan.lines))
 
         encoding = "srgb" if srgb else "raw"

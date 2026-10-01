@@ -19,6 +19,10 @@ _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
 _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 _MASK_RUNTIME_TOKEN = "__RIZUM_MASK_RUNTIME__"
 _TARGET_RUNTIME_TOKEN = "__RIZUM_TARGET_RUNTIME__"
+BACKDROP_LAUNCHER_FILENAME = "_read_photoshop_backdrop.jsx"
+BACKDROP_RESULT_FILENAME = "photoshop_backdrop_result.json"
+BACKDROP_PROGRESS_FILENAME = "photoshop_backdrop_progress.json"
+_BACKDROP_REQUEST_TOKEN = "__RIZUM_BACKDROP_REQUEST_PATH__"
 
 
 @dataclass(frozen=True)
@@ -142,3 +146,21 @@ def write_photoshop_transfer_launcher(request_path):
     launcher_path.write_text(script, encoding="utf-8")
     return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)
 
+
+def write_photoshop_backdrop_launcher(request_path):
+    """Write the JSX that reads what a PSD shows below each Bridge insert."""
+    request = Path(request_path).resolve()
+    template = Path(__file__).with_name("photoshop_backdrop.jsx").read_text(encoding="utf-8")
+    if template.count(_BACKDROP_REQUEST_TOKEN) != 1:
+        raise RuntimeError("Photoshop backdrop template has an invalid request token")
+    script = _embed_target_runtime(_embed_json_runtime(template)).replace(
+        _BACKDROP_REQUEST_TOKEN,
+        json.dumps(str(request), ensure_ascii=True),
+    )
+    launcher_path = request.parent / BACKDROP_LAUNCHER_FILENAME
+    result_path = request.parent / BACKDROP_RESULT_FILENAME
+    progress_path = request.parent / BACKDROP_PROGRESS_FILENAME
+    result_path.unlink(missing_ok=True)
+    progress_path.unlink(missing_ok=True)
+    launcher_path.write_text(script, encoding="utf-8")
+    return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)

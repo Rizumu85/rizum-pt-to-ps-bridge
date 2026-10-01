@@ -161,6 +161,7 @@ export function InsetSeparator() {
 const stageTitles: Record<ApplyStage, string> = {
   read: "Reading Photoshop layers",
   render: "Rendering Painter layers",
+  match: "Matching Painter's look",
   import: "Importing into Painter",
   photoshop: "Inserting into Photoshop",
 }
@@ -169,10 +170,11 @@ const stageTitles: Record<ApplyStage, string> = {
 // overall percentage; saving and host waits remain indeterminate. The user
 // asked that a bar starting over be told apart as a new step, so every step is
 // titled and numbered, and a step never restarts its own count.
-// Cancel stops an Apply only while no document has changed: reading the PSD
-// and Painter's render. Once Painter or Photoshop is being written, stopping
-// would leave it half-applied, so the button waits and says why.
-const cancellableStages: ReadonlySet<ApplyStage | undefined> = new Set([undefined, "read", "render"])
+// Cancel stops an Apply only while no document has changed: reading the PSD,
+// Painter's render, and matching it to the PSD. Once Painter or Photoshop is
+// being written, stopping would leave it half-applied, so the button waits
+// and says why.
+const cancellableStages: ReadonlySet<ApplyStage | undefined> = new Set([undefined, "read", "render", "match"])
 
 export function ApplyProgressDialog({ progress, steps, cancelling = false, onCancel }: {
   progress: ApplyProgress

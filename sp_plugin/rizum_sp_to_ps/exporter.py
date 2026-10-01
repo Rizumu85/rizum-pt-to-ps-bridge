@@ -388,7 +388,7 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
                 progress_callback=forward if progress_callback else None,
             )
             done += work
-            node = _transfer_node(build_request["layers"][0], context["channel"])
+            node = transfer_node(build_request["layers"][0], context["channel"])
             if node is None:
                 raise RuntimeError(
                     f"Painter rendered no visible pixels for {selected.get('name')!r}."
@@ -397,6 +397,9 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
                 "uid": source_uid,
                 "name": selected.get("name") or source_uid,
                 **node,
+                # Bridge rewrites the payloads against the PSD's content and
+                # reads the transfer tree back from it.
+                "build_request": build_request,
             })
     finally:
         node_exporter.close()
@@ -405,7 +408,7 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
     return exported
 
 
-def _transfer_node(node, channel):
+def transfer_node(node, channel):
     """One rendered build node as the Painter-to-Photoshop transfer tree."""
     mask = node.get("mask_asset")
     opacity = node.get("opacity")
@@ -427,7 +430,7 @@ def _transfer_node(node, channel):
         return {**record, "kind": "layer", "png": str(Path(asset["path"]).resolve()), "children": []}
     children = [
         child
-        for child in (_transfer_node(item, channel) for item in node.get("children") or [])
+        for child in (transfer_node(item, channel) for item in node.get("children") or [])
         if child is not None
     ]
     if not children:

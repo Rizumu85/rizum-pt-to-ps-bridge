@@ -102,6 +102,10 @@ struct Program {
     width: usize,
     height: usize,
     srgb: bool,
+    /// What the stack sits on, straight color with alpha, encoded like the
+    /// payloads. Bridge inserts into a PSD whose content below the insertion
+    /// point is this; a new export starts from nothing.
+    backdrop: Option<Raw>,
     ops: Vec<Op>,
 }
 
@@ -136,9 +140,13 @@ fn parse_program(text: &str) -> Result<Program, String> {
     let srgb = match header[3] { "srgb" => true, "raw" => false, other => return Err(format!("bad transfer {other}")) };
     let mut ops = Vec::new();
     let mut depth = 0i32;
+    let mut backdrop = None;
     for line in lines {
         let f: Vec<&str> = line.split('\t').collect();
         match f[0] {
+            "K" if f.len() == 4 && ops.is_empty() && backdrop.is_none() => {
+                backdrop = parse_raw(f[1], f[2], 4, width, f[3])?;
+            }
             "B" if f.len() == 7 => {
                 depth += 1;
                 ops.push(Op::Begin {
@@ -194,7 +202,7 @@ fn parse_program(text: &str) -> Result<Program, String> {
     if depth != 0 {
         return Err("unbalanced group".into());
     }
-    Ok(Program { width, height, srgb, ops })
+    Ok(Program { width, height, srgb, backdrop, ops })
 }
 
 // ---------------------------------------------------------------- color math
@@ -473,9 +481,14 @@ struct LeafOutput {
 }
 
 fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File>, Option<File>)>],
-             group_masks: &[Option<File>], row0: usize, rows: usize, stats: &Stats) -> Result<(), String> {
+             group_masks: &[Option<File>], backdrop_file: Option<&File>, row0: usize, rows: usize,
+             stats: &Stats) -> Result<(), String> {
     let width = program.width;
     let transfer = Transfer { srgb: program.srgb };
+    let backdrop = match (&program.backdrop, backdrop_file) {
+        (Some(raw), Some(file)) => Some(read_strip(raw, file, width, row0, rows)?),
+        _ => None,
+    };
     // Load inputs for this strip.
     let mut leaf_inputs: Vec<Option<(Strip, Option<Strip>)>> = Vec::with_capacity(program.ops.len());
     let mut group_inputs: Vec<Option<Strip>> = Vec::with_capacity(program.ops.len());
@@ -512,10 +525,21 @@ fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File
     let mut contexts: Vec<Context> = Vec::new();
     for pixel in 0..width * rows {
         contexts.clear();
-        contexts.push(Context { pass: true, mode: Mode::Normal, cov: 1.0, state: CLEAR });
-        // Photoshop's running composite, encoded premultiplied. Match Painter
-        // look turns every folder into Pass Through, so one buffer holds it.
-        let mut ps = CLEAR;
+        // Painter's state is linear premultiplied; Photoshop's running
+        // composite is encoded premultiplied. Match Painter look turns every
+        // folder into Pass Through, so one buffer holds Photoshop's.
+        let (start, mut ps) = match &backdrop {
+            Some(strip) => {
+                let b = &strip.data[pixel * 4..pixel * 4 + 4];
+                let linear = transfer.to_linear([b[0], b[1], b[2]]);
+                (
+                    Px { rgb: [linear[0] * b[3], linear[1] * b[3], linear[2] * b[3]], a: b[3] },
+                    Px { rgb: [b[0] * b[3], b[1] * b[3], b[2] * b[3]], a: b[3] },
+                )
+            }
+            None => (CLEAR, CLEAR),
+        };
+        contexts.push(Context { pass: true, mode: Mode::Normal, cov: 1.0, state: start });
         for (index, op) in program.ops.iter().enumerate() {
             match op {
                 Op::Begin { pass, mode, opacity, .. } => {
@@ -722,9 +746,10 @@ fn run(program: &Program, threads: usize, stats: &Stats) -> Result<(), String> {
                             }
                         }
                     }
-                    Ok((files, group_masks))
+                    let backdrop = program.backdrop.as_ref().map(open_input).transpose()?;
+                    Ok((files, group_masks, backdrop))
                 })();
-                let (files, group_masks) = match opened {
+                let (files, group_masks, backdrop) = match opened {
                     Ok(value) => value,
                     Err(message) => {
                         failed.store(true, Ordering::Relaxed);
@@ -741,7 +766,7 @@ fn run(program: &Program, threads: usize, stats: &Stats) -> Result<(), String> {
                         return;
                     }
                     let rows = STRIP_ROWS.min(program.height - row0);
-                    if let Err(message) = run_strip(program, &files, &group_masks, row0, rows, stats) {
+                    if let Err(message) = run_strip(program, &files, &group_masks, backdrop.as_ref(), row0, rows, stats) {
                         failed.store(true, Ordering::Relaxed);
                         *error.lock().unwrap() = Some(message);
                         return;

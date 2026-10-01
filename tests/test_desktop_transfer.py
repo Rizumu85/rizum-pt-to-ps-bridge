@@ -337,9 +337,15 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertEqual(plan.render_scale, 2)
 
         from sp_plugin.rizum_sp_to_ps import desktop_transfer
-        rendered = [{"png": str(self.layer_png), "mask_png": None, "children": []}]
+        node = {"name": "Recolor", "asset": {"path": str(self.layer_png)}, "opacity": {"BaseColor": 1.0}}
+        rendered = [{"png": str(self.layer_png), "mask_png": None, "children": [],
+                     "build_request": {"layers": [node]}}]
+        settings = {"dilation": 3}
         with mock.patch.object(desktop_transfer.exporter, "export_desktop_nodes", return_value=rendered) as export:
-            launch = desktop_transfer._prepare_photoshop_transfer(plan, {"dilation": 3})
+            rendered, output_dir = desktop_transfer._render_photoshop_items(plan, settings)
+        launch = desktop_transfer._write_transfer_request(desktop_transfer.PreparedTransfer(
+            plan=plan, painter=None, settings=settings, rendered=tuple(rendered), output_dir=output_dir,
+        ))
         settings = export.call_args.args[3]
         self.assertEqual(settings["render_scale"], 2)
         self.assertEqual(settings["psd_resolution"], [2048, 2048])
@@ -356,10 +362,13 @@ class DesktopTransferTests(unittest.TestCase):
             is_open=lambda: True, is_in_edition_state=lambda: True,
             get_uuid=lambda: "project-1", file_path=lambda: "C:/projects/example.spp",
         ))
-        with mock.patch.object(desktop_transfer, "_prepare_photoshop_transfer", return_value=None), \
+        with mock.patch.object(desktop_transfer, "_render_photoshop_items", return_value=([], None)), \
                 mock.patch.object(desktop_transfer, "apply_transfer_plan") as apply:
             with self.assertRaises(exporter.ExportCancelled):
-                desktop_transfer.apply_transfer_manifest(self.manifest, painter=painter, cancelled=lambda: True)
+                desktop_transfer.begin_transfer(self.manifest, painter=painter, cancelled=lambda: True)
+            prepared = desktop_transfer.begin_transfer(self.manifest, painter=painter)
+            with self.assertRaises(exporter.ExportCancelled):
+                desktop_transfer.finish_transfer(prepared, cancelled=lambda: True)
         apply.assert_not_called()
 
     def test_photoshop_target_without_layer_id_is_addressed_by_position(self):

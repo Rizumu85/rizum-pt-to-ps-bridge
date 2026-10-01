@@ -197,7 +197,9 @@ export type PainterLink = {
  * Each step counts its own work once from zero, so the dialog numbers the
  * steps instead of letting one bar restart under an unchanged title.
  */
-export const applyStages = ["read", "render", "import", "photoshop"] as const
+// "match" reads what the PSD shows below each insert and rewrites the
+// rendered layers to look there as they do in Painter; it writes nothing.
+export const applyStages = ["read", "render", "match", "import", "photoshop"] as const
 export type ApplyStage = typeof applyStages[number]
 /** A step's own work; a progress without a stage continues the current step. */
 export type ApplyProgress = { stage?: ApplyStage; message: string; completed?: number; total?: number }
