@@ -34,6 +34,7 @@
   "export_needs_project": "Apri un progetto Painter prima di esportare.",
   "export_nothing_selected": "Nessun canale selezionato.",
   "export_cancelled": "Esportazione annullata. I file completati sono stati mantenuti.",
+  "export_done": "Richieste di creazione esportate: {count}.",
   "export_starting": "Esportazione in corso: {label}...",
   "exporting": "Esportazione in corso...",
   "photoshop_not_found": "Photoshop non trovato. Imposta Photoshop.exe nelle Impostazioni.",

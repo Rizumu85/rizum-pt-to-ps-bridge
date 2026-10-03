@@ -34,6 +34,7 @@
   "export_needs_project": "書き出す前に Painter プロジェクトを開いてください。",
   "export_nothing_selected": "チャンネルが選択されていません。",
   "export_cancelled": "書き出しをキャンセルしました。完了したファイルは保持されます。",
+  "export_done": "{count} 件のビルドリクエストを書き出しました。",
   "export_starting": "書き出し中 : {label}...",
   "exporting": "書き出し中...",
   "photoshop_not_found": "Photoshop が見つかりません。設定で Photoshop.exe を指定してください。",

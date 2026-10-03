@@ -34,6 +34,7 @@
   "export_needs_project": "请先打开 Painter 项目再导出。",
   "export_nothing_selected": "未选择任何通道。",
   "export_cancelled": "导出已取消。已完成的文件已保留。",
+  "export_done": "已导出 {count} 个构建请求。",
   "export_starting": "正在导出：{label}...",
   "exporting": "正在导出...",
   "photoshop_not_found": "未找到 Photoshop。请在设置中指定 Photoshop.exe。",

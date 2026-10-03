@@ -529,7 +529,7 @@ class BridgePanel:
         )
         return {
             "ok": True,
-            "message": f"Exported {len(all_paths)} build request(s).",
+            "message": text("export_done", count=len(all_paths)),
             "count": len(all_paths),
             "output_dir": output_dir,
             "export_list": export_list,

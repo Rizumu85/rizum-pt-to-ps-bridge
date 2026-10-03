@@ -34,6 +34,7 @@
   "export_needs_project": "Öffnen Sie vor dem Exportieren ein Painter-Projekt.",
   "export_nothing_selected": "Es wurden keine Kanäle ausgewählt.",
   "export_cancelled": "Export abgebrochen. Fertige Dateien wurden beibehalten.",
+  "export_done": "{count} Build-Anfrage(n) exportiert.",
   "export_starting": "Wird exportiert: {label}...",
   "exporting": "Wird exportiert...",
   "photoshop_not_found": "Photoshop wurde nicht gefunden. Legen Sie Photoshop.exe in den Einstellungen fest.",

@@ -51,6 +51,7 @@ FALLBACK_TEXT = {
     "export_needs_project": "Open a Painter project before exporting.",
     "export_nothing_selected": "No channels were selected.",
     "export_cancelled": "Export cancelled. Completed files were kept.",
+    "export_done": "Exported {count} build request(s).",
     "export_starting": "Exporting {label}...",
     "exporting": "Exporting...",
     "photoshop_not_found": "Photoshop was not found. Set Photoshop.exe in Settings.",
