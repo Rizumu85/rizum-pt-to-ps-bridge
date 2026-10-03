@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps import localization, ui, ui_dialogs, ui_kit
 from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog
 from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
@@ -217,6 +217,21 @@ class ExportDialogLayoutTests(unittest.TestCase):
 
         self.assertTrue(self.export.run_button.isEnabled())
         self.assertEqual(self.export.run_button.activationProgress(), 1.0)
+
+    def test_scope_follows_the_item_data_when_its_caption_is_translated(self):
+        with mock.patch.object(localization, "CURRENT_LANGUAGE", "zh"):
+            export = ExportDialog(_Panel())
+            self.addCleanup(export.dialog.deleteLater)
+            export.targets = _targets()
+            export.refresh_tree()
+            self.assertEqual(export.dialog.windowTitle(), localization.text("export", language="zh"))
+            self.assertEqual(
+                export.scope_combo.currentText(),
+                localization.text("scope_current_stack", language="zh"),
+            )
+            self.assertEqual([group["target"]["texture_set"] for group in export.groups], ["M_body"])
+            export.scope_combo.setCurrentIndex(1)
+            self.assertEqual(len(export.groups), len(_targets()))
 
     def test_closed_project_uses_the_new_dialog_empty_state(self):
         self.export.panel._project_is_open = lambda: False

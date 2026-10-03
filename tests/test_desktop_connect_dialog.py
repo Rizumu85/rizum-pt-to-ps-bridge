@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from PySide6 import QtCore, QtWidgets
 
+from sp_plugin.rizum_sp_to_ps import localization
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import DesktopBridgeController
 from sp_plugin.rizum_sp_to_ps.desktop_transfer import TransferResult
 from sp_plugin.rizum_sp_to_ps.ui_kit import install_compact_tooltip
@@ -265,6 +266,23 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._show_message_callback.assert_not_called()
         self.assertEqual(self.controller._process, self.process)
 
+    def test_outcome_is_english_for_the_mapper_and_painters_language_in_its_dialog(self):
+        with patch.object(localization, "CURRENT_LANGUAGE", "zh"):
+            self.apply_request(TransferResult(2, 0, (), (), None))
+            self.assertEqual(
+                self.replies()[-1]["message"], "Imported 2 Photoshop layer(s) into Painter.",
+            )
+            self.controller._show_message_callback.assert_not_called()
+
+            # The mapper was closed: Painter is the only place left to report.
+            self.controller._process = None
+            self.apply_request(TransferResult(2, 0, (), (), None))
+        args = self.controller._show_message_callback.call_args.args
+        self.assertEqual(args[-2], localization.text("bridge_complete", language="zh"))
+        self.assertEqual(
+            args[-1], localization.text("bridge_imported", language="zh", imported=2),
+        )
+
     def test_cancel_gets_no_reply_even_while_painter_is_busy(self):
         # The reader thread acts on Cancel; an answer here would settle the
         # mapper's pending Apply as a failure.
@@ -308,7 +326,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
 
         # Photoshop reads first; neither document is touched until it answers,
         # and Painter stays free meanwhile.
-        self.panel.launch_photoshop.assert_called_once_with(launch.launcher_path)
+        self.panel.launch_photoshop.assert_called_once_with(launch.launcher_path, language="en")
         finish.assert_not_called()
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
         payload = {"success": True, "backdrops": [{"key": "3|before", "png": None}], "errors": []}
