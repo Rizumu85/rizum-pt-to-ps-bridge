@@ -13,6 +13,7 @@ from .exporter import (
 )
 from . import painter_look
 from .edge_smoothing import DEFAULT_STRENGTH
+from .localization import text
 from .photoshop_automation import find_photoshop_executable, write_photoshop_launcher
 from .photoshop_job import PhotoshopJob
 from .ui_kit import (
@@ -213,7 +214,7 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
 
     theme = PAINTER_DIALOG_STYLE
     export_button = IconActionButton(
-        "Export",
+        text("export"),
         "action-export.svg",
         theme["accent"],
         theme["accent_hover"],
@@ -231,7 +232,7 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
     # than an unlabelled glyph; desktop_bridge.DesktopBridgeController owns
     # its enabled state and tooltip.
     bridge_button = IconActionButton(
-        "Bridge",
+        text("bridge"),
         "action-bridge.svg",
         theme["control"],
         theme["control_hover"],
@@ -250,9 +251,9 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
     )
     # The dock's compact tooltip, as the Settings button has; Qt's native one
     # ignored the panel's style. The controller only changes its text.
-    install_compact_tooltip(bridge_button, "Map layers between Painter and Photoshop")
+    install_compact_tooltip(bridge_button, text("bridge_tooltip"))
 
-    settings_button = make_icon_button("settings.svg", "Settings")
+    settings_button = make_icon_button("settings.svg", text("settings"))
     settings_button.setObjectName("RizumBridgeDockSettings")
 
     layout.addWidget(export_button, 1)
@@ -323,7 +324,7 @@ class BridgePanel:
         self.user_settings = self._load_user_settings()
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsBridgePanel")
-        self.widget.setWindowTitle("PT Bridge")
+        self.widget.setWindowTitle(text("dock_title"))
         self.widget.setMinimumSize(BRIDGE_DOCK_MIN_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
         self.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
         apply_theme(self.widget, mode="overlay")
@@ -466,14 +467,11 @@ class BridgePanel:
 
     def _run_export_selections(self, label, selections, overrides=None):
         if not self._project_is_open():
-            return {"ok": False, "message": "Open a Painter project before exporting."}
+            return {"ok": False, "message": text("export_needs_project")}
         if not self._project_is_ready():
-            return {
-                "ok": False,
-                "message": "Painter project is still loading or not editable.",
-            }
+            return {"ok": False, "message": text("project_not_ready")}
         if not selections:
-            return {"ok": False, "message": "No channels were selected."}
+            return {"ok": False, "message": text("export_nothing_selected")}
 
         base_settings = self._base_export_settings(overrides)
         output_dir = default_output_dir(base_settings)
@@ -509,10 +507,7 @@ class BridgePanel:
                     )
                 )
         except ExportCancelled:
-            return {
-                "ok": False,
-                "message": "Export cancelled. Completed files were kept.",
-            }
+            return {"ok": False, "message": text("export_cancelled")}
         except Exception as exc:  # noqa: BLE001 - show host errors to the user.
             return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
         finally:
@@ -544,10 +539,11 @@ class BridgePanel:
     def photoshop_executable(self):
         return find_photoshop_executable(self.user_settings.get("photoshop_path") or "")
 
-    def launch_photoshop(self, launcher_path):
+    def launch_photoshop(self, launcher_path, language=None):
+        """Start Photoshop on a script; ``language`` is the failure text's language."""
         executable = self.photoshop_executable()
         if executable is None:
-            return False, "Photoshop was not found. Set Photoshop.exe in Settings."
+            return False, text("photoshop_not_found", language=language)
 
         # Passing JSX to Photoshop is the host-supported zero-click path used
         # by the released exporter; UXP panels are lazy and cannot receive a
@@ -563,7 +559,12 @@ class BridgePanel:
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
         except OSError as exc:
-            return False, f"Could not launch Photoshop: {executable} ({exc})"
+            return False, text(
+                "photoshop_launch_failed",
+                language=language,
+                executable=executable,
+                error=exc,
+            )
         return True, ""
 
     def start_photoshop_build(self, export_list, output_dir):
@@ -596,7 +597,7 @@ class BridgePanel:
     def _photoshop_build_failed(self, message):
         self._build_job = None
         if not self._closing:
-            show_modal_message(self.QtWidgets, self.widget, "Photoshop build", message)
+            show_modal_message(self.QtWidgets, self.widget, text("photoshop_build"), message)
 
     def _base_export_settings(self, overrides=None):
         settings = {
@@ -653,7 +654,11 @@ class BridgePanel:
         self.dock_settings_button.setEnabled(enabled)
 
     def _create_export_progress(self, label):
-        progress = CompactProgressDialog(self, "Export", f"Exporting {label}...")
+        progress = CompactProgressDialog(
+            self,
+            text("export"),
+            text("export_starting", label=label),
+        )
         progress.show()
         self.QtWidgets.QApplication.processEvents()
         return progress
@@ -669,13 +674,13 @@ class BridgePanel:
 
         total = int(event.get("total") or 0)
         value = int(event.get("value") or 0)
-        text = event.get("text") or "Exporting..."
+        status = event.get("text") or text("exporting")
         if total > 0:
             progress.setRange(0, total)
             progress.setValue(max(0, min(value, total)))
         else:
             progress.setRange(0, 0)
-        progress.setLabelText(text)
+        progress.setLabelText(status)
         progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()
@@ -720,7 +725,7 @@ def register():
     dock = sp.ui.add_dock_widget(panel.widget)
     _ACTIVE_DOCK = dock
     dock.setObjectName("RizumPtToPsBridgeDock")
-    dock.setWindowTitle("PT Bridge")
+    dock.setWindowTitle(text("dock_title"))
     _connect_floating_resize(dock, panel)
     dock.show()
     dock.raise_()

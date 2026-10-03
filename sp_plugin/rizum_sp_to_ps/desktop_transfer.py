@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import exporter, painter_look, photoshop_automation
 from .blend_map import normalized_blend_name, photoshop_to_painter_blend_modes
+from .localization import text
 
 
 SCHEMA_VERSION = 3
@@ -290,7 +291,7 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
     # keeps both recomputation and Painter history aligned with that decision.
     if resolved:
         modification = painter.layerstack.ScopedModification(
-            "PT Bridge: import Photoshop layers"
+            text("history_import_layers")
         )
     else:
         modification = _NullContext()

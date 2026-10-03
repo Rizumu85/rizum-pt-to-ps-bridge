@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import time
 
+from .localization import text
+
 START_TIMEOUT_SECONDS = 120
 FINISH_TIMEOUT_SECONDS = 30 * 60
 POLL_INTERVAL_MS = 400
@@ -20,8 +22,11 @@ class PhotoshopJob:
     """
 
     def __init__(self, QtCore, parent, launch, *, on_progress, on_done, on_failed,
-                 cancelled=None, on_cancelled=None):
+                 cancelled=None, on_cancelled=None, language=None):
         self.launch = launch
+        # Called when the job fails: the surface that shows the failure, and
+        # so its language, can change while Photoshop works.
+        self._language = language
         self.started = False
         self._on_progress = on_progress
         self._on_done = on_done
@@ -66,26 +71,24 @@ class PhotoshopJob:
                 self._on_progress(progress)
             elapsed = self.elapsed()
             if not self.started and elapsed > START_TIMEOUT_SECONDS:
-                self._fail(
-                    "Photoshop did not start the script within 2 minutes. "
-                    "Check Photoshop for a startup or script confirmation dialog."
-                )
+                self._fail("photoshop_start_timeout")
             elif elapsed > FINISH_TIMEOUT_SECONDS:
-                self._fail("Photoshop did not finish the operation within 30 minutes.")
+                self._fail("photoshop_finish_timeout")
             return
         try:
             payload = json.loads(self.launch.result_path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError) as exc:
             # Scripts publish receipts by rename; a malformed published receipt
             # is a terminal failure, not a partial file to wait on forever.
-            self._fail(f"Photoshop result could not be read: {exc}")
+            self._fail("photoshop_result_unreadable", error=exc)
             return
         self.stop()
         self._on_done(payload)
 
-    def _fail(self, message):
+    def _fail(self, key, **values):
         self.stop()
-        self._on_failed(message)
+        language = self._language() if self._language is not None else None
+        self._on_failed(text(key, language=language, **values))
 
 
 def _read_json(path):

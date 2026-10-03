@@ -8,6 +8,7 @@ from .export_selection_memory import (
     current_project_identity,
     target_selection_key,
 )
+from .localization import text
 from .ui_kit import (
     AnimatedSaveButton,
     PAINTER_DIALOG_STYLE,
@@ -31,7 +32,7 @@ from .ui_kit import (
     update_export_tree_item,
 )
 from .ui_dialogs import show_modal_message
-from .settings_ui import PSD_SIZE_OPTIONS, RENDER_SCALE_OPTIONS
+from .settings_ui import RENDER_SCALE_OPTIONS, psd_size_options
 
 
 class ExportDialog:
@@ -55,7 +56,7 @@ class ExportDialog:
 
         self.dialog = PainterSettingsDialog(panel.widget)
         self.dialog.setObjectName("RizumExportDialog")
-        self.dialog.setWindowTitle("Export")
+        self.dialog.setWindowTitle(text("export"))
         self.dialog.setModal(True)
         self.dialog.setSizePolicy(
             self.QtWidgets.QSizePolicy.Policy.Fixed,
@@ -63,14 +64,17 @@ class ExportDialog:
         )
         surface_layout = self.dialog.settingsSurfaceLayout()
 
-        self.scope_combo = make_combo_input([("Current Stack", "current"), ("All Stacks", "all")])
+        self.scope_combo = make_combo_input([
+            (text("scope_current_stack"), "current"),
+            (text("scope_all_stacks"), "all"),
+        ])
         self.scope_combo.setObjectName("RizumExportScopeInput")
         self.scope_combo.currentIndexChanged.connect(self._scope_changed)
 
-        self.expand_button = make_icon_button("chevrons-down.svg", "Expand all")
-        self.collapse_button = make_icon_button("chevrons-up.svg", "Collapse all")
-        self.all_button = make_icon_button("circle-dot.svg", "Select all")
-        self.none_button = make_icon_button("circle-slash.svg", "Select none")
+        self.expand_button = make_icon_button("chevrons-down.svg", text("expand_all"))
+        self.collapse_button = make_icon_button("chevrons-up.svg", text("collapse_all"))
+        self.all_button = make_icon_button("circle-dot.svg", text("select_all"))
+        self.none_button = make_icon_button("circle-slash.svg", text("select_none"))
         for button in (
             self.expand_button,
             self.collapse_button,
@@ -195,22 +199,19 @@ class ExportDialog:
         # Size is chosen per export: these open on the Settings defaults and
         # apply to this export only, so a one-off 2K or 2x render needs no
         # trip to Settings and leaves the defaults alone.
-        self.psd_size_combo = make_combo_input(PSD_SIZE_OPTIONS)
+        self.psd_size_combo = make_combo_input(psd_size_options())
         self.psd_size_combo.setObjectName("RizumExportPsdSize")
         self.render_scale_combo = make_combo_input(RENDER_SCALE_OPTIONS)
         self.render_scale_combo.setObjectName("RizumExportRenderScale")
         # Short muted labels in the dialog's own colours: the combo's built-in
         # prefix used the kit's fixed greys, which read off against the
         # Painter dialog palette.
-        self.psd_size_label = self.QtWidgets.QLabel("Size")
+        self.psd_size_label = self.QtWidgets.QLabel(text("size"))
         self.psd_size_label.setObjectName("RizumExportOptionLabel")
-        self.render_scale_label = self.QtWidgets.QLabel("Render")
+        self.render_scale_label = self.QtWidgets.QLabel(text("render"))
         self.render_scale_label.setObjectName("RizumExportOptionLabel")
         for widget in (self.render_scale_label, self.render_scale_combo):
-            widget.setToolTip(
-                "Supersampling: Painter renders this many times the PSD size, "
-                "smooths edges there, then scales down."
-            )
+            widget.setToolTip(text("render_scale_tooltip"))
         self.size_controls = make_compact_action_bar(
             [
                 self.psd_size_label,
@@ -248,7 +249,7 @@ class ExportDialog:
         self.footer_layout.setSpacing(PAINTER_SETTINGS_LAYOUT.footer_button_spacing)
         theme = PAINTER_DIALOG_STYLE
         self.cancel_button = SecondaryActionButton(
-            "Cancel",
+            text("cancel"),
             theme["control"],
             theme["control_hover"],
             theme["control_pressed"],
@@ -256,7 +257,7 @@ class ExportDialog:
             default_theme.radius_small,
         )
         self.cancel_button.setObjectName("RizumExportCancel")
-        self.run_button = AnimatedSaveButton("Export")
+        self.run_button = AnimatedSaveButton(text("export"))
         self.run_button.setObjectName("RizumExportConfirm")
         self.cancel_button.clicked.connect(self.dialog.reject)
         self.run_button.clicked.connect(self.export_checked)
@@ -318,7 +319,7 @@ class ExportDialog:
 
     @staticmethod
     def _selection_tooltip(selected, total):
-        return f"{selected} of {total} channels selected"
+        return text("channels_selected", selected=selected, total=total)
 
     def _footer_button_width(self, button, minimum=56, maximum=112):
         scale = self.dialog.settingsUiScale()
@@ -895,12 +896,12 @@ QLabel#RizumSvgLabel:hover {{
         self._target_error = ""
         if not self.panel._project_is_open():
             self.targets = []
-            self._target_error = "Open a Painter project to export."
+            self._target_error = text("export_open_project")
             self.refresh_tree()
             return
         if not self.panel._project_is_ready():
             self.targets = []
-            self._target_error = "Painter project is still loading or not editable."
+            self._target_error = text("project_not_ready")
             self.refresh_tree()
             return
 
@@ -921,8 +922,9 @@ QLabel#RizumSvgLabel:hover {{
             self.targets = list_export_targets(settings=self.panel._base_export_settings())
         except Exception as exc:  # noqa: BLE001 - show host errors to the user.
             self.targets = []
-            self._target_error = (
-                f"Could not list export targets: {type(exc).__name__}: {exc}"
+            self._target_error = text(
+                "export_targets_failed",
+                error=f"{type(exc).__name__}: {exc}",
             )
         self.refresh_tree()
 
@@ -964,15 +966,12 @@ QLabel#RizumSvgLabel:hover {{
         if not visible_targets:
             if self._target_error:
                 message = self._target_error
-            elif (
-                self.scope_combo.currentText() == "Current Stack"
-                and self._active_target_key() is None
-            ):
-                message = "Select a stack in Painter to export."
-            elif self.scope_combo.currentText() == "Current Stack":
-                message = "No exportable channels found for Current Stack."
+            elif self._current_stack_scope() and self._active_target_key() is None:
+                message = text("export_select_stack")
+            elif self._current_stack_scope():
+                message = text("export_no_channels_current_stack")
             else:
-                message = "No exportable channels were found."
+                message = text("export_no_channels")
             self._show_tree_message(message)
             self.run_button.setDirty(
                 False,
@@ -986,7 +985,7 @@ QLabel#RizumSvgLabel:hover {{
             )
             return
 
-        select_current = self.scope_combo.currentText() == "Current Stack"
+        select_current = self._current_stack_scope()
         self._show_tree_message("")
 
         for target in visible_targets:
@@ -1125,8 +1124,12 @@ QLabel#RizumSvgLabel:hover {{
         if refresh_total and not self._updating_checks:
             self._refresh_selection_state()
 
+    def _current_stack_scope(self):
+        # Read from the item's data: its caption is translated.
+        return self.scope_combo.currentData() == "current"
+
     def _visible_targets(self):
-        if self.scope_combo.currentText() == "Current Stack":
+        if self._current_stack_scope():
             active_key = self._active_target_key()
             if active_key is None:
                 return []
@@ -1147,7 +1150,7 @@ QLabel#RizumSvgLabel:hover {{
             return None
 
     def _target_label(self, target):
-        texture_set = target.get("texture_set") or "(unknown texture set)"
+        texture_set = target.get("texture_set") or text("unknown_texture_set")
         stack = target.get("stack") or "(default)"
         return stack if stack != "(default)" else texture_set
 
@@ -1215,13 +1218,13 @@ QLabel#RizumSvgLabel:hover {{
             show_modal_message(
                 self.QtWidgets,
                 self.dialog,
-                "Photoshop",
-                "Photoshop was not found. Set Photoshop.exe in Settings before exporting.",
+                text("photoshop"),
+                text("export_photoshop_not_found"),
             )
             return
 
         result = self.panel._run_export_selections(
-            "export dialog selection",
+            text("export_selection_label"),
             selections,
             self.size_overrides(),
         )
@@ -1229,7 +1232,7 @@ QLabel#RizumSvgLabel:hover {{
             show_modal_message(
                 self.QtWidgets,
                 self.dialog,
-                "Export failed",
+                text("export_failed"),
                 result["message"],
             )
             return
@@ -1241,8 +1244,8 @@ QLabel#RizumSvgLabel:hover {{
                 result["export_list"], result["output_dir"]
             )
         except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
-            launched, message = False, f"Could not prepare the Photoshop build script: {exc}"
+            launched, message = False, text("photoshop_script_failed", error=exc)
         if not launched:
-            show_modal_message(self.QtWidgets, self.dialog, "Photoshop", message)
+            show_modal_message(self.QtWidgets, self.dialog, text("photoshop"), message)
             return
         self.dialog.accept()

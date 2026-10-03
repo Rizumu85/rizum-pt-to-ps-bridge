@@ -21,6 +21,7 @@ from . import (
     stack_node_export,
 )
 from .blend_map import decide_node_blending, photoshop_to_painter_blend_modes
+from .localization import text
 from .udim import uv_to_udim
 
 SCHEMA_VERSION = 1
@@ -186,7 +187,7 @@ def write_build_bundles(
         stage="prepare",
         value=0,
         total=0,
-        text="Preparing export requests...",
+        text=text("progress_preparing"),
     )
     modules = _load_painter_modules()
     stack_records = list(_iter_stack_records(modules, settings))
@@ -202,7 +203,7 @@ def write_build_bundles(
         stage="bundles",
         value=0,
         total=total,
-        text=f"Writing {total} build request(s)...",
+        text=text("progress_writing_requests", total=total),
     )
 
     written = []
@@ -224,7 +225,12 @@ def write_build_bundles(
                 stage="bundles",
                 value=index - 1,
                 total=total,
-                text=f"Exporting {index} of {total}: {_request_label(request)}",
+                text=text(
+                    "progress_exporting_request",
+                    index=index,
+                    total=total,
+                    label=_request_label(request),
+                ),
             )
             validate_request_preview(request)
             bundle_path = output_path / _bundle_name(request, index)
@@ -240,7 +246,7 @@ def write_build_bundles(
             export_request_assets(
                 build_request,
                 progress_callback=request_progress,
-                progress_prefix=f"{index} of {total}",
+                progress_prefix=text("progress_position", index=index, total=total),
                 geometry_baker=geometry_baker,
                 node_exporter=node_exporter,
             )
@@ -252,7 +258,12 @@ def write_build_bundles(
                 stage="bundles",
                 value=index - 1,
                 total=total,
-                text=f"Matching Painter's look {index} of {total}: {_request_label(request)}",
+                text=text(
+                    "progress_matching_look",
+                    index=index,
+                    total=total,
+                    label=_request_label(request),
+                ),
             )
             # Only a new PSD has the whole Painter stack as each layer's
             # backdrop; Bridge inserts into a PSD that may have drifted.
@@ -272,7 +283,12 @@ def write_build_bundles(
                 stage="bundles",
                 value=index,
                 total=total,
-                text=f"Finished {index} of {total}: {_request_label(request)}",
+                text=text(
+                    "progress_finished_request",
+                    index=index,
+                    total=total,
+                    label=_request_label(request),
+                ),
             )
     finally:
         node_exporter.close()
@@ -538,15 +554,17 @@ def export_request_assets(
     for asset in layer_assets:
         index = completed + 1
         layer_label = asset.get("label") or asset["uid_hex"]
-        prefix = f"{progress_prefix}: " if progress_prefix else ""
         _notify_progress(
             progress_callback,
             stage="assets",
             value=index - 1,
             total=total,
-            text=(
-                f"{prefix}exporting PNG {index} of {export_work_total}: "
-                f"{layer_label}"
+            text=_step_text(
+                progress_prefix,
+                "progress_exporting_png",
+                index=index,
+                total=export_work_total,
+                label=layer_label,
             ),
             detail=f"Layer \u201c{layer_label}\u201d",
         )
@@ -565,9 +583,12 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=(
-                f"{prefix}finished PNG {index} of {export_work_total}: "
-                f"{layer_label}"
+            text=_step_text(
+                progress_prefix,
+                "progress_finished_png",
+                index=index,
+                total=export_work_total,
+                label=layer_label,
             ),
             detail=f"Layer \u201c{layer_label}\u201d",
         )
@@ -583,15 +604,17 @@ def export_request_assets(
     for asset in mask_assets:
         index = completed + 1
         layer_label = asset.get("label") or asset["uid_hex"]
-        prefix = f"{progress_prefix}: " if progress_prefix else ""
         _notify_progress(
             progress_callback,
             stage="assets",
             value=completed,
             total=total,
-            text=(
-                f"{prefix}exporting PNG {index} of {export_work_total}: "
-                f"{layer_label}"
+            text=_step_text(
+                progress_prefix,
+                "progress_exporting_png",
+                index=index,
+                total=export_work_total,
+                label=layer_label,
             ),
             detail=f"Mask of \u201c{layer_label}\u201d",
         )
@@ -607,9 +630,12 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=(
-                f"{prefix}finished PNG {index} of {export_work_total}: "
-                f"{layer_label}"
+            text=_step_text(
+                progress_prefix,
+                "progress_finished_png",
+                index=index,
+                total=export_work_total,
+                label=layer_label,
             ),
             detail=f"Mask of \u201c{layer_label}\u201d",
         )
@@ -636,15 +662,17 @@ def export_request_assets(
         for asset in geometry_assets:
             index = completed + 1
             layer_label = asset.get("label") or asset["uid_hex"]
-            prefix = f"{progress_prefix}: " if progress_prefix else ""
             _notify_progress(
                 progress_callback,
                 stage="assets",
                 value=completed,
                 total=total,
-                text=(
-                    f"{prefix}exporting Geometry Mask {index} of "
-                    f"{export_work_total}: {layer_label}"
+                text=_step_text(
+                    progress_prefix,
+                    "progress_exporting_geometry_mask",
+                    index=index,
+                    total=export_work_total,
+                    label=layer_label,
                 ),
                 detail=f"Geometry mask of \u201c{layer_label}\u201d",
             )
@@ -663,9 +691,12 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=(
-                    f"{prefix}finished Geometry Mask {index} of "
-                    f"{export_work_total}: {layer_label}"
+                text=_step_text(
+                    progress_prefix,
+                    "progress_finished_geometry_mask",
+                    index=index,
+                    total=export_work_total,
+                    label=layer_label,
                 ),
                 detail=f"Geometry mask of \u201c{layer_label}\u201d",
             )
@@ -674,13 +705,17 @@ def export_request_assets(
         _finalize_geometry_masks(build_request["layers"])
         if uv_map_asset:
             index = completed + 1
-            prefix = f"{progress_prefix}: " if progress_prefix else ""
             _notify_progress(
                 progress_callback,
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}exporting UV Map {index} of {export_work_total}",
+                text=_step_text(
+                    progress_prefix,
+                    "progress_exporting_uv_map",
+                    index=index,
+                    total=export_work_total,
+                ),
                 detail="UV map",
             )
             try:
@@ -706,7 +741,12 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=f"{prefix}finished UV Map {index} of {export_work_total}",
+                text=_step_text(
+                    progress_prefix,
+                    "progress_finished_uv_map",
+                    index=index,
+                    total=export_work_total,
+                ),
                 detail="UV map",
             )
     finally:
@@ -728,9 +768,9 @@ def export_request_assets(
         value=total,
         total=total,
         text=(
-            f"{progress_prefix}: export assets complete"
+            text("progress_assets_complete_prefixed", prefix=progress_prefix)
             if progress_prefix
-            else "Export assets complete"
+            else text("progress_assets_complete")
         ),
     )
     build_request["empty_layer_assets_removed"] = _count_pruned_assets(
@@ -1232,6 +1272,13 @@ def _notify_progress(callback, **payload):
         raise ExportCancelled("Export cancelled by user.")
 
 
+def _step_text(progress_prefix, key, **values):
+    step = text(key, **values)
+    if not progress_prefix:
+        return step
+    return text("progress_prefixed", prefix=progress_prefix, step=step)
+
+
 def _scope_request_progress(callback, request_index, request_total):
     if callback is None:
         return None
@@ -1253,7 +1300,7 @@ def _scope_request_progress(callback, request_index, request_total):
 
 
 def _request_label(request):
-    stack = request.get("stack") or "(default)"
+    stack = request.get("stack") or text("default_stack")
     channel = request.get("channel_label") or request.get("channel")
     udim = request.get("udim")
     tile = "" if not _request_uses_udim(request) else f" / {udim}"
@@ -1776,13 +1823,18 @@ def _smooth_exported_assets(
             or asset.get("uid_hex")
             or Path(asset["path"]).name
         )
-        prefix = f"{progress_prefix}: " if progress_prefix else ""
         _notify_progress(
             progress_callback,
             stage="smoothing",
             value=progress_offset + index - 1,
             total=progress_total,
-            text=f"{prefix}smoothing PNG {index} of {len(assets)}: {label}",
+            text=_step_text(
+                progress_prefix,
+                "progress_smoothing_png",
+                index=index,
+                total=len(assets),
+                label=label,
+            ),
             detail=f"Smoothing \u201c{label}\u201d",
         )
         export_settings = build_request.get("export_settings", {})
@@ -1812,7 +1864,13 @@ def _smooth_exported_assets(
             stage="smoothing",
             value=progress_offset + index,
             total=progress_total,
-            text=f"{prefix}smoothed PNG {index} of {len(assets)}: {label}",
+            text=_step_text(
+                progress_prefix,
+                "progress_smoothed_png",
+                index=index,
+                total=len(assets),
+                label=label,
+            ),
             detail=f"Smoothing \u201c{label}\u201d",
         )
 

@@ -35,6 +35,7 @@ def reload_plugin():
         payload_resample,
         export_ui,
         exporter,
+        localization,
         mapper_process,
         painter_look,
         photoshop_automation,
@@ -53,6 +54,7 @@ def reload_plugin():
     for name in [name for name in sys.modules if name.startswith(ui_kit._VENDORED_UI_PACKAGE)]:
         del sys.modules[name]
     for module in (
+        localization,
         edge_smoothing,
         payload_resample,
         blend_map,

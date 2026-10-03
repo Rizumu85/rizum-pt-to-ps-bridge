@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import edge_smoothing, painter_look
+from .localization import text
 from .ui_kit import (
     PLUGIN_VERSION,
     PAINTER_DIALOG_STYLE,
@@ -18,20 +19,27 @@ from .ui_kit import (
 )
 
 
-# Written the way Painter lists texture set sizes, which users already read.
-PSD_SIZE_OPTIONS = [("Texture Set", None)] + [
-    (str(size), size) for size in (128, 256, 512, 1024, 2048, 4096, 8192)
-]
 RENDER_SCALE_OPTIONS = [("1\u00d7", 1), ("2\u00d7", 2), ("4\u00d7", 4)]
-RENDER_SCALE_HINT = "Supersampling"
-BLEND_MODES_OPTIONS = [
-    ("Match Painter", painter_look.MATCH_PAINTER),
-    ("Keep modes", painter_look.KEEP_BLEND_MODES),
-]
-BLEND_MODES_HINTS = {
-    painter_look.MATCH_PAINTER: "Some layers become Normal",
-    painter_look.KEEP_BLEND_MODES: "Colors can drift from Painter",
+BLEND_MODES_HINT_KEYS = {
+    painter_look.MATCH_PAINTER: "blend_match_painter_hint",
+    painter_look.KEEP_BLEND_MODES: "blend_keep_modes_hint",
 }
+
+
+# Captions are looked up when a dialog is built, so option lists with text
+# are functions rather than constants fixed at import.
+def psd_size_options():
+    # Written the way Painter lists texture set sizes, which users already read.
+    return [(text("texture_set"), None)] + [
+        (str(size), size) for size in (128, 256, 512, 1024, 2048, 4096, 8192)
+    ]
+
+
+def blend_modes_options():
+    return [
+        (text("blend_match_painter"), painter_look.MATCH_PAINTER),
+        (text("blend_keep_modes"), painter_look.KEEP_BLEND_MODES),
+    ]
 
 
 def _section_label(QtWidgets, text):
@@ -466,7 +474,7 @@ class SettingsDialog:
 
         self.dialog = PainterSettingsDialog(panel.widget)
         self.dialog.setObjectName("RizumSettingsDialog")
-        self.dialog.setWindowTitle("Settings")
+        self.dialog.setWindowTitle(text("settings"))
         self.dialog.setModal(True)
         self.dialog.setSizePolicy(
             self.QtWidgets.QSizePolicy.Policy.Fixed,
@@ -494,7 +502,7 @@ class SettingsDialog:
         self._settings_body = body
         self._body_layout = body_layout
 
-        export_section = _settings_section(self.QtWidgets, "Export", first=True)
+        export_section = _settings_section(self.QtWidgets, text("export"), first=True)
         self._settings_sections.append(export_section)
         body_layout.addWidget(export_section)
 
@@ -512,7 +520,7 @@ class SettingsDialog:
         self._settings_rows.append(padding_row)
         # The switch toggles infinite padding; "Padding" alone read as turning
         # padding off. When it is off, the Dilation row below appears.
-        padding_texts = self._make_text_block("Infinite padding", "On")
+        padding_texts = self._make_text_block(text("infinite_padding"), text("on"))
         self.padding_meta = padding_texts.findChild(self.QtWidgets.QLabel, "RizumSettingsItemMeta")
         padding_layout.addWidget(padding_texts)
         padding_layout.addStretch(1)
@@ -524,7 +532,7 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
         )
         self._settings_rows.append(dilation_row)
-        dilation_layout.addWidget(self._make_text_block("Dilation", "px"))
+        dilation_layout.addWidget(self._make_text_block(text("dilation"), "px"))
         dilation_layout.addStretch(1)
         self.dilation_stepper = make_compact_stepper(8, minimum=0, maximum=999, step=1)
         dilation_layout.addWidget(self.dilation_stepper)
@@ -539,7 +547,11 @@ class SettingsDialog:
         padding_stack_layout.addWidget(self.dilation_reveal)
         body_layout.addWidget(padding_stack)
 
-        self.bit_depth = make_combo_input([("Texture Set", None), ("8-bit", 8), ("16-bit", 16)])
+        self.bit_depth = make_combo_input([
+            (text("texture_set"), None),
+            (text("bit_depth_8"), 8),
+            (text("bit_depth_16"), 16),
+        ])
         self.bit_depth.setFitToContents(False)
         self.bit_depth.setFixedWidth(126)
         bit_depth_row, bit_depth_layout = _settings_frame_row(
@@ -547,7 +559,7 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.row_height.design,
         )
         self._settings_rows.append(bit_depth_row)
-        bit_depth_layout.addWidget(_settings_label(self.QtWidgets, "Bit depth", "RizumSettingsItemName"))
+        bit_depth_layout.addWidget(_settings_label(self.QtWidgets, text("bit_depth"), "RizumSettingsItemName"))
         bit_depth_layout.addStretch(1)
         bit_depth_layout.addWidget(self.bit_depth)
         body_layout.addWidget(bit_depth_row)
@@ -555,7 +567,7 @@ class SettingsDialog:
         # Settings hold the defaults; the Export dialog and the Bridge window
         # start from them and change them for one export or Apply, because
         # the user wanted size to adapt case by case without a trip here.
-        self.psd_size = make_combo_input(PSD_SIZE_OPTIONS)
+        self.psd_size = make_combo_input(psd_size_options())
         self.psd_size.setFitToContents(False)
         self.psd_size.setFixedWidth(126)
         psd_size_row, psd_size_layout = _settings_frame_row(
@@ -563,7 +575,7 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.row_height.design,
         )
         self._settings_rows.append(psd_size_row)
-        psd_size_layout.addWidget(_settings_label(self.QtWidgets, "Size", "RizumSettingsItemName"))
+        psd_size_layout.addWidget(_settings_label(self.QtWidgets, text("size"), "RizumSettingsItemName"))
         psd_size_layout.addStretch(1)
         psd_size_layout.addWidget(self.psd_size)
         body_layout.addWidget(psd_size_row)
@@ -576,13 +588,13 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
         )
         self._settings_rows.append(render_row)
-        self.render_texts = self._make_text_block("Render at", RENDER_SCALE_HINT)
+        self.render_texts = self._make_text_block(text("render_at"), text("supersampling"))
         render_layout.addWidget(self.render_texts)
         render_layout.addStretch(1)
         render_layout.addWidget(self.render_scale)
         body_layout.addWidget(render_row)
 
-        self.blend_modes = make_combo_input(BLEND_MODES_OPTIONS)
+        self.blend_modes = make_combo_input(blend_modes_options())
         self.blend_modes.setFitToContents(False)
         self.blend_modes.setFixedWidth(126)
         blend_row, blend_layout = _settings_frame_row(
@@ -591,8 +603,8 @@ class SettingsDialog:
         )
         self._settings_rows.append(blend_row)
         self.blend_modes_texts = self._make_text_block(
-            "Blend modes",
-            BLEND_MODES_HINTS[painter_look.DEFAULT_BLEND_MODES],
+            text("blend_modes"),
+            text(BLEND_MODES_HINT_KEYS[painter_look.DEFAULT_BLEND_MODES]),
         )
         blend_layout.addWidget(self.blend_modes_texts)
         blend_layout.addStretch(1)
@@ -610,8 +622,8 @@ class SettingsDialog:
         )
         self._settings_rows.append(uv_map_row)
         self.uv_map_texts = self._make_text_block(
-            "UV map",
-            "Add wireframe as the top Photoshop layer",
+            text("uv_map"),
+            text("uv_map_hint"),
         )
         uv_map_layout.addWidget(self.uv_map_texts)
         uv_map_layout.addStretch(1)
@@ -627,8 +639,8 @@ class SettingsDialog:
         # The user asked that this never read as deleting their own files:
         # the subtitle names exactly what goes, the PNGs made for the PSD.
         self.cleanup_texts = self._make_text_block(
-            "Clean up layer PNGs",
-            "Deletes only the PNGs made for the PSD",
+            text("cleanup_pngs"),
+            text("cleanup_pngs_hint"),
         )
         cleanup_layout.addWidget(self.cleanup_texts)
         cleanup_layout.addStretch(1)
@@ -643,7 +655,10 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
         )
         self._settings_rows.append(smoothing_row)
-        self.smoothing_texts = self._make_text_block("Edge smoothing", "Softens jagged edges · 100")
+        self.smoothing_texts = self._make_text_block(
+            text("edge_smoothing"),
+            text("edge_smoothing_hint", strength=100),
+        )
         self.smoothing_meta = self.smoothing_texts._rizum_meta_label
         smoothing_layout.addWidget(self.smoothing_texts)
         smoothing_layout.addStretch(1)
@@ -656,7 +671,7 @@ class SettingsDialog:
         self.smoothing_preview = _make_smoothing_preview(self.QtCore, self.QtGui, self.QtWidgets)
         body_layout.addWidget(self.smoothing_preview)
 
-        photoshop_section = _settings_section(self.QtWidgets, "Photoshop")
+        photoshop_section = _settings_section(self.QtWidgets, text("photoshop"))
         self._settings_sections.append(photoshop_section)
         body_layout.addWidget(photoshop_section)
         path_row, path_row_layout = _settings_frame_row(
@@ -681,7 +696,7 @@ class SettingsDialog:
             self.QtWidgets.QSizePolicy.Policy.Expanding,
             self.QtWidgets.QSizePolicy.Policy.Fixed,
         )
-        self.browse_button = make_icon_button("folder.svg", "Browse executable", size=14, compact=False)
+        self.browse_button = make_icon_button("folder.svg", text("browse_executable"), size=14, compact=False)
         self.browse_button.setFixedSize(26, 26)
         self.browse_button.clicked.connect(self.browse_photoshop)
         path_layout.addWidget(self.photoshop_path, 1, self.panel.QtCore.Qt.AlignmentFlag.AlignVCenter)
@@ -689,7 +704,7 @@ class SettingsDialog:
         path_row_layout.addWidget(self.browse_button)
         body_layout.addWidget(path_row)
 
-        about_section = _settings_section(self.QtWidgets, "About")
+        about_section = _settings_section(self.QtWidgets, text("about"))
         self._settings_sections.append(about_section)
         body_layout.addWidget(about_section)
         version_row, version_layout = _settings_frame_row(
@@ -697,7 +712,7 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.row_height.design,
         )
         self._settings_rows.append(version_row)
-        version_layout.addWidget(_settings_label(self.QtWidgets, "Version", "RizumSettingsItemName"))
+        version_layout.addWidget(_settings_label(self.QtWidgets, text("version"), "RizumSettingsItemName"))
         version_layout.addStretch(1)
         version_layout.addWidget(_settings_label(self.QtWidgets, PLUGIN_VERSION, "RizumSettingsItemMeta"))
         body_layout.addWidget(version_row)
@@ -727,13 +742,13 @@ class SettingsDialog:
         footer_layout.setSpacing(PAINTER_SETTINGS_LAYOUT.footer_button_spacing)
         self.footer_hint = _settings_label(
             self.QtWidgets,
-            "Changes save automatically",
+            text("changes_save_automatically"),
             "RizumSettingsFooterHint",
         )
         footer_layout.addWidget(self.footer_hint)
         footer_layout.addStretch(1)
         self.done_button = SecondaryActionButton(
-            "Done",
+            text("done"),
             PAINTER_DIALOG_STYLE["accent"],
             PAINTER_DIALOG_STYLE["accent_hover"],
             PAINTER_DIALOG_STYLE["accent_pressed"],
@@ -941,7 +956,7 @@ class SettingsDialog:
         self.blend_modes.setCompactHeight(control_height)
         blend_metrics = self.blend_modes._label.fontMetrics()
         blend_width = (
-            max(blend_metrics.horizontalAdvance(text) for text, _value in BLEND_MODES_OPTIONS)
+            max(blend_metrics.horizontalAdvance(caption) for caption, _value in blend_modes_options())
             + combo_margins.left()
             + combo_margins.right()
             + self.bit_depth.layout().spacing()
@@ -1146,14 +1161,17 @@ QPushButton[variant="icon"]:pressed {{
             self._loading_values = False
 
     def _sync_blend_modes(self, *_args):
+        hint_key = BLEND_MODES_HINT_KEYS.get(self.blend_modes.currentData())
         self.blend_modes_texts._rizum_meta_label.setText(
-            BLEND_MODES_HINTS.get(self.blend_modes.currentData(), "")
+            text(hint_key) if hint_key else ""
         )
 
     def _sync_smoothing(self, *_args):
         strength = self.smoothing_slider.value()
         self.smoothing_meta.setText(
-            "Softens jagged edges · " + ("Off" if strength == 0 else str(strength))
+            text("edge_smoothing_off")
+            if strength == 0
+            else text("edge_smoothing_hint", strength=strength)
         )
         self.smoothing_preview.setStrength(strength)
         if not self._loading_values and not self.smoothing_slider.isSliderDown():
@@ -1163,16 +1181,16 @@ QPushButton[variant="icon"]:pressed {{
     def _sync_padding_mode(self, _enabled=None, animate=True):
         infinite = self.infinite_padding.isChecked()
         if self.padding_meta is not None:
-            self.padding_meta.setText("On" if infinite else "Off · uses dilation below")
+            self.padding_meta.setText(text("on") if infinite else text("padding_off"))
         self.dilation_reveal.setExpanded(not infinite, animate=animate)
         self._sync_dialog_height()
 
     def browse_photoshop(self):
         path, _selected_filter = self.QtWidgets.QFileDialog.getOpenFileName(
             self.dialog,
-            "Choose Photoshop executable",
+            text("choose_photoshop"),
             self.photoshop_path.text() or "",
-            "Executable (*.exe);;All Files (*)",
+            f"{text('filter_executable')} (*.exe);;{text('filter_all_files')} (*)",
         )
         if path:
             self.photoshop_path.setText(path)
@@ -1184,9 +1202,9 @@ QPushButton[variant="icon"]:pressed {{
         # show which one will be used instead of an empty required field.
         detected = self.panel.photoshop_executable()
         if detected is None:
-            self.photoshop_path.setPlaceholderText("Photoshop.exe not found - choose it")
+            self.photoshop_path.setPlaceholderText(text("photoshop_exe_not_found"))
         else:
-            self.photoshop_path.setPlaceholderText(f"Auto-detected: {detected}")
+            self.photoshop_path.setPlaceholderText(text("photoshop_auto_detected", path=detected))
         self.photoshop_path.setToolTip(self.photoshop_path.text() or str(detected or ""))
 
     def _settings_values(self):

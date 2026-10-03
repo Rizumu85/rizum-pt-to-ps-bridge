@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import desktop_transfer, exporter
+from .localization import text
 from .mapper_process import mapper_process_class
 from .photoshop_documents import SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY, DocumentMemory
 from .photoshop_job import PhotoshopJob
@@ -25,7 +26,10 @@ DESKTOP_REQUEST_MARKER = "@ptbridge "
 # The mapper's Cancel while Painter renders. It is read on the pipe's own
 # thread, since Painter's UI thread is busy with the render it stops.
 CANCEL_APPLY_LINE = (DESKTOP_REQUEST_MARKER + '{"type":"cancel_apply"}').encode("utf-8")
-IDLE_TOOLTIP = "Map layers between Painter and Photoshop"
+# The mapper window (desktop/) is English only and its bundled font has no
+# Hangul, so every text Painter sends for it to show stays English. The
+# same outcome shown in a Painter dialog follows Painter's language.
+MAPPER_LANGUAGE = "en"
 
 
 class DesktopBridgeController:
@@ -77,10 +81,10 @@ class DesktopBridgeController:
         if self._busy_reason() is not None:
             return
         if not self.panel._project_is_open():
-            self._show("Bridge", "Open a Painter project before starting Bridge.")
+            self._show(text("bridge"), text("bridge_needs_project"))
             return
         if not self.panel._project_is_ready():
-            self._show("Bridge", "Painter project is still loading or not editable.")
+            self._show(text("bridge"), text("project_not_ready"))
             return
 
         self._launch_desktop()
@@ -105,7 +109,7 @@ class DesktopBridgeController:
             self._documents_path = session_dir / "photoshop_documents.json"
             self._write_document_map()
         except Exception as exc:
-            self._show("Bridge", str(exc))
+            self._show(text("bridge"), str(exc))
             return
 
         self._stdout_buffer = ""
@@ -133,7 +137,7 @@ class DesktopBridgeController:
         try:
             process.start()
         except OSError as exc:
-            self._show("Bridge", f"Could not start PT Bridge desktop.\n\n{exc}")
+            self._show(text("bridge"), text("bridge_start_failed", error=exc))
             return
         self._trace("desktop_started")
         self._process = process
@@ -141,11 +145,11 @@ class DesktopBridgeController:
 
     def _busy_reason(self):
         if self._photoshop_job is not None:
-            return "Photoshop operation in progress"
+            return text("bridge_busy_photoshop")
         if self._applying_transfer:
-            return "Applying mapped layers"
+            return text("bridge_busy_applying")
         if self._process is not None or self._picking:
-            return "PT Bridge desktop is open"
+            return text("bridge_busy_open")
         return None
 
     def _sync_button(self):
@@ -157,7 +161,7 @@ class DesktopBridgeController:
             return
         reason = self._busy_reason()
         self.button.setEnabled(reason is None)
-        self.button.setCompactTooltipText(reason or IDLE_TOOLTIP)
+        self.button.setCompactTooltipText(reason or text("bridge_tooltip"))
 
     def _document_memory(self):
         settings = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
@@ -197,9 +201,9 @@ class DesktopBridgeController:
         try:
             path, _selected_filter = self.QtWidgets.QFileDialog.getOpenFileName(
                 self.panel.widget.window(),
-                "Connect Photoshop Document",
+                text("connect_photoshop_document"),
                 start_dir,
-                "Photoshop Document (*.psd *.psb)",
+                f"{text('filter_photoshop_document')} (*.psd *.psb)",
             )
         finally:
             self._picking = False
@@ -259,11 +263,14 @@ class DesktopBridgeController:
         # Only Painter reads the script's progress receipts, so Painter shows
         # the layer count in the same compact dialog style as export.
         self._photoshop_progress_dialog = CompactProgressDialog(
-            self.panel, "Photoshop", f"Opening Photoshop... {label}", cancellable=False, modal=False,
+            self.panel, text("photoshop"), text("photoshop_opening", label=label),
+            cancellable=False, modal=False,
         )
         self._photoshop_progress_dialog.show()
         try:
-            launched, message = self.panel.launch_photoshop(launch.launcher_path)
+            launched, message = self.panel.launch_photoshop(
+                launch.launcher_path, language=self._outcome_language(),
+            )
         except Exception as exc:
             self._photoshop_job_failed(str(exc))
             return
@@ -278,6 +285,7 @@ class DesktopBridgeController:
             on_progress=self._update_photoshop_progress,
             on_done=self._finish_photoshop_transfer,
             on_failed=self._photoshop_job_failed,
+            language=self._outcome_language,
         )
         self._photoshop_job.start()
         self._sync_button()
@@ -293,22 +301,25 @@ class DesktopBridgeController:
         if not isinstance(total, int) or not isinstance(completed, int):
             return
         counted = phase == "transferring_layers" and total > 0
+        values = {}
         if counted:
             if dialog is not None:
                 dialog.setRange(0, total)
                 dialog.setValue(max(0, min(completed, total)))
-            message = f"Inserting Photoshop layers: {completed} / {total}"
+            status = "photoshop_inserting_layers"
+            values = {"completed": completed, "total": total}
         elif phase == "saving_document":
-            message = "Saving Photoshop document..."
+            status = "photoshop_saving_document"
         else:
-            message = "Opening Photoshop document..."
+            status = "photoshop_opening_document"
         if dialog is not None:
             if not counted:
                 dialog.setRange(0, 0)
-            dialog.setLabelText(message)
+            dialog.setLabelText(text(status, **values))
         # The mapper shows the count under its step title, not in the message.
         self._apply_progress({"stage": "photoshop", **(
-            {"message": "Adding layers...", "completed": completed, "total": total} if counted else {"message": message}
+            {"message": "Adding layers...", "completed": completed, "total": total} if counted
+            else {"message": text(status, language=MAPPER_LANGUAGE)}
         )})
 
     def _photoshop_job_failed(self, message):
@@ -320,21 +331,30 @@ class DesktopBridgeController:
         # A cross-host operation is not atomic. Never retry Painter edits
         # because Photoshop failed, or claim both hosts rolled back together.
         if transfer.imported_count:
-            message = f"Already imported {transfer.imported_count} layer(s) into Painter.\n\n{message}"
+            message = text(
+                "bridge_already_imported",
+                language=self._outcome_language(),
+                count=transfer.imported_count,
+                message=message,
+            )
         self._finish_apply("apply_failed", message)
 
     def _finish_photoshop_transfer(self, payload):
         transfer = self._pending_transfer_result
+        language = self._outcome_language()
         inserted = payload.get("inserted") if isinstance(payload, dict) else None
         if not isinstance(inserted, list):
-            self._photoshop_job_failed("Photoshop returned an invalid transfer result.")
+            self._photoshop_job_failed(text("photoshop_invalid_result", language=language))
             return
         count = len(inserted)
         if payload.get("success") is not True or count != transfer.exported_count:
-            message = f"Inserted {count} of {transfer.exported_count} layer(s) into Photoshop.\n"
-            message += _photoshop_export_error_summary(payload)
-            message += "\n\nCheck both documents before retrying; completed inserts were not undone."
-            self._photoshop_job_failed(message)
+            self._photoshop_job_failed(text(
+                "bridge_partial_insert",
+                language=language,
+                count=count,
+                total=transfer.exported_count,
+                errors=_photoshop_export_error_summary(payload, language),
+            ))
             return
         self._trace("photoshop_transfer_ready", str(count))
         if payload.get("saved") is True and self.panel.user_settings.get("cleanup_layer_pngs", True):
@@ -345,16 +365,26 @@ class DesktopBridgeController:
         self._clear_photoshop_export()
         warnings = list(transfer.warnings) + [str(value) for value in payload.get("warnings", [])]
         if payload.get("saved") is not True and not payload.get("warnings"):
-            warnings.append("Photoshop changes are open but have not been saved.")
+            warnings.append(text("photoshop_unsaved", language=language))
         self._report_transfer_complete(transfer.imported_count, count, warnings)
 
     def _report_transfer_complete(self, imported_count, exported_count, warnings):
-        parts = []
-        if imported_count:
-            parts.append(f"Imported {imported_count} Photoshop layer(s) into Painter")
-        if exported_count:
-            parts.append(f"inserted {exported_count} Painter layer(s) into Photoshop")
-        message = "; ".join(parts) + "."
+        # One sentence per case: joining translated halves would fix the
+        # English word order for every language.
+        if imported_count and exported_count:
+            key = "bridge_imported_and_inserted"
+        elif imported_count:
+            key = "bridge_imported"
+        elif exported_count:
+            key = "bridge_inserted"
+        else:
+            key = None
+        message = "." if key is None else text(
+            key,
+            language=self._outcome_language(),
+            imported=imported_count,
+            exported=exported_count,
+        )
         if warnings:
             message += "\n\n" + "\n".join(warnings)
         self._finish_apply("applied", message)
@@ -383,13 +413,21 @@ class DesktopBridgeController:
         # Apply arrives as a request while the mapper is open, so an exit only
         # means the user closed the window; nothing is applied on the way out.
         if int(exit_code) != 0:
-            self._show("Bridge", stderr or f"Desktop process exited with code {exit_code}.")
+            self._show(
+                text("bridge"),
+                stderr or text("bridge_process_exited", code=exit_code),
+            )
 
     def _take_process(self):
         process = self._process
         self._process = None
         self._sync_button()
         return process
+
+    def _outcome_language(self):
+        # An Apply's outcome goes to the mapper while it is open, and to a
+        # Painter dialog once it was closed.
+        return MAPPER_LANGUAGE if self._process is not None else None
 
     def _show(self, title, message):
         self._trace(title, message)
@@ -501,14 +539,16 @@ class DesktopBridgeController:
     def _report_apply_cancelled(self):
         self._finish_apply(
             "apply_cancelled",
-            "Apply cancelled. Nothing was changed in Painter or Photoshop.",
+            text("bridge_apply_cancelled", language=self._outcome_language()),
         )
 
     def _start_backdrop_job(self, prepared):
         """Have Photoshop report what lies below the inserts; nothing is written."""
         self._apply_progress({"stage": "match", "message": "Reading the Photoshop document..."})
         try:
-            launched, message = self.panel.launch_photoshop(prepared.backdrop_launch.launcher_path)
+            launched, message = self.panel.launch_photoshop(
+                prepared.backdrop_launch.launcher_path, language=self._outcome_language(),
+            )
         except Exception as exc:
             launched, message = False, str(exc)
         if not launched:
@@ -525,6 +565,7 @@ class DesktopBridgeController:
             on_failed=self._backdrop_failed,
             cancelled=self._apply_cancelled(),
             on_cancelled=self._backdrop_cancelled,
+            language=self._outcome_language,
         )
         self._photoshop_job.start()
         self._sync_button()
@@ -575,7 +616,9 @@ class DesktopBridgeController:
             return
         if result.photoshop_launch is not None:
             self._start_photoshop_job(
-                result.photoshop_launch, f"Insert {result.exported_count} layer(s)", result,
+                result.photoshop_launch,
+                text("photoshop_insert_label", count=result.exported_count),
+                result,
             )
         else:
             self._report_transfer_complete(result.imported_count, 0, result.warnings)
@@ -597,7 +640,7 @@ class DesktopBridgeController:
         if self._process is None:
             # The mapper was closed while Photoshop worked; Painter is the only
             # place left to report the outcome.
-            title = "Bridge complete" if reply_type == "applied" else "Bridge transfer incomplete"
+            title = text("bridge_complete" if reply_type == "applied" else "bridge_incomplete")
             self._show(title, message)
             return
         reply = {"type": reply_type, "message": message}
@@ -640,27 +683,24 @@ def _desktop_executable():
         filename = "pt-bridge.exe" if sys.platform == "win32" else "pt-bridge"
         path = plugin_root / "desktop" / "dist" / filename
     if not path.is_file():
-        raise FileNotFoundError(
-            "PT Bridge desktop runtime was not found. Build desktop/dist/pt-bridge "
-            "before using the Bridge action."
-        )
+        raise FileNotFoundError(text("bridge_runtime_missing"))
     return path
 
 
-def _photoshop_export_error_summary(payload):
+def _photoshop_export_error_summary(payload, language=None):
     if not isinstance(payload, dict):
-        return "Photoshop returned an invalid transfer result."
+        return text("photoshop_invalid_result", language=language)
     errors = payload.get("errors")
     if not isinstance(errors, list) or not errors:
-        return "Photoshop did not report what failed."
+        return text("photoshop_no_error_detail", language=language)
     lines = []
     for entry in errors[:8]:
         if isinstance(entry, dict):
-            layer = entry.get("layer") or entry.get("name") or "Photoshop"
-            detail = entry.get("error") or entry.get("message") or "Unknown error"
+            layer = entry.get("layer") or entry.get("name") or text("photoshop", language=language)
+            detail = entry.get("error") or entry.get("message") or text("unknown_error", language=language)
             lines.append(f"{layer}: {detail}")
         else:
             lines.append(str(entry))
     if len(errors) > 8:
-        lines.append(f"...and {len(errors) - 8} more error(s).")
+        lines.append(text("photoshop_more_errors", language=language, count=len(errors) - 8))
     return "\n".join(lines)

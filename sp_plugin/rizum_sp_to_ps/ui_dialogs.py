@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .localization import text
 from .ui_kit import (
     PAINTER_DIALOG_STYLE,
     PAINTER_SETTINGS_LAYOUT,
@@ -232,7 +233,7 @@ def build_modal_message(QtWidgets, parent, title, message):
 
     shell.footer_layout.addStretch(1)
     ok_button = shell.add_action(
-        "OK",
+        text("ok"),
         primary=True,
         minimum=68,
         maximum=96,
@@ -289,7 +290,7 @@ class CompactProgressDialog:
         if cancellable:
             self.shell.footer_layout.addStretch(1)
             self.cancel_button = self.shell.add_action(
-                "Cancel",
+                text("cancel"),
                 minimum=72,
                 maximum=104,
             )
@@ -316,7 +317,7 @@ class CompactProgressDialog:
             return
         self._cancelled = True
         self.cancel_button.setEnabled(False)
-        self.status_label.setText("Cancelling...")
+        self.status_label.setText(text("cancelling"))
 
     def _window_rejected(self):
         if not self._finishing:
