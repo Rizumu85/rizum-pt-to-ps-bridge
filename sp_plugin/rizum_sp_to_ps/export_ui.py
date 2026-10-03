@@ -345,10 +345,26 @@ class ExportDialog:
             + self.run_button.width()
             + PAINTER_SETTINGS_LAYOUT.footer_button_spacing
         )
+        # Translated Size and Render captions were squeezed by their combos
+        # in a dialog sized only for the rows above and below.
+        size_width = compact_action_bar_width(
+            [
+                self.psd_size_label,
+                self.psd_size_combo,
+                self.render_scale_label,
+                self.render_scale_combo,
+            ],
+            None,
+            minimum=0,
+            horizontal_margins=PAINTER_SETTINGS_LAYOUT.footer_margin_x.resolve(self.dialog) * 2,
+            spacing=PAINTER_SETTINGS_LAYOUT.row_spacing,
+            spacing_budget=0,
+        )
         return max(
             PAINTER_SETTINGS_LAYOUT.dialog_width.resolve(self.dialog),
             toolbar_width,
             footer_width,
+            size_width,
         )
 
     def _expanded_tree_height(self):

@@ -520,9 +520,9 @@ class SettingsDialog:
         self._settings_rows.append(padding_row)
         # The switch toggles infinite padding; "Padding" alone read as turning
         # padding off. When it is off, the Dilation row below appears.
-        padding_texts = self._make_text_block(text("infinite_padding"), text("on"))
-        self.padding_meta = padding_texts.findChild(self.QtWidgets.QLabel, "RizumSettingsItemMeta")
-        padding_layout.addWidget(padding_texts)
+        self.padding_texts = self._make_text_block(text("infinite_padding"), text("on"))
+        self.padding_meta = self.padding_texts._rizum_meta_label
+        padding_layout.addWidget(self.padding_texts)
         padding_layout.addStretch(1)
         padding_layout.addWidget(self.infinite_padding)
         padding_stack_layout.addWidget(padding_row)
@@ -843,6 +843,17 @@ class SettingsDialog:
         )
         self.dialog.updateGeometry()
 
+    def _text_block_width(self, block, subtitles):
+        """Width of a text block at the widest subtitle it can show."""
+        label = block._rizum_meta_label
+        # A label that was never shown takes its styled font only once polished.
+        label.ensurePolished()
+        metrics = label.fontMetrics()
+        return max(
+            block.sizeHint().width(),
+            *(metrics.horizontalAdvance(subtitle) for subtitle in subtitles),
+        )
+
     def _required_width(self):
         metric = self._metric
         body_margin = PAINTER_SETTINGS_LAYOUT.body_margin_x.resolve(self.dialog)
@@ -871,10 +882,39 @@ class SettingsDialog:
             + self.cleanup_layer_pngs.width()
             + 2 * body_margin
         )
+        # Rows whose subtitle changes are sized for every text they can
+        # show, so the dialog keeps one width while a setting changes.
         smoothing_need = (
-            self.smoothing_texts.sizeHint().width()
+            self._text_block_width(
+                self.smoothing_texts,
+                (text("edge_smoothing_off"), text("edge_smoothing_hint", strength=100)),
+            )
             + PAINTER_SETTINGS_LAYOUT.row_spacing
             + self.smoothing_slider.width()
+            + 2 * body_margin
+        )
+        padding_need = (
+            self._text_block_width(
+                self.padding_texts,
+                (text("on"), text("padding_off")),
+            )
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.infinite_padding.width()
+            + 2 * body_margin
+        )
+        render_need = (
+            self.render_texts.sizeHint().width()
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.render_scale.width()
+            + 2 * body_margin
+        )
+        blend_need = (
+            self._text_block_width(
+                self.blend_modes_texts,
+                [text(key) for key in BLEND_MODES_HINT_KEYS.values()],
+            )
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.blend_modes.width()
             + 2 * body_margin
         )
         return max(
@@ -884,6 +924,9 @@ class SettingsDialog:
             uv_map_need,
             cleanup_need,
             smoothing_need,
+            padding_need,
+            render_need,
+            blend_need,
         )
 
     def _apply_ui_scale(self, _scale):
@@ -937,6 +980,10 @@ class SettingsDialog:
             PAINTER_SETTINGS_LAYOUT.stepper_height.resolve(self.dialog)
         )
         control_height = PAINTER_SETTINGS_LAYOUT.control_height.resolve(self.dialog)
+        # The combo width is measured from these labels' metrics, and a
+        # label that was never shown has its styled font only once polished.
+        for combo in (self.bit_depth, self.blend_modes):
+            combo._label.ensurePolished()
         self.bit_depth.setCompactHeight(control_height)
         self.bit_depth.setFitToContents(True)
         self.bit_depth.fitToContents()

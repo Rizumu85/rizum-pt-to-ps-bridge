@@ -277,7 +277,9 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         layout.setSpacing(spacing)
         for button in (export_button, bridge_button):
             button.setCompactHeight(control_height)
-            button.setMinimumWidth(metric(80, 64))
+            # A translated caption can be wider than the English design
+            # width; the dock's minimum width follows these buttons.
+            button.setMinimumWidth(max(metric(80, 64), button.sizeHint().width()))
         if hasattr(bridge_button, "setCompactTooltipScale"):
             bridge_button.setCompactTooltipScale(scale)
         for button in (settings_button,):
