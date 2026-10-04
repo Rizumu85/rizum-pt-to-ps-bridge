@@ -43,11 +43,15 @@ _settings_controls = importlib.import_module(
 _settings_layout = importlib.import_module(
     f"{_vendored_ui.__name__}.settings_layout"
 )
+shared_localization = importlib.import_module(
+    f"{_vendored_ui.__name__}.localization"
+)
 
 _components = importlib.reload(_components)
 _settings_controls = importlib.reload(_settings_controls)
 _settings_dialog = importlib.reload(_settings_dialog)
 _settings_layout = importlib.reload(_settings_layout)
+shared_localization = importlib.reload(shared_localization)
 apply_theme = _vendored_ui.apply_theme
 build_compact_dock_stylesheet = _components.build_compact_dock_stylesheet
 compact_action_bar_width = _components.compact_action_bar_width

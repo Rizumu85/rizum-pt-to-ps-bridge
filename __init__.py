@@ -54,6 +54,7 @@ def reload_plugin():
     for name in [name for name in sys.modules if name.startswith(ui_kit._VENDORED_UI_PACKAGE)]:
         del sys.modules[name]
     for module in (
+        ui_kit,
         localization,
         edge_smoothing,
         payload_resample,
@@ -65,7 +66,6 @@ def reload_plugin():
         mapper_process,
         photoshop_documents,
         desktop_transfer,
-        ui_kit,
         ui_dialogs,
         settings_ui,
         export_ui,
