@@ -7,7 +7,6 @@ from pathlib import Path
 from .ui_kit import shared_localization as _shared
 
 
-DEFAULT_LANGUAGE = _shared.DEFAULT_LANGUAGE
 normalize_language = _shared.normalize_language
 read_painter_language = _shared.read_painter_language
 read_system_language = _shared.read_system_language
