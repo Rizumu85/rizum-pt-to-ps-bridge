@@ -247,13 +247,14 @@ __RIZUM_TARGET_RUNTIME__
     }
 
     function moveMappedLayer(layer, target, item) {
-        // Replay each drop exactly as the desktop preview: group drops append;
-        // repeated drops on one layer insert right above or below that layer.
+        // Replay each drop exactly as the desktop preview: a drop into a
+        // group lands at its top, as Photoshop's own drops do; repeated drops
+        // on one layer insert right above or below that layer.
         if (item.insertion === "inside") {
             if (isGroup(item)) {
-                appendFolder(layer, target);
+                prependFolder(layer, target);
             } else {
-                layer.move(target, ElementPlacement.PLACEATEND);
+                layer.move(target, ElementPlacement.PLACEATBEGINNING);
             }
         } else if (item.insertion === "before") {
             layer.move(target, ElementPlacement.PLACEBEFORE);
@@ -262,15 +263,15 @@ __RIZUM_TARGET_RUNTIME__
         }
     }
 
-    // Photoshop refuses to move a folder into a folder, and a folder created
-    // in the group or moved beside its last child left the group: a Painter
-    // folder dropped into "Alpha" landed after it. A layer can go to a
-    // group's end, and a folder can go beside a layer, so a temporary layer
-    // at the end holds the place the folder moves in front of.
-    function appendFolder(folder, group) {
+    // Photoshop refuses to move a folder into a folder, and a folder moved
+    // beside a group's edge child can leave the group: a Painter folder
+    // dropped into "Alpha" once landed after it. A layer can go to a group's
+    // top, and a folder can go beside a layer, so a temporary layer at the
+    // top holds the place the folder moves in front of.
+    function prependFolder(folder, group) {
         var anchor = group.artLayers.add();
         try {
-            anchor.move(group, ElementPlacement.PLACEATEND);
+            anchor.move(group, ElementPlacement.PLACEATBEGINNING);
             folder.move(anchor, ElementPlacement.PLACEBEFORE);
         } finally {
             anchor.remove();

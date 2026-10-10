@@ -289,6 +289,21 @@ class DesktopTransferTests(unittest.TestCase):
 
         self.assertEqual(layerstack.fills[0].position, ("inside", target, "substack"))
 
+    def test_inside_a_folder_lands_above_its_first_layer(self):
+        # The top of the folder, where Painter's own drop puts a layer and
+        # where the mapping preview shows it.
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0]["insertion"] = "inside"
+        payload["transfers"][0]["target"]["kind"] = "GroupLayer"
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        target = _TargetNode(_Stack(_NamedValue("BaseColor")))
+        target.sub_layers = lambda: ["first child", "last child"]
+        layerstack = _LayerStack(target)
+
+        apply_transfer_plan(load_transfer_plan(self.manifest), self.painter(layerstack))
+
+        self.assertEqual(layerstack.fills[0].position, ("above", "first child"))
+
     def test_plan_preserves_painter_to_photoshop_direction_and_native_ids(self):
         reverse_manifest = self.root / "reverse_transfer.json"
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))

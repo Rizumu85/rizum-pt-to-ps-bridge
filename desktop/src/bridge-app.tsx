@@ -17,6 +17,7 @@ import {
   stagedMapping,
   selectionRoots,
   transferSelection,
+  clipStackDrop,
   selectLayerIds,
   visibleSourceIds,
   type BridgeState,
@@ -203,17 +204,28 @@ export function BridgeApp({
     const dropTargetId = target && source.ref.host !== target.host && target.node.id !== source.id
       && (target.node.ref.host === target.host || staged) ? target.node.id : null
     let placement: Placement | null = null
+    let aimedId = dropTargetId
     if (target && dropTargetId) {
       placement = staged ? "after" : defaultPlacement(target.node)
       const box = readBounds?.()
       if (box && box.height > 0 && event.y !== undefined) {
         const share = (event.y - box.y) / box.height
+        // A folded folder's lower edge drops below it. An open one keeps its
+        // whole lower part for "inside": a line there would sit above the
+        // children while the layer landed after them.
+        const folded = target.node.kind === "group" && !(expanded.has(target.node.id) && target.node.children?.length)
         placement = staged ? share < 0.5 ? "before" : "after"
-          : target.node.kind === "group" ? share < 0.3 ? "before" : "inside" : share < 0.4 ? "before" : "after"
+          : target.node.kind === "group" ? share < 0.3 ? "before" : folded && share > 0.7 ? "after" : "inside"
+          : share < 0.4 ? "before" : "after"
       }
+      // The line is drawn where the layer will really go, which beside a
+      // clipping stack is not always the row under the pointer.
+      const aimed = clipStackDrop(target.host === "photoshop" ? bridge.photoshop : bridge.painter, dropTargetId, placement)
+      aimedId = aimed.targetId
+      placement = aimed.placement
     }
     treePointer.set({
-      dropTargetId,
+      dropTargetId: aimedId,
       dropPlacement: placement,
     })
   }
@@ -224,9 +236,11 @@ export function BridgeApp({
     // Windows can deliver pickup and release before React commits a frame.
     // The gesture owns its selection; rendered feedback is not input state.
     if (!aimed.draggingId || !gesture) return
-    const next = transferSelection(
-      bridge, gesture.selectedIds, targetId, aimed.dropTargetId === targetId ? aimed.dropPlacement ?? undefined : undefined,
-    )
+    // The aimed row is the one the indicator showed, which a clipping stack
+    // can make a different row from the one released on.
+    const next = aimed.dropTargetId
+      ? transferSelection(bridge, gesture.selectedIds, aimed.dropTargetId, aimed.dropPlacement ?? undefined)
+      : transferSelection(bridge, gesture.selectedIds, targetId)
     if (next === bridge) {
       setStatus("This target has pending transfers")
       setFailed(true)

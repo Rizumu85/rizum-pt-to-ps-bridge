@@ -62,7 +62,8 @@ class PhotoshopBackdropTests(unittest.TestCase):
         # Photoshop blends the insert against the folder's content alone, so
         # the folder is read as a plain Normal folder with nothing around it.
         self.assertEqual(before_iso_bottom, ["Iso bottom < Iso:NORMAL:100:nomask"])
-        self.assertEqual(inside_iso, [])
+        # An insert into a folder lands at its top, above all it holds.
+        self.assertEqual(inside_iso, ["Iso top < Iso:NORMAL:100:nomask", "Iso bottom < Iso:NORMAL:100:nomask"])
 
 
 if __name__ == "__main__":

@@ -145,11 +145,13 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         # The probe itself is gone.
         self.assertNotIn("Placed", placed)
 
-    def test_folder_mapped_inside_a_group_lands_last_in_it(self):
+    def test_folder_mapped_inside_a_group_lands_at_its_top(self):
+        # Where Photoshop's own drop into a group puts it, and what the
+        # mapping preview shows.
         document = self.run_group_transfer("inside", 1, "Group")
 
         self.assertEqual(self.outline(document["layers"]), [
-            ("Group", ["Detail", ("Working", ["Top", ("Sub", ["Deep"]), "Bottom"])]), "Base",
+            ("Group", [("Working", ["Top", ("Sub", ["Deep"]), "Bottom"]), "Detail"]), "Base",
         ])
 
 if __name__ == "__main__":

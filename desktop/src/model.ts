@@ -37,6 +37,8 @@ export type LayerNode = {
   note?: string
   /** A clipped Photoshop layer that travels inside its base, not on its own. */
   mergedIntoBase?: boolean
+  /** A Photoshop layer clipped to the layer below it; it and its base are one stack. */
+  clipped?: boolean
   ref: HostLayerRef
   children?: LayerNode[]
   /** A folder is shown open where its host shows it open; unknown is open. */
@@ -127,7 +129,9 @@ export function insertAtTarget(
 
   for (const node of nodes) {
     if (node.id === targetId) {
-      if (placement === "inside") next.push({ ...node, children: [...(node.children ?? []), nodeToInsert] })
+      // A drop into a folder lands at its top, as it does in Painter and
+      // Photoshop; at the bottom it could arrive out of sight in a long folder.
+      if (placement === "inside") next.push({ ...node, children: [nodeToInsert, ...(node.children ?? [])] })
       else if (placement === "before") next.push(nodeToInsert, node)
       else next.push(node, nodeToInsert)
       continue
@@ -180,14 +184,15 @@ export function transferBetweenHosts(
   const record: TransferMapping = staged
     // A staged row does not exist in its target host until Apply, so a drop
     // beside it takes the same host anchor and is ordered against it. Rows on
-    // one anchor are inserted in mapping order: "before" and "inside" stack in
-    // that order, "after" in reverse, in both Painter and Photoshop.
+    // one anchor are inserted in mapping order: "before" stacks in that order;
+    // "after" and "inside" each land right at the anchor, so they stack in
+    // reverse, in both Painter and Photoshop.
     ? { direction, sourceId, targetId: staged.targetId, placement: staged.placement, source: removed.ref, target: staged.target }
     : { direction, sourceId, targetId, placement: place, source: removed.ref, target: target.ref }
   let index = others.length
   if (staged) {
     const at = others.indexOf(staged)
-    index = (place === "before") === (staged.placement !== "after") ? at : at + 1
+    index = (place === "before") === (staged.placement === "before") ? at : at + 1
   }
 
   return {
@@ -246,10 +251,44 @@ export function transferSelection(
   const place = placement ?? (stagedMapping(state, target, targetHost) ? "after" : defaultPlacement(target))
   const sourceHost = targetHost === "photoshop" ? "substance_painter" : "photoshop"
   const roots = selectionRoots(state, sourceHost, sourceIds).map(node => node.id)
-  // After-drops insert against the same anchor; replay bottom-up to preserve
-  // the user's top-to-bottom selection order as one undoable batch.
-  if (place === "after") roots.reverse()
-  return roots.reduce((next, id) => transferBetweenHosts(next, id, targetId, place), state)
+  const aimed = clipStackDrop(inPainter ? state.painter : state.photoshop, targetId, place)
+  // After- and inside-drops each land right at the anchor; replay bottom-up
+  // to preserve the user's top-to-bottom selection order as one undoable batch.
+  if (aimed.placement !== "before") roots.reverse()
+  return roots.reduce((next, id) => transferBetweenHosts(next, id, aimed.targetId, aimed.placement), state)
+}
+
+/**
+ * Where a drop beside a Photoshop clipping stack really goes. Photoshop clips
+ * a layer to whatever is directly below it, so a layer inserted between a
+ * base and its clipped layers would take them over. The stack is one unit:
+ * above any part of it means above its top layer, below means below its base.
+ */
+export function clipStackDrop(
+  nodes: LayerNode[], targetId: string, placement: Placement,
+): { targetId: string; placement: Placement } {
+  const siblings = siblingsOf(nodes, targetId)
+  const same = { targetId, placement }
+  if (!siblings || placement === "inside") return same
+  const at = siblings.findIndex(node => node.id === targetId)
+  // Rows are listed top first: clipped layers sit right above their base.
+  let top = siblings[at].clipped ? at : at - 1
+  if (top < 0 || !siblings[top].clipped) return same
+  while (top > 0 && siblings[top - 1].clipped) top -= 1
+  if (placement === "before") return { targetId: siblings[top].id, placement }
+  if (!siblings[at].clipped) return same
+  let base = at
+  while (base < siblings.length && siblings[base].clipped) base += 1
+  return base < siblings.length ? { targetId: siblings[base].id, placement } : same
+}
+
+function siblingsOf(nodes: LayerNode[], id: string): LayerNode[] | null {
+  if (nodes.some(node => node.id === id)) return nodes
+  for (const node of nodes) {
+    const found = node.children ? siblingsOf(node.children, id) : null
+    if (found) return found
+  }
+  return null
 }
 
 export function visibleSourceIds(nodes: LayerNode[], host: HostId, expanded: Set<string>): string[] {

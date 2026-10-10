@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  clipStackDrop,
   cloneState,
   findNode,
   indexLayerTrees,
@@ -56,6 +57,61 @@ function applied(natives: LayerNode[], mappings: BridgeState["mappings"]): strin
   }
   return order
 }
+
+describe("drops into a folder", () => {
+  it("land at its top and keep a selection's order", () => {
+    const state = fixture()
+    state.photoshop.push(layer("photoshop", "extra", "layer"))
+    const next = transferSelection(state, new Set(["photoshop:cleanup", "photoshop:extra"]), "substance_painter:working")
+    expect(next.painter[1].children?.map(node => node.id)).toEqual([
+      "photoshop:cleanup", "photoshop:extra", "substance_painter:recolor",
+    ])
+  })
+
+  it("order a later drop above an earlier one, as the hosts will insert them", () => {
+    const first = transferBetweenHosts(fixture(), "photoshop:cleanup", "substance_painter:working")
+    const second = transferBetweenHosts(first, "photoshop:paint", "substance_painter:working")
+    expect(second.painter[1].children?.map(node => node.id)).toEqual([
+      "photoshop:paint", "photoshop:cleanup", "substance_painter:recolor",
+    ])
+    // Dropped just above the first staged row, the third must be inserted
+    // after it for the folder's top-first inserts to leave it there.
+    const third = transferBetweenHosts(second, "photoshop:color", "photoshop:cleanup", "before")
+    expect(third.painter[1].children?.map(node => node.id)).toEqual([
+      "photoshop:paint", "photoshop:color", "photoshop:cleanup", "substance_painter:recolor",
+    ])
+    expect(third.mappings.map(mapping => mapping.sourceId)).toEqual([
+      "photoshop:cleanup", "photoshop:color", "photoshop:paint",
+    ])
+  })
+})
+
+describe("drops beside a Photoshop clipping stack", () => {
+  // Top first: two layers clipped to "base", then an unrelated layer.
+  const stack = () => {
+    const nodes = [
+      layer("photoshop", "shine", "layer"), layer("photoshop", "shade", "layer"),
+      layer("photoshop", "base", "layer"), layer("photoshop", "other", "layer"),
+    ]
+    nodes[0].clipped = nodes[1].clipped = true
+    return nodes
+  }
+
+  it("go above the whole stack, never between a base and its clipped layers", () => {
+    for (const row of ["base", "shade", "shine"]) {
+      expect(clipStackDrop(stack(), `photoshop:${row}`, "before")).toEqual({ targetId: "photoshop:shine", placement: "before" })
+    }
+  })
+
+  it("go below the base when aimed below a clipped layer", () => {
+    expect(clipStackDrop(stack(), "photoshop:shine", "after")).toEqual({ targetId: "photoshop:base", placement: "after" })
+    expect(clipStackDrop(stack(), "photoshop:base", "after")).toEqual({ targetId: "photoshop:base", placement: "after" })
+  })
+
+  it("leave ordinary rows alone", () => {
+    expect(clipStackDrop(stack(), "photoshop:other", "before")).toEqual({ targetId: "photoshop:other", placement: "before" })
+  })
+})
 
 describe("drops beside rows staged by an earlier drop", () => {
   const top = "substance_painter:maskout"
@@ -141,7 +197,7 @@ describe("transferBetweenHosts", () => {
   it("previews a Photoshop group as the Painter folder of layers Apply creates", () => {
     const next = transferSelection(fixture(), new Set(["photoshop:group", "photoshop:paint"]), "substance_painter:working")
     expect(next.mappings).toHaveLength(1)
-    const pending = next.painter[1].children?.at(-1)
+    const pending = next.painter[1].children?.[0]
     expect(pending?.kind).toBe("group")
     expect(pending?.children?.map(node => node.id)).toEqual(["photoshop:paint", "photoshop:color"])
   })
@@ -170,7 +226,8 @@ describe("transferBetweenHosts", () => {
     const next = transferBetweenHosts(original, "photoshop:color", "substance_painter:working")
 
     expect(next.photoshop[0].children?.map((node) => node.id)).toEqual(["photoshop:paint"])
-    expect(next.painter[1].children?.at(-1)?.id).toBe("photoshop:color")
+    // A drop into a folder lands at its top, as in Painter and Photoshop.
+    expect(next.painter[1].children?.[0]?.id).toBe("photoshop:color")
     expect(next.mappings[0]).toMatchObject({
       sourceId: "photoshop:color",
       targetId: "substance_painter:working",
@@ -210,7 +267,7 @@ describe("transferBetweenHosts", () => {
     )
 
     expect(next.painter[1].children).toEqual([])
-    expect(next.photoshop[0].children?.at(-1)?.id).toBe("substance_painter:recolor")
+    expect(next.photoshop[0].children?.[0]?.id).toBe("substance_painter:recolor")
     expect(next.mappings[0]).toMatchObject({
       direction: "painter_to_photoshop",
       sourceId: "substance_painter:recolor",

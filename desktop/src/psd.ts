@@ -140,6 +140,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
   for (const { layer, node } of nodes) {
     const clipBase = bases.get(layer)
     if (clipBase) {
+      node.clipped = true
       const baseNode = byLayer.get(clipBase)!
       if (clipBase.children) {
         node.locked = "Clipped to a folder · not supported"

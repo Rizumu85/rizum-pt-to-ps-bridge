@@ -463,10 +463,10 @@ def _insertion_points(plan):
     points = []
     for key, (item, indexes) in grouped.items():
         # The insert replays each drop in turn: "before" places right above
-        # the target and "inside" at the folder's end, so later drops land
-        # below earlier ones; "after" places right below it, so later drops
+        # the target, so later drops land below earlier ones; "after" places
+        # right below it and "inside" at the folder's top, so later drops
         # land above.
-        ordered = tuple(reversed(indexes)) if item.insertion == "after" else tuple(indexes)
+        ordered = tuple(indexes) if item.insertion == "before" else tuple(reversed(indexes))
         points.append(InsertionPoint(
             key=key,
             target_layer_id=item.target_layer_id,
@@ -762,9 +762,10 @@ def _insertion_position(item, target_node, layerstack):
 
     children = list(_call_or_attr(target_node, "sub_layers", []))
     if children:
-        # Desktop group drops append visually; targeting the final child keeps
-        # Painter's insertion order identical to the mapping preview.
-        return layerstack.InsertPosition.below_node(children[-1])
+        # A drop into a folder lands at its top in the mapping preview, as it
+        # does in Painter itself; targeting the first child keeps Painter's
+        # insertion order identical to that preview.
+        return layerstack.InsertPosition.above_node(children[0])
     # Folder children live in the Substack; Content only accepts effects.
     return layerstack.InsertPosition.inside_node(
         target_node,

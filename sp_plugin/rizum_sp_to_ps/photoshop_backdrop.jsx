@@ -92,8 +92,8 @@ __RIZUM_TARGET_RUNTIME__
         // levels: the folders the insert lands inside, outermost first.
         var levels;
         if (insertion === "inside") {
+            // An insert into a folder lands at its top: all of it is below.
             levels = chain;
-            hideFirst(target.layer, target.layer.layers.length);
         } else {
             levels = chain.slice(0, chain.length - 1);
             hideFirst(target.owner, insertion === "before" ? target.index : target.index + 1);

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import { BridgeApp } from "./bridge-app"
 import { LayerScroll } from "./layer-scroll"
 import { failedBridgeSession } from "./transport"
-import type { BridgeState, HostId, LayerNode } from "./model"
+import { findNode, type BridgeState, type HostId, type LayerNode } from "./model"
 
 // This host records real reconciler work without opening a GPUI window. It
 // verifies state ownership/work counts, not native paint speed or hit testing.
@@ -128,6 +128,22 @@ describe("drag structure without native windows", () => {
     } finally { root.unmount() }
   })
 
+  it.each([[false, "inside"], [true, "after"]] as const)(
+    "takes a folder's lower edge (folded: %s) as %s",
+    async (folded, placement) => {
+      // Below a folded folder is otherwise unreachable when it ends the list;
+      // an open folder's lower edge stays "inside", above its own children.
+      const { root, apply, press, move, release } = setup()
+      try {
+        if (folded) flushSync(() => root.event("layer-toggle:pt-group", "click"))
+        flushSync(() => { press("ps-1"); move("pt-group", 131); release("pt-group", 131) })
+        root.event("apply-mapping", "click")
+        await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+        expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ targetId: "pt-group", placement })
+      } finally { root.unmount() }
+    },
+  )
+
   it("carries a multi-selection as one ordered batch", async () => {
     const { root, apply, press, move, release } = setup()
     try {
@@ -136,7 +152,11 @@ describe("drag structure without native windows", () => {
       flushSync(() => { press("ps-1"); move("pt-group"); release("pt-group") })
       root.event("apply-mapping", "click")
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
-      expect(apply.mock.calls[0][0].mappings.map(mapping => mapping.sourceId)).toEqual(["ps-1", "ps-2"])
+      // Each drop into a folder lands at its top, so the batch is replayed
+      // bottom-up for the rows to arrive in the order they were selected in.
+      const state = apply.mock.calls[0][0]
+      expect(state.mappings.map(mapping => mapping.sourceId)).toEqual(["ps-2", "ps-1"])
+      expect(findNode(state.painter, "pt-group")?.children?.slice(0, 2).map(node => node.id)).toEqual(["ps-1", "ps-2"])
     } finally { root.unmount() }
   })
 
