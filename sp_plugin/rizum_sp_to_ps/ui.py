@@ -721,6 +721,7 @@ def _unique_preserving_order(values):
 def register():
     """Register Painter UI elements and return handles for cleanup."""
     import substance_painter as sp
+    from PySide6 import QtWidgets
 
     global _ACTIVE_DOCK, _ACTIVE_PANEL
     panel = BridgePanel()
@@ -730,6 +731,14 @@ def register():
     dock.setObjectName("RizumPtToPsBridgeDock")
     dock.setWindowTitle(text("dock_title"))
     _connect_floating_resize(dock, panel)
+    # Qt shares each change of the Painter window's height among the docks
+    # that may grow, so a dock dragged to its smallest came back a little
+    # taller after a restart. The strip has nothing to show in extra height:
+    # a fixed vertical policy takes it out of that sharing. It is not a
+    # maximum, the user can still drag the dock taller.
+    policy = dock.sizePolicy()
+    policy.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Fixed)
+    dock.setSizePolicy(policy)
     dock.show()
     dock.raise_()
     _resize_floating_dock(dock, panel)
