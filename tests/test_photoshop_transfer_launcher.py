@@ -53,7 +53,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
-    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None):
+    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -73,7 +73,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                 "layers": [{
                     "order": 0, "name": "Working", "png": None, "mask_png": None,
                     "target_layer_id": target_id, "target_index_path": [], "target_name": target_name,
-                    "target_kind": "layer", "insertion": insertion,
+                    "target_kind": "layer", "insertion": insertion, "replace": replace,
                     "blend_mode": "Passthrough", "opacity": 80.0, "visible": True,
                     "children": [
                         layer("Top", blend_mode="MULTIPLY", opacity=50.0, mask_png=png("top_mask")),
@@ -144,6 +144,14 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         self.assertEqual(set(map(tuple, placed.values())), {(0, 0)}, placed)
         # The probe itself is gone.
         self.assertNotIn("Placed", placed)
+
+    def test_replace_removes_the_layer_the_insert_landed_beside(self):
+        document = self.run_group_transfer("before", 3, "Base", replace=True)
+
+        self.assertEqual(self.outline(document["layers"]), [
+            ("Group", ["Detail"]), ("Working", ["Top", ("Sub", ["Deep"]), "Bottom"]),
+        ])
+        self.assertEqual(self.last_result["replaced"], ["Base"])
 
     def test_folder_mapped_inside_a_group_lands_at_its_top(self):
         # Where Photoshop's own drop into a group puts it, and what the

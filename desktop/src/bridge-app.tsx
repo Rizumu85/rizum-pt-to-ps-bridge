@@ -17,8 +17,11 @@ import {
   stagedMapping,
   selectionRoots,
   transferSelection,
+  canReplace,
   clipStackDrop,
+  replacedTargets,
   selectLayerIds,
+  toggleReplace,
   visibleSourceIds,
   type BridgeState,
   type HostId,
@@ -37,6 +40,7 @@ import {
   MappingHelpPopover,
   Motion,
   ApplyProgressDialog,
+  ReplaceConfirmDialog,
   InsetSeparator,
   motionEase,
   type PointerFeed,
@@ -82,6 +86,7 @@ export function BridgeApp({
   const [renderScale, setRenderScale] = useState<RenderScale>(defaultRenderScale)
   const applyAbort = useRef<AbortController | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [confirmingReplace, setConfirmingReplace] = useState(false)
   const scaleOptions = useMemo(() => renderScalesFor(session.photoshop).map(scale => ({
     value: String(scale), label: `${scale}\u00d7`,
   })), [session.photoshop])
@@ -106,14 +111,24 @@ export function BridgeApp({
   const hasChanges = history.length > 0
   const canRedo = redoStack.length > 0
   // Say before Apply what Painter will change, instead of only reporting it after.
-  const pendingNotes = useMemo(
-    () => photoshopPendingNotes(bridge, session.importBlendModes),
-    [bridge, session.importBlendModes],
-  )
+  const pendingNotes = useMemo(() => {
+    const notes = photoshopPendingNotes(bridge, session.importBlendModes)
+    for (const [, entry] of replacedTargets(bridge)) {
+      for (const row of entry.by) notes.set(row.id, `${notes.get(row.id) ?? "Pending"} · replaces ${entry.target.name}`)
+    }
+    return notes
+  }, [bridge, session.importBlendModes])
   const mappedIds = useMemo(
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
   )
+  const replaced = useMemo(() => replacedTargets(bridge), [bridge])
+  const replace = useMemo(() => ({
+    on: new Set(bridge.mappings.filter(mapping => mapping.replace).map(mapping => mapping.sourceId)),
+    allowed: new Set(bridge.mappings.filter(mapping => canReplace(bridge, mapping.sourceId)).map(mapping => mapping.sourceId)),
+    targets: new Map([...replaced].map(([id, entry]) =>
+      [id, `Deleted on Apply · replaced by ${entry.by.map(node => node.name).join(", ")}`])),
+  }), [bridge, replaced])
   const activePainterContext = useMemo(
     () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
     [activePainterContextId, session.painterContexts],
@@ -350,9 +365,21 @@ export function BridgeApp({
     switchPainterContext(preferred ?? contexts[0])
   }
 
-  const apply = async () => {
+  const changeReplace = (id: string) => {
+    const next = toggleReplace(bridge, id)
+    const on = next.mappings.find(mapping => mapping.sourceId === id)?.replace
+    mutate(next, on ? "The old layer will be deleted on Apply" : "The old layer is kept")
+  }
+
+  const apply = async (confirmed = false) => {
     if (pending.current) return
     endDrag(true)
+    // Deleting layers is asked for once more, with each one named.
+    if (replaced.size > 0 && !confirmed) {
+      setConfirmingReplace(true)
+      return
+    }
+    setConfirmingReplace(false)
     pending.current = true
     setBusy(true)
     setApplying(true)
@@ -457,8 +484,8 @@ export function BridgeApp({
 
   // Rows are memoized, so the tree receives handlers that never change and
   // reach the latest state through this ref.
-  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource })
-  latest.current = { toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource }
+  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource, changeReplace })
+  latest.current = { toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource, changeReplace }
   // Real Win32 moves over a row stay with the row's handler inside the native
   // list and do not reach the panel, so rows feed the carried card too;
   // without it the card froze over every row. The follower drops repeated
@@ -471,6 +498,7 @@ export function BridgeApp({
   const tree = useMemo(() => ({
     pointer: treePointer,
     onToggle: (id: string) => latest.current.toggle(id),
+    onToggleReplace: (id: string) => latest.current.changeReplace(id),
     onDragStart: (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => latest.current.startDrag(id, event, readBounds),
     onPointerMove: (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) => {
       latest.current.movePointer(event, rowId, readBounds)
@@ -577,7 +605,8 @@ export function BridgeApp({
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ApplyAction
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
-            onClick={apply}
+            // Not passed directly: the click event would read as "confirmed".
+            onClick={() => apply()}
           />
         </div>
         <InsetSeparator />
@@ -640,7 +669,7 @@ export function BridgeApp({
             }
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            pendingNotes={pendingNotes}
+            pendingNotes={pendingNotes} replace={replace}
             expanded={expanded}
             onRemove={removePhotoshop}
             contentKey={session.photoshop?.path ?? ""}
@@ -655,7 +684,7 @@ export function BridgeApp({
             headerAction={<MappingHelpPopover />}
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
-            pendingNotes={pendingNotes}
+            pendingNotes={pendingNotes} replace={replace}
             expanded={expanded}
             onRemove={removePainter}
             contentKey={activePainterContextId}
@@ -680,6 +709,7 @@ export function BridgeApp({
             }}>{failed || busy ? status : [
               selectedIds.size ? `${selectedIds.size} selected` : "",
               bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
+              replaced.size ? `${replaced.size} to delete` : "",
             ].filter(Boolean).join(" · ") || status}</text>
         </Motion>
         </motion.div>
@@ -687,6 +717,15 @@ export function BridgeApp({
         <DragOverlay bridge={bridge} gesture={press} pointer={pointer} store={treePointer} />
         {applying ? <ApplyProgressDialog progress={applyProgress} steps={applySteps} cancelling={cancelling}
           onCancel={() => { setCancelling(true); applyAbort.current?.abort() }} /> : null}
+        {confirmingReplace && !applying ? <ReplaceConfirmDialog
+          items={[...replaced.values()].map(entry => ({
+            host: entry.target.ref.host === "photoshop" ? "Photoshop" : "Painter",
+            target: entry.target.name,
+            by: entry.by.map(node => node.name).join(", "),
+          }))}
+          onConfirm={() => apply(true)}
+          onCancel={() => setConfirmingReplace(false)}
+        /> : null}
       </div>
     </TooltipProvider>
   )

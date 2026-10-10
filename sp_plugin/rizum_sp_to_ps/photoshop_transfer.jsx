@@ -5,7 +5,7 @@ __RIZUM_TARGET_RUNTIME__
     var requestPath = __RIZUM_TRANSFER_REQUEST_PATH__;
     var resultPath = File(requestPath).parent.fsName + "/photoshop_transfer_result.json";
     var progressPath = File(requestPath).parent.fsName + "/photoshop_transfer_progress.json";
-    var result = { success: false, inserted: [], errors: [], warnings: [], saved: false };
+    var result = { success: false, inserted: [], replaced: [], errors: [], warnings: [], saved: false };
     // Where Place put a canvas-sized image; every placed PNG moves back by it.
     var placeOffset = { x: 0, y: 0 };
     var previousDialogs = app.displayDialogs;
@@ -66,6 +66,26 @@ __RIZUM_TARGET_RUNTIME__
             }
         }
         publishProgress("transferring_layers", progress.total, progress.total);
+
+        // The user switched these rows to replace the layer they landed
+        // beside. It goes only when every insert succeeded, so a failed
+        // Apply never costs a layer, and once per target however many rows
+        // replace it.
+        if (result.errors.length === 0) {
+            var removed = {};
+            for (var replaceIndex = 0; replaceIndex < request.layers.length; replaceIndex += 1) {
+                var replaced = targets[replaceIndex];
+                if (request.layers[replaceIndex].replace !== true || removed[Number(replaced.id)]) continue;
+                removed[Number(replaced.id)] = true;
+                var replacedName = String(replaced.name);
+                try {
+                    replaced.remove();
+                    result.replaced.push(replacedName);
+                } catch (removeError) {
+                    result.warnings.push(replacedName + ": Photoshop could not delete the replaced layer: " + errorMessage(removeError));
+                }
+            }
+        }
 
         if (result.errors.length === 0) {
             result.success = true;

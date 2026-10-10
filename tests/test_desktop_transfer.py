@@ -86,6 +86,7 @@ class _LayerStack:
         self.target = target
         self.fills = []
         self.groups = []
+        self.deleted = []
         self.ScopedModification = _ScopedModification
         self.InsertPosition = SimpleNamespace(
             above_node=lambda node: ("above", node),
@@ -95,6 +96,9 @@ class _LayerStack:
         self.NodeStack = SimpleNamespace(Content="content", Mask="mask", Substack="substack")
         self.MaskBackground = SimpleNamespace(Black="black")
         self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", Passthrough="passthrough")
+
+    def delete_node(self, node):
+        self.deleted.append(node)
 
     def get_node_by_uid(self, uid):
         if uid != 0x1A:
@@ -303,6 +307,40 @@ class DesktopTransferTests(unittest.TestCase):
         apply_transfer_plan(load_transfer_plan(self.manifest), self.painter(layerstack))
 
         self.assertEqual(layerstack.fills[0].position, ("above", "first child"))
+
+    def replace_plan(self, insertion="before"):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0].update({"insertion": insertion, "replace": True})
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        return load_transfer_plan(self.manifest)
+
+    def test_replace_deletes_the_painter_layer_after_the_new_one_is_in(self):
+        target = _TargetNode(_Stack(_NamedValue("BaseColor")))
+        layerstack = _LayerStack(target)
+
+        apply_transfer_plan(self.replace_plan(), self.painter(layerstack))
+
+        self.assertEqual(layerstack.fills[0].position, ("above", target))
+        self.assertEqual(layerstack.deleted, [target])
+
+    def test_a_failed_insert_deletes_nothing(self):
+        target = _TargetNode(_Stack(_NamedValue("BaseColor")))
+        layerstack = _LayerStack(target)
+        layerstack.insert_fill = mock.Mock(side_effect=RuntimeError("Painter refused the layer"))
+
+        with self.assertRaises(RuntimeError):
+            apply_transfer_plan(self.replace_plan(), self.painter(layerstack))
+
+        self.assertEqual(layerstack.deleted, [])
+
+    def test_replace_is_refused_for_a_drop_into_a_folder(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0].update({"insertion": "inside", "replace": True})
+        payload["transfers"][0]["target"]["kind"] = "GroupLayer"
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaisesRegex(Exception, "cannot replace the group"):
+            load_transfer_plan(self.manifest)
 
     def test_plan_preserves_painter_to_photoshop_direction_and_native_ids(self):
         reverse_manifest = self.root / "reverse_transfer.json"

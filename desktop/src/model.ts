@@ -52,6 +52,13 @@ export type TransferMapping = {
   placement: Placement
   source: HostLayerRef
   target: HostLayerRef
+  /**
+   * Apply deletes the target once this row is in place. The user asked for
+   * it because a layer repainted in the other app otherwise left its old
+   * version to delete by hand; it is a switch on the staged row, never a
+   * drop zone, so a slipped drag cannot delete anything.
+   */
+  replace?: boolean
 }
 
 export type BridgeState = {
@@ -200,6 +207,52 @@ export function transferBetweenHosts(
     painter: sourceHost === "substance_painter" ? remainingSource : nextTarget,
     mappings: [...others.slice(0, index), record, ...others.slice(index)],
   }
+}
+
+/** The panel a mapping's target lives in. */
+function targetNodes(state: BridgeState, mapping: TransferMapping): LayerNode[] {
+  return mapping.direction === "photoshop_to_painter" ? state.painter : state.photoshop
+}
+
+/**
+ * Whether a staged row may replace its target: only a row dropped beside a
+ * real, transferable layer or folder. A clipping stack is left alone, since
+ * deleting its base would hand its clipped layers to whatever lies below.
+ */
+export function canReplace(state: BridgeState, sourceId: string): boolean {
+  const mapping = state.mappings.find(candidate => candidate.sourceId === sourceId)
+  if (!mapping || mapping.placement === "inside") return false
+  const nodes = targetNodes(state, mapping)
+  const target = findNode(nodes, mapping.targetId)
+  if (!target || target.locked || target.clipped) return false
+  const siblings = siblingsOf(nodes, mapping.targetId) ?? []
+  const above = siblings[siblings.indexOf(target) - 1]
+  return !above?.clipped
+}
+
+export function toggleReplace(state: BridgeState, sourceId: string): BridgeState {
+  if (!canReplace(state, sourceId)) return state
+  return {
+    ...state,
+    mappings: state.mappings.map(mapping =>
+      mapping.sourceId === sourceId ? { ...mapping, replace: !mapping.replace } : mapping),
+  }
+}
+
+/** Targets Apply will delete, each with the staged rows that replace it. */
+export function replacedTargets(state: BridgeState): Map<string, { target: LayerNode; by: LayerNode[] }> {
+  const replaced = new Map<string, { target: LayerNode; by: LayerNode[] }>()
+  for (const mapping of state.mappings) {
+    if (!mapping.replace) continue
+    const nodes = targetNodes(state, mapping)
+    const target = findNode(nodes, mapping.targetId)
+    const source = findNode(nodes, mapping.sourceId)
+    if (!target || !source) continue
+    const entry = replaced.get(target.id) ?? { target, by: [] }
+    entry.by.push(source)
+    replaced.set(target.id, entry)
+  }
+  return replaced
 }
 
 /** The mapping that staged this row in the target host, when the row is a staged root. */

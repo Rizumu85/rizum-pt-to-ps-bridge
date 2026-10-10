@@ -144,6 +144,25 @@ describe("drag structure without native windows", () => {
     },
   )
 
+  it("asks before an Apply that deletes a replaced layer, naming it", async () => {
+    const { root, apply, press, move, release } = setup()
+    try {
+      flushSync(() => { press("ps-1"); move("pt-0", 131); release("pt-0", 131) })
+      flushSync(() => root.event("layer-replace:ps-1", "click"))
+      flushSync(() => root.event("apply-mapping", "click"))
+      expect(root.find("replace-confirm")).toBeDefined()
+      expect(apply).not.toHaveBeenCalled()
+      // Cancel keeps the mapping and deletes nothing.
+      flushSync(() => root.event("replace-cancel", "click"))
+      expect(root.find("replace-confirm")).toBeUndefined()
+      expect(apply).not.toHaveBeenCalled()
+      flushSync(() => root.event("apply-mapping", "click"))
+      root.event("replace-confirm-apply", "click")
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ sourceId: "ps-1", targetId: "pt-0", replace: true })
+    } finally { root.unmount() }
+  })
+
   it("carries a multi-selection as one ordered batch", async () => {
     const { root, apply, press, move, release } = setup()
     try {

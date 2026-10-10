@@ -50,6 +50,9 @@ class PainterImportItem:
     target_uid: int
     target_kind: str
     insertion: str
+    # The user switched this row to replace its target: Apply deletes the
+    # Painter node once the row is inserted beside it.
+    replace: bool = False
 
     @property
     def name(self):
@@ -72,6 +75,8 @@ class PhotoshopExportItem:
     blend_mode: str
     opacity: float
     visible: bool
+    # As PainterImportItem.replace, for the Photoshop layer it lands beside.
+    replace: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,9 @@ class InsertionPoint:
     # Indexes into the rendered items, in the order they end up in Photoshop,
     # top first.
     items: tuple[int, ...]
+    # The target is deleted by this Apply, so it is not part of what the
+    # inserts will sit on.
+    replace: bool = False
 
 
 @dataclass(frozen=True)
@@ -302,6 +310,12 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
             target = _InsertTarget(painter, channel_type, channel_is_color, resources, warnings)
             _insert_photoshop_layer(item.layer, position, target)
             report(f"Layer \u201c{item.name}\u201d", len(assets) + index + 1)
+        # Replaced layers go last and inside the same history entry: every
+        # insert positioned itself against them, and one undo restores them.
+        # A failed insert raises before this, so nothing is deleted for it.
+        replaced = {item.target_uid: node for item, node, _type, _color in resolved if item.replace}
+        for node in replaced.values():
+            painter.layerstack.delete_node(node)
         if resolved:
             report("Updating Painter stack...")
 
@@ -474,6 +488,7 @@ def _insertion_points(plan):
             target_name=item.target_name,
             insertion=item.insertion,
             items=ordered,
+            replace=any(plan.photoshop_exports[index].replace for index in indexes),
         ))
     return tuple(points)
 
@@ -491,6 +506,7 @@ def _write_backdrop_request(plan, points, output_dir):
                 "target_index_path": list(point.target_index_path),
                 "target_name": point.target_name,
                 "insertion": point.insertion,
+                "replace": point.replace,
             }
             for point in points
         ],
@@ -568,6 +584,7 @@ def _write_transfer_request(prepared):
                 "blend_mode": node["blend_mode"] if rewritten else item.blend_mode,
                 "opacity": node["opacity"] if rewritten else item.opacity,
                 "visible": item.visible,
+                "replace": item.replace,
             }
         )
 
@@ -624,6 +641,11 @@ def _transfer_item(value, fallback_order, manifest_dir):
         raise DesktopTransferError(
             f"Transfer {fallback_order + 1} can only insert inside a group."
         )
+    replace = record.get("replace") is True
+    if replace and insertion == "inside":
+        raise DesktopTransferError(
+            f"Transfer {fallback_order + 1} cannot replace the group it goes inside."
+        )
 
     if direction == "painter_to_photoshop":
         target_layer_id = (
@@ -655,6 +677,7 @@ def _transfer_item(value, fallback_order, manifest_dir):
             blend_mode=_optional_text(source.get("blend_mode")) or "normal",
             opacity=_number(source.get("opacity"), 100.0),
             visible=source.get("visible") is not False,
+            replace=replace,
         )
 
     return direction, PainterImportItem(
@@ -663,6 +686,7 @@ def _transfer_item(value, fallback_order, manifest_dir):
         target_uid=_uid(target.get("id"), fallback_order),
         target_kind=target_kind,
         insertion=insertion,
+        replace=replace,
     )
 
 

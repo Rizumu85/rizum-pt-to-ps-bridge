@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  canReplace,
   clipStackDrop,
   cloneState,
   findNode,
+  replacedTargets,
+  toggleReplace,
   indexLayerTrees,
   removeFromHost,
   transferBetweenHosts,
@@ -110,6 +113,44 @@ describe("drops beside a Photoshop clipping stack", () => {
 
   it("leave ordinary rows alone", () => {
     expect(clipStackDrop(stack(), "photoshop:other", "before")).toEqual({ targetId: "photoshop:other", placement: "before" })
+  })
+})
+
+describe("replacing the layer a row was dropped beside", () => {
+  const beside = () => transferBetweenHosts(fixture(), "photoshop:cleanup", "substance_painter:maskout", "before")
+
+  it("is a switch on the staged row that names what Apply deletes", () => {
+    const staged = beside()
+    expect(canReplace(staged, "photoshop:cleanup")).toBe(true)
+    expect(replacedTargets(staged).size).toBe(0)
+    const replacing = toggleReplace(staged, "photoshop:cleanup")
+    expect(replacing.mappings[0].replace).toBe(true)
+    const [entry] = [...replacedTargets(replacing).values()]
+    expect([entry.target.id, entry.by.map(node => node.id)]).toEqual(["substance_painter:maskout", ["photoshop:cleanup"]])
+    expect(toggleReplace(replacing, "photoshop:cleanup").mappings[0].replace).toBe(false)
+  })
+
+  it("is forgotten when the row is dropped somewhere else", () => {
+    const moved = transferBetweenHosts(toggleReplace(beside(), "photoshop:cleanup"), "photoshop:cleanup", "substance_painter:working")
+    expect(moved.mappings[0].replace).toBeUndefined()
+  })
+
+  it("is not offered inside a folder, on a locked layer, or on a clipping stack", () => {
+    const inside = transferBetweenHosts(fixture(), "photoshop:cleanup", "substance_painter:working")
+    expect(canReplace(inside, "photoshop:cleanup")).toBe(false)
+    expect(toggleReplace(inside, "photoshop:cleanup")).toBe(inside)
+
+    const state = fixture()
+    state.photoshop[1].locked = "Adjustment layer · not supported"
+    const locked = transferBetweenHosts(state, "substance_painter:maskout", "photoshop:cleanup", "after")
+    expect(canReplace(locked, "substance_painter:maskout")).toBe(false)
+
+    // "cleanup" is the base of a clipping stack: deleting it would hand the
+    // clipped layer above it to whatever lies below.
+    const clipping = fixture()
+    clipping.photoshop.splice(1, 0, { ...layer("photoshop", "shine", "layer"), clipped: true })
+    const base = transferBetweenHosts(clipping, "substance_painter:maskout", "photoshop:cleanup", "after")
+    expect(canReplace(base, "substance_painter:maskout")).toBe(false)
   })
 })
 

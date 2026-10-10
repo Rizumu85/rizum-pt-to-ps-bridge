@@ -27,8 +27,8 @@ class PhotoshopBackdropTests(unittest.TestCase):
                 "document": {"path": str(root / "document.psd")},
                 "points": [
                     {"key": str(index), "target_layer_id": None, "target_index_path": path,
-                     "target_name": name, "insertion": insertion}
-                    for index, (path, name, insertion) in enumerate(points)
+                     "target_name": name, "insertion": insertion, "replace": bool(replace)}
+                    for index, (path, name, insertion, *replace) in enumerate(points)
                 ],
             }), encoding="utf-8")
             launch = write_photoshop_backdrop_launcher(request)
@@ -56,6 +56,14 @@ class PhotoshopBackdropTests(unittest.TestCase):
             "Pass bottom < Pass:PASSTHROUGH:100:mask",
             "Iso top < Iso:MULTIPLY:100:mask", "Iso bottom < Iso:MULTIPLY:100:mask", "Base",
         ])
+
+    def test_a_layer_being_replaced_is_not_part_of_the_backdrop(self):
+        # It is deleted by the same Apply, so the insert above it will sit on
+        # what is below it.
+        kept, replaced = self.read(([0, 0], "Pass top", "before"), ([0, 0], "Pass top", "before", True))
+        self.assertIn("Pass top < Pass:PASSTHROUGH:100:mask", kept)
+        self.assertNotIn("Pass top < Pass:PASSTHROUGH:100:mask", replaced)
+        self.assertIn("Pass bottom < Pass:PASSTHROUGH:100:mask", replaced)
 
     def test_inside_an_isolated_folder_only_its_own_content_counts(self):
         before_iso_bottom, inside_iso = self.read(([1, 1], "Iso bottom", "before"), ([1], "Iso", "inside"))

@@ -39,7 +39,7 @@ __RIZUM_TARGET_RUNTIME__
             var copy = document.duplicate("PT Bridge backdrop", false);
             try {
                 var png = folder + "/backdrop_" + index + ".png";
-                isolateBelow(copy, paths[index], points[index].insertion);
+                isolateBelow(copy, paths[index], points[index].insertion, points[index].replace === true);
                 copy.saveAs(File(png), new PNGSaveOptions(), true, Extension.LOWERCASE);
                 result.backdrops.push({ key: points[index].key, png: png });
             } finally {
@@ -78,7 +78,7 @@ __RIZUM_TARGET_RUNTIME__
 
     // Leaves visible exactly what lies below the insertion place, as the
     // inserted layers will composite against it.
-    function isolateBelow(copy, path, insertion) {
+    function isolateBelow(copy, path, insertion, replaced) {
         // chain[i]: the layer at depth i on the way to the target, with the
         // collection it sits in.
         var chain = [];
@@ -96,7 +96,9 @@ __RIZUM_TARGET_RUNTIME__
             levels = chain;
         } else {
             levels = chain.slice(0, chain.length - 1);
-            hideFirst(target.owner, insertion === "before" ? target.index : target.index + 1);
+            // A target this Apply replaces is deleted, so it is not below
+            // the insert even when the insert goes above it.
+            hideFirst(target.owner, insertion === "before" && !replaced ? target.index : target.index + 1);
         }
         for (var level = levels.length - 1; level >= 0; level -= 1) {
             hideFirst(levels[level].owner, levels[level].index);

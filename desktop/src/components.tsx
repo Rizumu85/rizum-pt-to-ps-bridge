@@ -220,6 +220,57 @@ export function ApplyProgressDialog({ progress, steps, cancelling = false, onCan
   )
 }
 
+/**
+ * Asked before an Apply that deletes layers. Replace is the only command
+ * here that removes the user's work, so it names every layer first.
+ */
+export function ReplaceConfirmDialog({ items, onConfirm, onCancel }: {
+  items: readonly { host: string; target: string; by: string }[]
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const action = (testId: string, label: string, danger: boolean, onClick: () => void) => (
+    <div testId={testId} role="button" onClick={onClick} style={{
+      height: 26, paddingLeft: 12, paddingRight: 12,
+      // MiSans sits low in its line box; this centres the word optically.
+      paddingBottom: 2,
+      display: "flex", alignItems: "center", borderRadius: metrics.rowRadius, cursor: "pointer",
+      backgroundColor: danger ? colors.danger : colors.control,
+      hover: danger ? undefined : { backgroundColor: colors.controlHover },
+      active: danger ? undefined : { backgroundColor: colors.controlActive },
+    }}>
+      <text style={{ fontFamily: typography.family, fontSize: typography.primarySize,
+        fontWeight: typography.primaryWeight, color: danger ? colors.canvas : colors.text, whiteSpace: "nowrap" }}>{label}</text>
+    </div>
+  )
+  return (
+    <div testId="replace-confirm" role="dialog" aria-label="Confirm replacing layers"
+      style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "#00000055",
+        display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 340, padding: 20, borderRadius: 8, backgroundColor: colors.panel,
+        display: "flex", flexDirection: "column", gap: 12 }}>
+        <PrimaryText>{`Delete ${items.length} layer${items.length === 1 ? "" : "s"}?`}</PrimaryText>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {items.map(item => (
+            <div key={`${item.host}:${item.target}:${item.by}`} style={{ display: "flex", flexDirection: "column" }}>
+              <PrimaryText lineHeight={16}>{`${item.host} · ${item.target}`}</PrimaryText>
+              <SecondaryText>{`Replaced by ${item.by}`}</SecondaryText>
+            </div>
+          ))}
+        </div>
+        <text style={{ fontFamily: typography.family, fontSize: typography.secondarySize,
+          fontWeight: typography.secondaryWeight, color: colors.secondary, whiteSpace: "normal" }}>
+          Each is deleted once its replacement is in place. Undo in that app brings it back.
+        </text>
+        <div style={{ display: "flex", flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
+          {action("replace-cancel", "Cancel", false, onCancel)}
+          {action("replace-confirm-apply", "Delete and apply", true, onConfirm)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CancelAction({ cancelling, writing, onClick }: { cancelling: boolean; writing: boolean; onClick: () => void }) {
   const disabled = cancelling || writing
   const button = (

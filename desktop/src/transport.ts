@@ -422,6 +422,7 @@ export async function writeTransferManifest(
       source,
       target: manifestRef(mapping.target),
       insertion: mapping.placement,
+      replace: mapping.replace === true,
     })
   }
 

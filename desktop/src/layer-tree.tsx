@@ -199,6 +199,9 @@ export type TreeInteraction = {
   selectedIds: Set<string>
   mappedIds: Set<string>
   pendingNotes: Map<string, string>
+  /** Staged rows set to replace their target, the rows that may be, and what each replaced target says. */
+  replace: { on: Set<string>; allowed: Set<string>; targets: Map<string, string> }
+  onToggleReplace: (id: string) => void
   expanded: Set<string>
   onToggle: (id: string) => void
   onDragStart: (id: string, event: EventPayload, readBounds: () => ElementBounds | null) => void
@@ -218,10 +221,14 @@ type LayerRowProps = TreeInteraction & {
 
 const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, ...interaction }: LayerRowProps) {
   const {
-    host, pointer, selectedIds, mappedIds, pendingNotes,
+    host, pointer, selectedIds, mappedIds, pendingNotes, replace, onToggleReplace,
     expanded, onToggle, onDragStart, onPointerMove,
     onDragEnd, onHover, onDrop, onRemove,
   } = interaction
+  const replaces = !leaving && replace.on.has(node.id)
+  const replaceable = !leaving && replace.allowed.has(node.id)
+  // Set on the target a staged row replaces: Apply deletes this layer.
+  const replacedBy = leaving ? undefined : replace.targets.get(node.id)
   const open = node.kind === "group" && expanded.has(node.id)
   const nativeNode = node.ref.host === host
   // A leaving row shows what it was, not the mapping its layer now belongs to elsewhere.
@@ -291,7 +298,7 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
           // Locked rows stay in the tree so the Photoshop hierarchy reads true,
           // while their detail line explains why they cannot be dragged.
           // Every carried row dims, not only the pressed one: they left together.
-          opacity: node.locked ? 0.5 : dragging && selected ? 0.65 : 1,
+          opacity: node.locked || replacedBy ? 0.5 : dragging && selected ? 0.65 : 1,
           // The cursor answers "can I drop here" before the button is released.
           cursor: dragging ? (acceptsDrop ? "grabbing" : "no-drop") : node.locked ? "default" : "grab",
         }}
@@ -319,10 +326,10 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
           <div style={{ minWidth: 0, flexGrow: 1, display: "flex", flexDirection: "column", paddingBottom: 2 }}>
             {/* Explicit line heights: the default leading stacked two lines taller than the row. */}
             <PrimaryText lineHeight={16}>{node.name}</PrimaryText>
-            {mapped || node.locked || node.note ? <text style={{
-              fontSize: typography.secondarySize, lineHeight: 14, color: colors.secondary,
+            {mapped || replacedBy || node.locked || node.note ? <text style={{
+              fontSize: typography.secondarySize, lineHeight: 14, color: replacedBy ? colors.danger : colors.secondary,
               whiteSpace: "nowrap", textOverflow: "ellipsis",
-            }}>{mapped ? pendingNotes.get(node.id) ?? "Pending" : node.locked ?? node.note}</text> : null}
+            }}>{mapped ? pendingNotes.get(node.id) ?? "Pending" : replacedBy ?? node.locked ?? node.note}</text> : null}
           </div>
         </div>
         {nativeNode ? <div
@@ -336,6 +343,30 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
           }}
         >
           <Icon name="x" size={12} color={colors.secondary} />
+        </div> : null}
+        {/* A switch on the staged row, not a drop zone: deleting the old
+            layer takes a deliberate click, and it stays lit while it is on. */}
+        {replaceable ? <div
+          testId={`layer-replace:${node.id}`}
+          role="switch"
+          aria-checked={replaces}
+          aria-label="Replace the layer this was dropped beside"
+          onClick={() => { onDragEnd(); onToggleReplace(node.id) }}
+          style={{
+            height: 20, flexShrink: 0, paddingLeft: 7, paddingRight: 7,
+            // MiSans sits low in its line box; this centres the word optically.
+            paddingBottom: 1,
+            display: "flex", alignItems: "center", borderRadius: 5, cursor: "pointer",
+            borderWidth: 1, borderColor: replaces ? colors.danger : colors.line,
+            backgroundColor: replaces ? colors.danger : undefined,
+            hover: replaces ? undefined : { backgroundColor: colors.controlActive },
+            opacity: replaces || hovered ? 1 : 0, pointerEvents: replaces || hovered ? undefined : "none",
+          }}
+        >
+          <text style={{
+            fontFamily: typography.family, fontSize: typography.secondarySize, lineHeight: 14,
+            color: replaces ? colors.canvas : colors.secondary, whiteSpace: "nowrap",
+          }}>Replace</text>
         </div> : null}
         {/* Hover never lights folders, so a drop says where it lands on its own:
             a framed folder takes the layers inside, a line marks above or below.
@@ -354,10 +385,11 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
 }, (previous, next) => {
   // Collection identity changes on every selection. Only this row's flags
   // matter; drag feedback comes from the pointer store, not stale memo props.
-  const { selectedIds: a, mappedIds: b, pendingNotes: c, expanded: d, ...rest } = previous
-  const { selectedIds: e, mappedIds: f, pendingNotes: g, expanded: h, ...nextRest } = next
+  const { selectedIds: a, mappedIds: b, pendingNotes: c, expanded: d, replace: r, ...rest } = previous
+  const { selectedIds: e, mappedIds: f, pendingNotes: g, expanded: h, replace: s, ...nextRest } = next
   const id = next.node.id
   return a.has(id) === e.has(id) && b.has(id) === f.has(id) && c.get(id) === g.get(id) && d.has(id) === h.has(id)
+    && r.on.has(id) === s.on.has(id) && r.allowed.has(id) === s.allowed.has(id) && r.targets.get(id) === s.targets.get(id)
     && (Object.keys(rest) as (keyof typeof rest)[]).every(key => rest[key] === nextRest[key])
 })
 
