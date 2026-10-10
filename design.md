@@ -563,6 +563,39 @@ from Photoshop's own renderer, the mapper treats layers this way:
 Only mapped layers are rendered to PNG, at Apply. The mapper reads the saved
 file, so unsaved Photoshop edits are not seen until the PSD is saved.
 
+### 6.2 Where a drop lands, and replacing a layer
+
+The mapping preview, Painter, and Photoshop must agree on where a mapped row
+goes, in both directions. The rules follow what the hosts' own drops do,
+because drops that landed elsewhere read as bugs:
+
+- On a layer: above it from the row's upper part, below it from the rest.
+- On a folder: above it from the upper edge, otherwise inside, at the folder's
+  **top**. A folded folder's lower edge drops below it; an open folder keeps
+  its lower part for "inside", since a line there would sit above its children.
+- Several rows on one anchor are inserted in mapping order. "Before" stacks in
+  that order; "after" and "inside" each land right at the anchor, so they
+  stack in reverse, and the mapper orders mappings so the result matches the
+  preview.
+- A Photoshop clipping stack (a base and the layers clipped to it) is one
+  unit: a drop above any part of it lands above its top layer, a drop below
+  lands below its base. Inserted between them, the new layer would take over
+  the clipped layers.
+
+**Replace.** A layer repainted in the other app otherwise leaves its old
+version behind to delete by hand. A staged row dropped beside a layer or
+folder carries a Replace switch; switched on, Apply deletes that target once
+the row is in place. The user's decisions:
+
+- The old layer is deleted, not hidden. Painter's delete shares the Apply's
+  one history entry; Photoshop's is undone from its History panel.
+- It is a switch on the staged row, never a drop zone, so a slipped drag
+  cannot delete anything. The target row is marked, and an Apply that deletes
+  anything first asks, naming every layer.
+- Nothing is deleted unless every insert succeeded.
+- It is not offered for a drop into a folder, for locked rows, or on a
+  clipping stack.
+
 ### 6.3 Non-goals for return data
 
 The return path deliberately does not:
