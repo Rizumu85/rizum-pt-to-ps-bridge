@@ -21,7 +21,10 @@ const nativeLoader: import("bun").BunPlugin = {
 
 const result = await Bun.build({
   entrypoints: [join(root, "src/main.tsx")],
-  compile: { outfile: join(dist, "pt-bridge") },
+  compile: {
+    outfile: join(dist, "pt-bridge"),
+    windows: { icon: join(root, "assets", "pt-bridge.ico") },
+  },
   plugins: [nativeLoader],
 })
 if (!result.success) {
