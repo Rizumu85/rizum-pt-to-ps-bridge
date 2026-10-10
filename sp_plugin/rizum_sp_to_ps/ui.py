@@ -48,9 +48,7 @@ _ACTIVE_DOCK = None
 
 BRIDGE_DOCK_BG = "#2b2b2b"
 BRIDGE_DOCK_MIN_WIDTH = 210
-BRIDGE_DOCK_TOOLBAR_HEIGHT = 44
 BRIDGE_DOCK_DEFAULT_WIDTH = 290
-BRIDGE_DOCK_DEFAULT_HEIGHT = 78
 
 
 BRIDGE_DIALOG_STYLESHEET = """
@@ -271,9 +269,14 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
         control_height = metric(28, 21)
         icon_frame = metric(22, 17)
         icon_size = metric(16, 12)
-        toolbar_height = metric(BRIDGE_DOCK_TOOLBAR_HEIGHT, 33)
+        # Painter's dock title already leaves room under its caption, so the
+        # strip adds almost none above the buttons: the caption-to-button gap
+        # then matches the gap under the buttons, in the shortest dock that
+        # still reads as evenly spaced.
+        top = metric(2, 2)
+        bottom = metric(10, 8)
 
-        layout.setContentsMargins(margin, 0, margin, 0)
+        layout.setContentsMargins(margin, top, margin, bottom)
         layout.setSpacing(spacing)
         for button in (export_button, bridge_button):
             button.setCompactHeight(control_height)
@@ -294,7 +297,7 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
             if hasattr(button, "setCompactTooltipScale"):
                 button.setCompactTooltipScale(scale)
 
-        toolbar.setFixedHeight(toolbar_height)
+        toolbar.setFixedHeight(top + control_height + bottom)
         toolbar.setMinimumWidth(
             margin * 2
             + export_button.minimumWidth()
@@ -327,8 +330,6 @@ class BridgePanel:
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsBridgePanel")
         self.widget.setWindowTitle(text("dock_title"))
-        self.widget.setMinimumSize(BRIDGE_DOCK_MIN_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
-        self.widget.resize(BRIDGE_DOCK_DEFAULT_WIDTH, BRIDGE_DOCK_TOOLBAR_HEIGHT)
         apply_theme(self.widget, mode="overlay")
         _apply_bridge_dock_surface(self.widget)
         self.widget.setStyleSheet(self.widget.styleSheet() + BRIDGE_DIALOG_STYLESHEET)
@@ -764,16 +765,13 @@ def _resize_floating_dock(dock, panel):
         return
     scale = panel._current_ui_scale()
     minimum_width = panel.widget.minimumWidth()
-    minimum_height = max(
-        panel._dock_toolbar.height(),
-        int(round(BRIDGE_DOCK_DEFAULT_HEIGHT * scale)),
-    )
+    minimum_height = dock.sizeHint().height()
     default_width = max(
         minimum_width,
         int(round(BRIDGE_DOCK_DEFAULT_WIDTH * scale)),
     )
     try:
-        dock.setMinimumSize(minimum_width, minimum_height)
+        dock.setMinimumWidth(minimum_width)
     except Exception:
         pass
     try:
