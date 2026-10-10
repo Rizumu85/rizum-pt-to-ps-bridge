@@ -406,9 +406,7 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
             done += work
             node = transfer_node(build_request["layers"][0], context["channel"])
             if node is None:
-                raise RuntimeError(
-                    f"Painter rendered no visible pixels for {selected.get('name')!r}."
-                )
+                raise RuntimeError(_nothing_to_send(selected, context["channel"]))
             exported.append({
                 "uid": source_uid,
                 "name": selected.get("name") or source_uid,
@@ -422,6 +420,15 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
         geometry_baker.close()
 
     return exported
+
+
+def _nothing_to_send(selected, channel):
+    # The two causes need different fixes from the user, and one sentence for
+    # both once sent a fill layer's owner looking for missing pixels.
+    name = selected.get("name")
+    if not selected.get("children") and not _node_is_active_for_channel(selected, channel):
+        return f"{name!r} has no content in the {channel} channel, so there is nothing to send."
+    return f"Painter rendered no visible pixels for {name!r} in the {channel} channel."
 
 
 def transfer_node(node, channel):

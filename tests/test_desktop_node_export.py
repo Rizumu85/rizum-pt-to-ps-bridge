@@ -111,6 +111,13 @@ class DesktopNodeExportTests(unittest.TestCase):
         self.assertTrue(result[0]["png"].endswith("layer.png"))
         self.assertEqual(result[0]["children"], [])
 
+    def test_a_layer_outside_the_channel_says_so(self):
+        # "No visible pixels" sent the owner of a fill layer looking for
+        # pixels, when the layer simply had this channel switched off.
+        layer = {"uid_hex": "2c", "name": "Rough", "active_channels": ["Roughness"]}
+        with self.assertRaisesRegex(RuntimeError, "'Rough' has no content in the BaseColor channel"):
+            self.export(layer, lambda _node, _png: None)
+
     def test_group_with_nothing_to_render_is_refused(self):
         layer = {"uid_hex": "2b", "name": "Empty", "children": [{"uid_hex": "2c", "name": "Hidden"}]}
         with self.assertRaisesRegex(RuntimeError, "no visible pixels"):
