@@ -46,6 +46,7 @@ _settings_layout = importlib.import_module(
 shared_localization = importlib.import_module(
     f"{_vendored_ui.__name__}.localization"
 )
+exit_guard = importlib.import_module(f"{_vendored_ui.__name__}.exit_guard")
 
 _components = importlib.reload(_components)
 _settings_controls = importlib.reload(_settings_controls)
