@@ -49,10 +49,10 @@ last connected Photoshop document.
 The **Export** action opens a focused export dialog. The scope selector has two
 display scopes only: the currently edited texture set/stack, or all stacks.
 This selector controls what the dialog shows, not a separate hidden export
-mode. The implementation resolves **Current Stack** with
+mode. The implementation resolves **Current Texture Set** with
 `substance_painter.textureset.get_active_stack()` and shows an explicit empty
 state when the host cannot report an active stack; it must not silently export
-the first available target. Current Stack starts with its exportable channels
+the first available target. Current Texture Set starts with its exportable channels
 selected, parent rows show selected/total counts, and the Export action stays
 disabled while nothing is selected. The dialog keeps group/channel checkboxes,
 explicit **All** and **None** actions,
