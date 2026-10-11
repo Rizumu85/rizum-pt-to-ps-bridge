@@ -427,7 +427,8 @@ export function HostPanel({
   nodes: LayerNode[]
   headerAction?: React.ReactNode
   emptyContent?: React.ReactNode
-  onTrackPointer: (event: EventPayload) => void
+  /** A move inside the panel that no row took, and whether it is under the last row. */
+  onTrackPointer: (event: EventPayload, host: HostId, belowRows: boolean) => void
   /** A release inside the panel that no row took. */
   onRelease: (host: HostId) => void
   /** Names what the tree shows: a document or a Painter target. */
@@ -441,6 +442,7 @@ export function HostPanel({
   const rows = useMemo(() => visibleLayerRows(nodes, interaction.expanded), [nodes, interaction.expanded])
   const { shown: shownRows, left } = useLeavingRows(nodes, rows, useContext(RowMotionContext))
   const layoutKey = useMemo(() => ({}), [shownRows])
+  const rowsEnd = useRef<(() => number | null) | null>(null)
   if (shown.current.key !== contentKey) shown.current = { key: contentKey, fade: true }
   // Host surfaces stay borderless; background and elevation separate them from the workspace.
   return (
@@ -448,7 +450,11 @@ export function HostPanel({
       testId={`layer-panel:${panelId}`}
       // GPUiX delivers pointer moves no higher than the host panels, so the
       // drag preview is fed here; drops only land inside a panel anyway.
-      onMouseMove={onTrackPointer}
+      onMouseMove={event => {
+        // Geometry is only asked for while something is carried.
+        const end = interaction.pointer.get().draggingId && event.y !== undefined ? rowsEnd.current?.() ?? null : null
+        onTrackPointer(event, interaction.host, end !== null && event.y! > end)
+      }}
       onMouseUp={() => onRelease(interaction.host)}
       style={{
         // Rows that accept the drop override this; releasing anywhere else cancels.
@@ -518,7 +524,7 @@ export function HostPanel({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.16, ease: motionEase }}
         style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, display: "flex", flexDirection: "column" }}
-      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={shownRows.length} renderRow={index => {
+      ><LayerScroll id={panelId} layoutKey={layoutKey} rowCount={shownRows.length} rowsEnd={rowsEnd} renderRow={index => {
         const { node, depth, leaving } = shownRows[index]
         return <LayerRow key={node.id} node={node} depth={depth} leaving={leaving} onLeft={left} {...interaction} />
       }} /></motion.div>}

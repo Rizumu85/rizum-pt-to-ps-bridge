@@ -1,14 +1,21 @@
-import { createContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react"
 import { useGpuixRequired, useWindowSize, type PublicInstance } from "@gpuix/react"
 import { colors, metrics as themeMetrics } from "./theme"
 import { createRowBoundsCache } from "./drag-feedback"
 
 export const RowBoundsContext = createContext<ReturnType<typeof createRowBoundsCache> | null>(null)
 
-export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string; renderRow: (index: number) => ReactNode; layoutKey: unknown; rowCount: number }) {
+const listMargin = 8
+
+export function LayerScroll({ id, renderRow, layoutKey, rowCount, rowsEnd }: {
+  id: string; renderRow: (index: number) => ReactNode; layoutKey: unknown; rowCount: number
+  /** Filled with a reader of where the rows stop: their bottom edge in window coordinates, or null while they fill the viewport. */
+  rowsEnd?: MutableRefObject<(() => number | null) | null>
+}) {
   const renderer = useGpuixRequired()
   const [rowBounds] = useState(() => createRowBoundsCache(id => renderer.getElementBounds?.(id) ?? null))
   const windowSize = useWindowSize()
+  const frame = useRef<PublicInstance>(null)
   const viewport = useRef<PublicInstance>(null)
   const track = useRef<PublicInstance>(null)
   const drag = useRef<{ y: number; offset: number } | null>(null)
@@ -52,6 +59,15 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
     return () => timers.forEach(clearTimeout)
   }, [layoutKey, windowSize.width, windowSize.height])
 
+  // The virtual list has no painted bounds of its own, so the empty space
+  // under a short list is measured from this frame and the fixed row height.
+  if (rowsEnd) rowsEnd.current = () => {
+    const box = frame.current && rowBounds.read(frame.current.id)
+    if (!box) return null
+    const end = box.y + listMargin + rowCount * themeMetrics.rowHeight
+    return end < box.y + box.height - listMargin ? end : null
+  }
+
   const maximum = Math.max(0, metrics.total - metrics.height)
   const thumb = Math.min(metrics.height, Math.max(28, metrics.height * metrics.height / Math.max(1, metrics.total)))
   const travel = metrics.height - thumb
@@ -65,6 +81,7 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
   }
 
   return <RowBoundsContext.Provider value={rowBounds}><div
+    ref={frame}
     onScroll={rowBounds.invalidate}
     style={{ display: "flex", flexDirection: "row", flexGrow: 1, flexBasis: 0, minHeight: 0 }}>
     <virtual-list ref={viewport} testId={`layer-scroll:${id}`} itemCount={rowCount} windowStart={start}
@@ -76,7 +93,7 @@ export function LayerScroll({ id, renderRow, layoutKey, rowCount }: { id: string
       const offset = anchorOffset(anchor)
       setMetrics(previous => previous.offset === offset ? previous : { ...previous, offset })
     }}
-      style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, margin: 8 }}>
+      style={{ flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, margin: listMargin }}>
         {/* Scroll recycling is not a layer deletion. Stable row keys preserve
             overlapping rows, and offscreen rows never become React elements. */}
         {Array.from({ length: Math.max(0, Math.min(rowCount, Math.max(start + 1, range.end)) - start) }, (_, offset) => renderRow(start + offset))}

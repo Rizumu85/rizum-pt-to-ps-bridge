@@ -144,6 +144,38 @@ describe("drag structure without native windows", () => {
     },
   )
 
+  it("takes a layer released in a panel's empty space at the end of its list", async () => {
+    const { root, apply, press } = setup()
+    try {
+      // The pointer goes from the Photoshop panel straight into empty space; no row is ever under it.
+      const panel = (type: string, y: number) => root.event("layer-panel:painter", type, { pressedButton: 0, button: 0, x: 200, y })
+      flushSync(() => { press("ps-1"); panel("mouseMove", 300); panel("mouseMove", 310); panel("mouseUp", 310) })
+      root.event("apply-mapping", "click")
+      await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+      expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ sourceId: "ps-1", targetId: "pt-group", placement: "after" })
+    } finally { root.unmount() }
+  })
+
+  it.each([[120, "before"], [200, "after"]] as const)(
+    "keeps a row's aim beside the rows (y %i), and aims at the end under them",
+    async (y, placement) => {
+      const { root, apply, press, move } = setup()
+      try {
+        // One folded row in a tall list: it ends at y 144, with space under it.
+        root.renderer.getElementBounds.mockReturnValue({ x: 10, y: 100, width: 260, height: 400 })
+        flushSync(() => root.event("layer-toggle:pt-group", "click"))
+        flushSync(() => { press("ps-1"); move("pt-group", 110) })
+        flushSync(() => {
+          root.event("layer-panel:painter", "mouseMove", { pressedButton: 0, x: 200, y })
+          root.event("layer-panel:painter", "mouseUp", { button: 0, x: 200, y })
+        })
+        root.event("apply-mapping", "click")
+        await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
+        expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ targetId: "pt-group", placement })
+      } finally { root.unmount() }
+    },
+  )
+
   it("asks before an Apply that deletes a replaced layer, naming it", async () => {
     const { root, apply, press, move, release } = setup()
     try {

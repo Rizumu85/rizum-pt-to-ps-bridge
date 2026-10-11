@@ -193,7 +193,7 @@ export function BridgeApp({
     treePointer.set({ draggingId: null, draggingHost: null, dropTargetId: null, dropPlacement: null })
   }
 
-  const movePointer = (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null) => {
+  const movePointer = (event: EventPayload, rowId?: string, readBounds?: () => ElementBounds | null, at?: Placement) => {
     if (event.pressedButton !== 0 || pending.current) {
       if (press.current || treePointer.get().draggingId) endDrag()
       return
@@ -221,8 +221,8 @@ export function BridgeApp({
     let placement: Placement | null = null
     let aimedId = dropTargetId
     if (target && dropTargetId) {
-      placement = staged ? "after" : defaultPlacement(target.node)
-      const box = readBounds?.()
+      placement = at ?? (staged ? "after" : defaultPlacement(target.node))
+      const box = at ? null : readBounds?.()
       if (box && box.height > 0 && event.y !== undefined) {
         const share = (event.y - box.y) / box.height
         // A folded folder's lower edge drops below it. An open one keeps its
@@ -243,6 +243,17 @@ export function BridgeApp({
       dropTargetId: aimedId,
       dropPlacement: placement,
     })
+  }
+
+  // The pointer is in a panel but on no row. A layer dragged into a panel's
+  // empty space had no drop target and fell back on release; it now goes to
+  // the end of the list, as it would in Painter or Photoshop. Beside the rows
+  // the row aimed at last stays, so slipping into a margin keeps its line.
+  const aimBesideRows = (event: EventPayload, host: HostId, belowRows: boolean) => {
+    const aimed = treePointer.get().dropTargetId
+    if (!belowRows && aimed && layerIndex.get(aimed)?.host === host) return
+    const last = (host === "photoshop" ? bridge.photoshop : bridge.painter).at(-1)
+    if (last) movePointer(event, last.id, undefined, "after")
   }
 
   const drop = (targetId: string) => {
@@ -484,8 +495,8 @@ export function BridgeApp({
 
   // Rows are memoized, so the tree receives handlers that never change and
   // reach the latest state through this ref.
-  const latest = useRef({ toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource, changeReplace })
-  latest.current = { toggle, startDrag, movePointer, endDrag, drop, releaseInPanel, removeSource, changeReplace }
+  const latest = useRef({ toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace })
+  latest.current = { toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace }
   // Real Win32 moves over a row stay with the row's handler inside the native
   // list and do not reach the panel, so rows feed the carried card too;
   // without it the card froze over every row. The follower drops repeated
@@ -508,8 +519,9 @@ export function BridgeApp({
     onHover: (id: string | null) => treePointer.set({ hoveredId: id }),
     onDrop: (id: string) => latest.current.drop(id),
     onRelease: (host: HostId) => latest.current.releaseInPanel(host),
-    onTrackPointer: (event: EventPayload) => {
+    onTrackPointer: (event: EventPayload, host?: HostId, belowRows = false) => {
       if (!treePointer.get().draggingId || event.pressedButton !== 0) latest.current.movePointer(event)
+      if (host && treePointer.get().draggingId && event.pressedButton === 0) latest.current.aimBesideRows(event, host, belowRows)
       carry(event)
     },
   }), [treePointer])
