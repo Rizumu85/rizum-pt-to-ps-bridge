@@ -92,7 +92,6 @@
   "bridge_start_failed": "无法启动 PT Bridge desktop。\n\n{error}",
   "bridge_busy_photoshop": "Photoshop 操作正在进行",
   "bridge_busy_applying": "正在应用已映射的图层",
-  "bridge_busy_open": "PT Bridge desktop 已打开",
   "bridge_runtime_missing": "未找到 PT Bridge desktop 运行时。请先构建 desktop/dist/pt-bridge 再使用 Bridge。",
   "bridge_process_exited": "桌面进程已退出，退出代码 {code}。",
   "connect_photoshop_document": "连接 Photoshop 文档",

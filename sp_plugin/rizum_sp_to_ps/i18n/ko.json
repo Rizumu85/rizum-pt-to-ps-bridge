@@ -92,7 +92,6 @@
   "bridge_start_failed": "PT Bridge desktop을 시작할 수 없습니다.\n\n{error}",
   "bridge_busy_photoshop": "Photoshop 작업 진행 중",
   "bridge_busy_applying": "매핑된 레이어 적용 중",
-  "bridge_busy_open": "PT Bridge desktop이 열려 있음",
   "bridge_runtime_missing": "PT Bridge desktop 런타임을 찾을 수 없습니다. Bridge 동작을 사용하기 전에 desktop/dist/pt-bridge를 빌드하십시오.",
   "bridge_process_exited": "데스크톱 프로세스가 종료되었습니다(코드 {code}).",
   "connect_photoshop_document": "Photoshop 문서 연결",

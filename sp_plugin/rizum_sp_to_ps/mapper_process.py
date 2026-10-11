@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import threading
 from functools import lru_cache
 
@@ -71,6 +72,40 @@ def mapper_process_class(QtCore):
             except (OSError, ValueError):
                 # The mapper has exited; its finished signal is already on the way.
                 pass
+
+        def bring_to_front(self):
+            """Raise the mapper's window, restoring it if minimized. Windows only."""
+            if sys.platform != "win32" or self._popen is None:
+                return
+            import ctypes
+            from ctypes import wintypes
+
+            # Windows lets only the foreground process hand focus on. Painter
+            # is that process when its Bridge button is clicked, so it raises
+            # the window itself; the mapper asking for focus would be refused.
+            # A private library object, so these prototypes stay off the
+            # functions other code reaches through ctypes.windll.
+            user32 = ctypes.WinDLL("user32")
+            visitor = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            user32.EnumWindows.argtypes = [visitor, wintypes.LPARAM]
+            user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+            for name in ("IsWindowVisible", "IsIconic", "SetForegroundWindow"):
+                getattr(user32, name).argtypes = [wintypes.HWND]
+            user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+            windows = []
+
+            def visit(hwnd, _lparam):
+                owner = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+                if owner.value == self._popen.pid and user32.IsWindowVisible(hwnd):
+                    windows.append(hwnd)
+                return True
+
+            user32.EnumWindows(visitor(visit), 0)
+            for hwnd in windows:
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
 
         def stop(self, grace_seconds=0.8):
             if self._popen is None or self._popen.poll() is not None:

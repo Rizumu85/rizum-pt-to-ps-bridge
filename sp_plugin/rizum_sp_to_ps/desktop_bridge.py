@@ -77,8 +77,11 @@ class DesktopBridgeController:
             process.stop()
 
     def open(self):
-        """Launch one mapping session with the last connected Photoshop document."""
+        """Launch one mapping session, or return to the one already open."""
         if self._busy_reason() is not None:
+            return
+        if self._process is not None:
+            self._return_to_desktop()
             return
         if not self.panel._project_is_open():
             self._show(text("bridge"), text("bridge_needs_project"))
@@ -88,6 +91,24 @@ class DesktopBridgeController:
             return
 
         self._launch_desktop()
+
+    def _return_to_desktop(self):
+        # Bridge pressed with the mapper already open: its window got lost
+        # behind Painter, and Painter or the PSD may have changed since it
+        # read them. The button used to be disabled here, which left finding
+        # the window and reloading it to the user.
+        self._process.bring_to_front()
+        if not (self.panel._project_is_open() and self.panel._project_is_ready()):
+            return
+        try:
+            exporter.write_painter_snapshot(self._snapshot_path, self.panel.user_settings)
+            self._write_document_map()
+        except Exception as exc:
+            self._show(text("bridge"), str(exc))
+            return
+        # Not a reply to a request: the mapper reads both trees again unless
+        # it holds staged mappings, which point into the trees it shows.
+        self._reply_to_desktop({"type": "refresh"})
 
     def _launch_desktop(self):
         try:
@@ -148,8 +169,6 @@ class DesktopBridgeController:
             return text("bridge_busy_photoshop")
         if self._applying_transfer:
             return text("bridge_busy_applying")
-        if self._process is not None or self._picking:
-            return text("bridge_busy_open")
         return None
 
     def _sync_button(self):

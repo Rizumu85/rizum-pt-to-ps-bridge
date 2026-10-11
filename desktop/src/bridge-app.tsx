@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   AnimatePresence,
   motion,
@@ -53,6 +53,7 @@ export function BridgeApp({
   defaultRenderScale = 1,
   onConnectPhotoshop,
   onLoadPhotoshop,
+  onPainterRefresh,
 }: {
   session: BridgeSession
   onApply: (state: BridgeState, painterContextId: string, session: BridgeSession, onProgress: (progress: ApplyProgress) => void, renderScale: RenderScale, signal: AbortSignal) => Promise<ApplyOutcome>
@@ -62,6 +63,8 @@ export function BridgeApp({
   onConnectPhotoshop: (session: BridgeSession, context: PainterContext | null) => Promise<BridgeSession | null>
   /** Reads a PSD afresh, or none for null: a reload, or a target with its own PSD. */
   onLoadPhotoshop?: (session: BridgeSession, document: string | null) => Promise<BridgeSession>
+  /** Subscribes to Painter asking for both trees to be read again; returns the unsubscribe. */
+  onPainterRefresh?: (listener: () => void) => () => void
 }) {
   const renderer = useGpuixRequired()
   const [session, setSession] = useState(initialSession)
@@ -482,6 +485,24 @@ export function BridgeApp({
     "",
   )
 
+  // Painter's Bridge button was pressed with this window open: Painter has
+  // raised it and rewritten its snapshot. Staged mappings point into the
+  // trees shown now, so they are kept rather than reloaded from under.
+  const refreshFromPainter = () => {
+    if (pending.current) return
+    if (bridge.mappings.length > 0) {
+      setStatus("Pending transfers kept · apply or reset them to reload the layers")
+      setFailed(false)
+      return
+    }
+    void replacePhotoshop(
+      "Reloading layers...",
+      async () => onLoadPhotoshop ? onLoadPhotoshop(session, session.photoshop?.path ?? null) : null,
+      "",
+      { contextId: activePainterContextId, message: "Layers reloaded" },
+    )
+  }
+
   const toggle = (id: string) => {
     const folder = findNode(bridge.photoshop, id) ?? findNode(bridge.painter, id)
     setMotionIds(new Set(visibleLayerRows(folder?.children ?? [], expanded).map(row => row.node.id)))
@@ -495,8 +516,9 @@ export function BridgeApp({
 
   // Rows are memoized, so the tree receives handlers that never change and
   // reach the latest state through this ref.
-  const latest = useRef({ toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace })
-  latest.current = { toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace }
+  const latest = useRef({ toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace, refreshFromPainter })
+  latest.current = { toggle, startDrag, movePointer, aimBesideRows, endDrag, drop, releaseInPanel, removeSource, changeReplace, refreshFromPainter }
+  useEffect(() => onPainterRefresh?.(() => latest.current.refreshFromPainter()), [onPainterRefresh])
   // Real Win32 moves over a row stay with the row's handler inside the native
   // list and do not reach the panel, so rows feed the carried card too;
   // without it the card froze over every row. The follower drops repeated

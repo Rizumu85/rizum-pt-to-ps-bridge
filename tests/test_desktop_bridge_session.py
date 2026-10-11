@@ -4,8 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from sp_plugin.rizum_sp_to_ps import desktop_bridge
 from sp_plugin.rizum_sp_to_ps.desktop_bridge import (
     DesktopBridgeController,
     _photoshop_export_error_summary,
@@ -79,6 +80,34 @@ class DesktopBridgeSessionTests(unittest.TestCase):
 
         self.assertIsNone(self.controller._process)
         self.assertTrue(self.controller.button.enabled)
+
+    def press_bridge_with_the_mapper_open(self, project_open=True):
+        process = SimpleNamespace(bring_to_front=Mock(), write=Mock())
+        self.controller._process = process
+        self.controller._snapshot_path = Path("painter_snapshot.json")
+        self.controller.panel = SimpleNamespace(
+            _project_is_open=lambda: project_open, _project_is_ready=lambda: True, user_settings={},
+        )
+        self.controller._write_document_map = Mock()
+        with patch.object(desktop_bridge.exporter, "write_painter_snapshot") as snapshot:
+            self.controller.open()
+        return process, snapshot
+
+    def test_bridge_pressed_again_returns_to_the_open_mapper_with_fresh_layers(self):
+        process, snapshot = self.press_bridge_with_the_mapper_open()
+
+        process.bring_to_front.assert_called_once_with()
+        snapshot.assert_called_once_with(Path("painter_snapshot.json"), {})
+        self.assertEqual(json.loads(process.write.call_args.args[0]), {"type": "refresh"})
+        # Still the same session: nothing was launched over it.
+        self.assertIs(self.controller._process, process)
+
+    def test_without_a_project_the_open_mapper_is_only_brought_forward(self):
+        process, snapshot = self.press_bridge_with_the_mapper_open(project_open=False)
+
+        process.bring_to_front.assert_called_once_with()
+        snapshot.assert_not_called()
+        process.write.assert_not_called()
 
     def test_a_closed_sessions_late_exit_leaves_the_current_mapper_alone(self):
         current = SimpleNamespace()

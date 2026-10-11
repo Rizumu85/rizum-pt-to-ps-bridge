@@ -121,7 +121,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertIsNone(self.documents()[("M_body", "BaseColor")])
 
     def test_cancel_replies_to_open_mapper(self):
-        self.choose(None, during=lambda: self.assertFalse(self.panel.dock_bridge_button.isEnabled()))
+        self.choose(None)
         self.assertEqual(self.replies(), [{"type": "photoshop_connect_cancelled"}])
         self.controller._launch_desktop.assert_not_called()
 
@@ -353,7 +353,8 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertEqual(reply["type"], "apply_failed")
         self.assertEqual(reply["message"], "Painter target moved")
         self.assertIn("snapshot", reply)
-        self.assertFalse(self.panel.dock_bridge_button.isEnabled())
+        # The mapper is still open and idle: Bridge returns to it.
+        self.assertTrue(self.panel.dock_bridge_button.isEnabled())
 
     def test_closing_the_mapper_needs_no_apply(self):
         process = SimpleNamespace()

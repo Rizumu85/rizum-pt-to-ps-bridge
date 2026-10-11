@@ -355,6 +355,16 @@ describe("Painter link", () => {
     await expect(reply).resolves.toEqual({ type: "photoshop_connect_failed", message: "Photoshop is busy" })
   })
 
+  it("hands on Painter's refresh without answering a pending request with it", async () => {
+    const pipe = painterPipe()
+    const refresh = vi.fn()
+    const link = createPainterLink(pipe.input, () => {}, undefined, refresh)
+    const reply = link.request("connect_photoshop")
+    pipe.send('{"type": "refresh"}\n{"type":"photoshop_connect_cancelled"}\n')
+    await expect(reply).resolves.toEqual({ type: "photoshop_connect_cancelled" })
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
   it("rejects pending and later requests once Painter closes stdin, and reports the close once", async () => {
     const pipe = painterPipe()
     const closed = vi.fn()

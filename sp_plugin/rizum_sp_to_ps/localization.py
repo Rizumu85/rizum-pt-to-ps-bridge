@@ -112,7 +112,6 @@ FALLBACK_TEXT = {
     "bridge_start_failed": "Could not start PT Bridge desktop.\n\n{error}",
     "bridge_busy_photoshop": "Photoshop operation in progress",
     "bridge_busy_applying": "Applying mapped layers",
-    "bridge_busy_open": "PT Bridge desktop is open",
     "bridge_runtime_missing": (
         "PT Bridge desktop runtime was not found. Build desktop/dist/pt-bridge "
         "before using the Bridge action."

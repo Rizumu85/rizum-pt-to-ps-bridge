@@ -92,7 +92,6 @@
   "bridge_start_failed": "Impossible de lancer PT Bridge desktop.\n\n{error}",
   "bridge_busy_photoshop": "Opération Photoshop en cours",
   "bridge_busy_applying": "Application des calques associés",
-  "bridge_busy_open": "PT Bridge desktop est ouvert",
   "bridge_runtime_missing": "Le runtime de PT Bridge desktop est introuvable. Compilez desktop/dist/pt-bridge avant d'utiliser l'action Bridge.",
   "bridge_process_exited": "Le processus de bureau s'est terminé avec le code {code}.",
   "connect_photoshop_document": "Connecter un document Photoshop",

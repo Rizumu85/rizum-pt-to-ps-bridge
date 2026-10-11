@@ -92,7 +92,6 @@
   "bridge_start_failed": "PT Bridge desktop konnte nicht gestartet werden.\n\n{error}",
   "bridge_busy_photoshop": "Photoshop-Vorgang läuft",
   "bridge_busy_applying": "Zugeordnete Ebenen werden angewendet",
-  "bridge_busy_open": "PT Bridge desktop ist geöffnet",
   "bridge_runtime_missing": "Die Laufzeit von PT Bridge desktop wurde nicht gefunden. Erstellen Sie desktop/dist/pt-bridge, bevor Sie die Bridge-Aktion verwenden.",
   "bridge_process_exited": "Der Desktop-Prozess wurde mit Code {code} beendet.",
   "connect_photoshop_document": "Photoshop-Dokument verbinden",

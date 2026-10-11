@@ -185,6 +185,8 @@ export type PainterReply =
   | { type: "photoshop_connect_cancelled" }
   | { type: "photoshop_connect_failed"; message: string }
   | { type: "applied" | "apply_failed" | "apply_cancelled"; message: string; snapshot: string | null }
+  /** Sent unasked when Painter's Bridge button is pressed with this window open. */
+  | { type: "refresh" }
 
 export type PainterLink = {
   request: (type: "connect_photoshop" | "apply", fields?: Record<string, string>, onProgress?: (progress: ApplyProgress) => void) => Promise<PainterReply>
@@ -228,6 +230,8 @@ export function createPainterLink(
   input: Readable,
   write: (line: string) => void,
   onClosed?: () => void,
+  /** Painter's Bridge button was pressed with this window open; its snapshot is rewritten. */
+  onRefresh?: () => void,
 ): PainterLink {
   let waiting: { resolve: (reply: PainterReply) => void; reject: (error: Error) => void; onProgress?: (progress: ApplyProgress) => void } | null = null
   let closed = false
@@ -257,6 +261,9 @@ export function createPainterLink(
         // Progress is not an acknowledgement: keep Apply pending until the
         // host reports its final outcome, including partial failures.
         if (!(reply instanceof Error) && reply.type === "apply_progress") waiting?.onProgress?.(reply)
+        // Nor is a refresh: it answers no request, so a pending one keeps
+        // waiting for its own reply.
+        else if (!(reply instanceof Error) && reply.type === "refresh") onRefresh?.()
         else settle(reply)
       }
     }
@@ -299,6 +306,7 @@ function parsePainterReply(line: string): PainterReply | Error {
     return { type: "photoshop_connected", psd: textValue(reply.psd) }
   }
   if (reply.type === "photoshop_connect_cancelled") return { type: "photoshop_connect_cancelled" }
+  if (reply.type === "refresh") return { type: "refresh" }
   if (reply.type === "photoshop_connect_failed") {
     return { type: "photoshop_connect_failed", message: textValue(reply.message) || "Photoshop connection failed" }
   }

@@ -1,10 +1,11 @@
 import type { ReactNode } from "react"
 import { createRoot, flushSync, type EventPayload, type NativeRenderer, type StyleDesc } from "@gpuix/react"
 import { createRendererState, type MutationTuple } from "@gpuix/native/host"
+import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { BridgeApp } from "./bridge-app"
 import { LayerScroll } from "./layer-scroll"
-import { failedBridgeSession } from "./transport"
+import { failedBridgeSession, type BridgeSession } from "./transport"
 import { findNode, type BridgeState, type HostId, type LayerNode } from "./model"
 
 // This host records real reconciler work without opening a GPUI window. It
@@ -50,7 +51,7 @@ function layer(host: HostId, id: string, children?: LayerNode[]): LayerNode {
     ref: { host, externalId: id, path: id, kind: children ? "group" : "layer" } }
 }
 
-function setup() {
+function setup(extra: Partial<ComponentProps<typeof BridgeApp>> = {}) {
   const session = failedBridgeSession("")
   session.state.photoshop = [layer("photoshop", "ps-1"), layer("photoshop", "ps-2")]
   session.state.painter = [layer("substance_painter", "pt-group", Array.from({ length: 1000 }, (_, i) => layer("substance_painter", `pt-${i}`)))]
@@ -62,7 +63,7 @@ function setup() {
   session.initialPainterContextId = "body"
   const root = memoryRoot()
   const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))
-  root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} />)
+  root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} {...extra} />)
   const press = (id: string, modifiers?: EventPayload["modifiers"]) => root.event(`layer-drag:${id}`, "mouseDown", { button: 0, x: 20, y: 110, modifiers })
   const move = (id: string, y = 120) => root.event(`layer-row:${id}`, "mouseMove", { pressedButton: 0, x: 200, y })
   const release = (id: string, y = 120) => root.event(`layer-row:${id}`, "mouseUp", { button: 0, x: 200, y })
@@ -192,6 +193,25 @@ describe("drag structure without native windows", () => {
       root.event("replace-confirm-apply", "click")
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ sourceId: "ps-1", targetId: "pt-0", replace: true })
+    } finally { root.unmount() }
+  })
+
+  it("reads both trees again when Painter asks, but not from under staged mappings", async () => {
+    let ask = () => {}
+    const load = vi.fn(async (current: BridgeSession, _document: string | null) => current)
+    const { root, press, move, release } = setup({
+      onLoadPhotoshop: load,
+      onPainterRefresh: listener => { ask = listener; return () => {} },
+    })
+    try {
+      flushSync(() => ask())
+      await vi.waitFor(() => expect(load).toHaveBeenCalledOnce())
+      expect(load.mock.calls[0][1]).toBe("fixture.psd")
+      await vi.waitFor(() => expect(root.find("layer-drag:ps-1")).toBeDefined())
+      flushSync(() => { press("ps-1"); move("pt-0", 131); release("pt-0", 131) })
+      flushSync(() => ask())
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(load).toHaveBeenCalledOnce()
     } finally { root.unmount() }
   })
 
