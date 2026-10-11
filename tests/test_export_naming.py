@@ -57,6 +57,35 @@ class ExportNamingTests(unittest.TestCase):
         self.assertEqual(name, "Studio Naming")
         self.assertIsInstance(preset, Preset)
 
+    def test_finds_a_preset_saved_again_since_the_project_chose_it(self):
+        class ResourceId:
+            name = "StudioNPR"
+
+            @staticmethod
+            def url():
+                return "resource://your_assets/StudioNPR?version=222.spexp"
+
+        class Preset:
+            resource_id = ResourceId()
+
+        class Other:
+            class resource_id:
+                name = "StudioNPR (Alpha)"
+                url = staticmethod(lambda: "resource://your_assets/StudioNPR (Alpha)?version=111.spexp")
+
+        class PainterExport:
+            list_predefined_export_presets = staticmethod(lambda: [])
+            list_resource_export_presets = staticmethod(lambda: [Other(), Preset()])
+
+        with mock.patch.object(
+            export_naming.bridge,
+            "project_export_preset",
+            return_value="resource://your_assets/StudioNPR?version=111.spexp",
+        ):
+            _name, preset = export_naming.load_project_preset(PainterExport)
+
+        self.assertIsInstance(preset, Preset)
+
     def test_prefers_a_single_channel_map_over_a_packed_map(self):
         maps = [
             {

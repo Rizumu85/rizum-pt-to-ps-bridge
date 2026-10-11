@@ -39,12 +39,19 @@ def load_project_preset(painter_export):
             except Exception:
                 continue
 
-    selected_key = _normalized(selected)
+    selected_key = _normalized(_without_version(selected))
     for preset in presets:
         identities = _preset_identities(preset)
-        if any(_normalized(identity) == selected_key for identity in identities):
+        if any(_normalized(_without_version(identity)) == selected_key for identity in identities):
             return selected, preset
     return selected, None
+
+
+def _without_version(identity):
+    # A project keeps the version its preset had when it was chosen, and
+    # saving the preset again gives it a new one. Compared with the version,
+    # an edited preset was never found and its naming silently not used.
+    return str(identity).split("?version=", 1)[0]
 
 
 def list_output_maps(preset, stack):
