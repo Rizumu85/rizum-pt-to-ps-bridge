@@ -53,7 +53,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
-    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False):
+    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False, folded=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -85,7 +85,11 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             }), encoding="utf-8")
             launch = write_photoshop_transfer_launcher(request)
             host = Path(__file__).parent / "fixtures" / "photoshop_transfer_host.cjs"
-            environment = {**os.environ, "FAKE_VIEW_OFFSET": ",".join(map(str, view_offset or (0, 0)))}
+            environment = {
+                **os.environ,
+                "FAKE_VIEW_OFFSET": ",".join(map(str, view_offset or (0, 0))),
+                "FAKE_FOLDED": "1" if folded else "0",
+            }
             completed = subprocess.run(
                 ["node", str(host), str(launch.launcher_path), str(request)],
                 capture_output=True, text=True, encoding="utf-8", env=environment,
@@ -121,6 +125,16 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         # A blend mode Photoshop refuses warns and keeps Normal; the folder still lands.
         self.assertEqual(bottom["blendMode"], "BlendMode.NORMAL")
         self.assertEqual(self.last_result["warnings"], ["Bottom: Photoshop refused blend mode DIVIDE here; Normal was kept."])
+
+    def test_a_folded_folder_is_folded_again_after_layers_go_into_it(self):
+        # Top's mask is pasted with Top selected, which opens the folder above it.
+        document = self.run_group_transfer("inside", 1, "Group", folded=True)
+
+        group = document["layers"][0]
+        self.assertEqual(self.outline([group]), [("Group", [("Working", ["Top", ("Sub", ["Deep"]), "Bottom"]), "Detail"])])
+        self.assertFalse(group["expanded"])
+        # The folder this Apply added stays as Photoshop opened it.
+        self.assertTrue(group["layers"][0]["expanded"])
 
     def test_before_places_above_the_target_including_the_topmost_layer(self):
         document = self.run_group_transfer("before", 1, "Group")

@@ -40,7 +40,7 @@ function container(owner) {
     add: () => {
       const set = makeLayer("Group", "LayerSet");
       attach(set, owner, 0);
-      document.activeLayer = set;
+      active = set;
       return set;
     },
   };
@@ -77,6 +77,7 @@ function makeLayer(name, typename) {
       }
     },
   };
+  if (typename === "LayerSet") layer.expanded = true;
   return typename === "LayerSet" ? container(layer) : layer;
 }
 
@@ -92,16 +93,26 @@ function detach(layer) {
 }
 
 function insertAboveActive(layer) {
-  const active = document.activeLayer;
   if (active && active.parent) attach(layer, active.parent, active.parent.layers.indexOf(active));
   else attach(layer, document, 0);
-  document.activeLayer = layer;
+  active = layer;
   return layer;
+}
+
+// As Photoshop does: a script selecting a layer opens every folder above it;
+// selecting a folder, or adding or moving a layer, opens nothing.
+let active = null;
+function select(layer) {
+  active = layer;
+  if (!layer || layer.typename !== "ArtLayer") return;
+  for (let parent = layer.parent; parent && parent !== document; parent = parent.parent) parent.expanded = true;
 }
 
 const document = container({
   id: 10, name: path.basename(request.document.path), fullName: File(request.document.path),
-  activeLayer: null, saved: false,
+  get activeLayer() { return active; },
+  set activeLayer(layer) { select(layer); },
+  saved: false,
   save() { this.saved = true; },
   selection: { selectAll() {}, deselect() {} },
 });
@@ -109,6 +120,7 @@ let maskShown = false;
 let clipboard = null;
 const group = makeLayer("Group", "LayerSet");
 group.id = 1;
+group.expanded = process.env.FAKE_FOLDED !== "1";
 attach(group, document, 0);
 const detail = makeLayer("Detail", "ArtLayer");
 detail.id = 2;
@@ -116,7 +128,7 @@ attach(detail, group, 0);
 const base = makeLayer("Base", "ArtLayer");
 base.id = 3;
 attach(base, document, 1);
-document.activeLayer = base;
+active = base;
 
 function ActionDescriptor() {
   return {
@@ -130,6 +142,24 @@ function ActionReference() {
   return {
     putIdentifier(_type, id) { this.layerId = id; },
     putEnumerated(_type, _enum, value) { this.channel = value; },
+    putProperty(_type, name) { this.property = name; },
+    putIndex(_type, index) { this.index = index; },
+  };
+}
+function everyLayer(list) {
+  return list.flatMap((layer) => [layer, ...(layer.layers ? everyLayer(layer.layers) : [])]);
+}
+function executeActionGet(reference) {
+  if (reference.property === "numberOfLayers") return { getInteger: () => everyLayer(document.layers).length };
+  const layer = reference.index !== undefined
+    ? everyLayer(document.layers)[reference.index - 1]
+    : findLayer(document.layers, reference.layerId);
+  if (!layer) throw new Error("The object \"layer\" is not currently available.");
+  return {
+    getEnumerationValue: () => layer.typename === "LayerSet" ? "layerSectionStart" : "layerSectionContent",
+    hasKey: () => true,
+    getBoolean: () => layer.expanded === true,
+    getInteger: () => layer.id,
   };
 }
 function findLayer(list, id) {
@@ -144,11 +174,15 @@ function executeAction(id, descriptor) {
   if (id === "slct") {
     const reference = (descriptor && descriptor.reference) || {};
     if (reference.layerId !== undefined) {
-      document.activeLayer = findLayer(document.layers, reference.layerId);
+      select(findLayer(document.layers, reference.layerId));
       maskShown = false;
     } else {
       maskShown = reference.channel === "Msk " && descriptor.flags.MkVs === true;
     }
+    return;
+  }
+  if (id === "setd" && descriptor.reference.property === "layerSectionExpanded") {
+    findLayer(document.layers, descriptor.reference.layerId).expanded = descriptor.flags["T   "];
     return;
   }
   if (id === "copy") { clipboard = document.activeLayer.name; return; }
@@ -170,8 +204,8 @@ const app = {
   open() { throw new Error("The mapped document is already open"); },
 };
 const context = vm.createContext({
-  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction,
-  charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id,
+  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction, executeActionGet,
+  charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id, typeIDToStringID: (id) => id,
   DialogModes: { NO: "none" }, Units: { PIXELS: "pixels" },
   RasterizeType: { ENTIRELAYER: "ENTIRELAYER" },
   ElementPlacement: names(["PLACEAFTER", "PLACEBEFORE", "PLACEATEND", "PLACEATBEGINNING"]),
@@ -188,6 +222,6 @@ vm.runInContext(script, context, { timeout: 5000 });
 const tree = (list) => list.map((layer) => ({
   name: layer.name, typename: layer.typename, blendMode: layer.blendMode, opacity: layer.opacity,
   visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null, offset: layer.offset,
-  ...(layer.typename === "LayerSet" ? { layers: tree(layer.layers) } : {}),
+  ...(layer.typename === "LayerSet" ? { expanded: layer.expanded, layers: tree(layer.layers) } : {}),
 }));
 process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers) }));
