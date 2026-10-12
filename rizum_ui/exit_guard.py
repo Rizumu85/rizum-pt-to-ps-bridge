@@ -78,7 +78,7 @@ def remove(guard, done=False):
     if app is None:
         return
     if not done and app.property(QUITTING_PROPERTY):
-        _delete_toolbar_swatch(app)
+        _delete_toolbar_swatch(app.allWidgets())
     if guard is None:
         return
     if done:
@@ -97,11 +97,14 @@ def _mark_quitting():
         app.setProperty(QUITTING_PROPERTY, True)
 
 
-def _delete_toolbar_swatch(app):
+def _delete_toolbar_swatch(widgets):
     # Only once Qt has announced the exit: a plugin is also closed when the
     # user disables or reloads it, and then Painter still uses the view.
     # Painter closes its plugins after that announcement and before it
     # destroys its windows, which is the moment measured to be safe.
-    for widget in app.allWidgets():
-        if widget.metaObject().className() == TOOLBAR_SWATCH_CLASS:
+    for widget in widgets:
+        # By now the list holds widgets whose Python side is already dead,
+        # the interfaces of plugins that closed first; touching one raises
+        # and would stop this plugin from closing (seen in Painter's log).
+        if shiboken6.isValid(widget) and widget.metaObject().className() == TOOLBAR_SWATCH_CLASS:
             shiboken6.delete(widget)
