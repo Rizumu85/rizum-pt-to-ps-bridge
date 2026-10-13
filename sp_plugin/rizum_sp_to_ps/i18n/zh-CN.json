@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "正在插入 Photoshop 图层：{completed} / {total}",
   "photoshop_saving_document": "正在保存 Photoshop 文档...",
   "photoshop_opening_document": "正在打开 Photoshop 文档...",
+  "photoshop_reading_document": "正在读取 Photoshop 文档：{completed} / {total}",
   "photoshop_start_timeout": "Photoshop 未在 2 分钟内启动脚本。请检查 Photoshop 是否弹出了启动或脚本确认对话框。",
   "photoshop_finish_timeout": "Photoshop 未在 30 分钟内完成操作。",
   "photoshop_result_unreadable": "无法读取 Photoshop 的结果：{error}",

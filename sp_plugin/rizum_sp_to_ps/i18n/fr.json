@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "Insertion des calques Photoshop : {completed} / {total}",
   "photoshop_saving_document": "Enregistrement du document Photoshop...",
   "photoshop_opening_document": "Ouverture du document Photoshop...",
+  "photoshop_reading_document": "Lecture du document Photoshop : {completed} / {total}",
   "photoshop_start_timeout": "Photoshop n'a pas lancé le script dans un délai de 2 minutes. Vérifiez si Photoshop affiche une boîte de dialogue de démarrage ou de confirmation de script.",
   "photoshop_finish_timeout": "Photoshop n'a pas terminé l'opération dans un délai de 30 minutes.",
   "photoshop_result_unreadable": "Impossible de lire le résultat de Photoshop : {error}",

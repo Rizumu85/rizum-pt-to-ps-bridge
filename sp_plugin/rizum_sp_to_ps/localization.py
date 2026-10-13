@@ -124,6 +124,7 @@ FALLBACK_TEXT = {
     "photoshop_inserting_layers": "Inserting Photoshop layers: {completed} / {total}",
     "photoshop_saving_document": "Saving Photoshop document...",
     "photoshop_opening_document": "Opening Photoshop document...",
+    "photoshop_reading_document": "Reading Photoshop document: {completed} / {total}",
     "photoshop_start_timeout": (
         "Photoshop did not start the script within 2 minutes. "
         "Check Photoshop for a startup or script confirmation dialog."

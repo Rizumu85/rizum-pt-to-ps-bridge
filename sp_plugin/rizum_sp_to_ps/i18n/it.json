@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "Inserimento dei livelli Photoshop: {completed} / {total}",
   "photoshop_saving_document": "Salvataggio del documento Photoshop...",
   "photoshop_opening_document": "Apertura del documento Photoshop...",
+  "photoshop_reading_document": "Lettura del documento Photoshop: {completed} / {total}",
   "photoshop_start_timeout": "Photoshop non ha avviato lo script entro 2 minuti. Controlla se Photoshop mostra una finestra di avvio o di conferma dello script.",
   "photoshop_finish_timeout": "Photoshop non ha completato l'operazione entro 30 minuti.",
   "photoshop_result_unreadable": "Impossibile leggere il risultato di Photoshop: {error}",

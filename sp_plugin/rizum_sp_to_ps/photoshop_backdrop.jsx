@@ -60,9 +60,9 @@ __RIZUM_TARGET_RUNTIME__
     function publishProgress(phase, completed, total) {
         writeJsonAtomic(progressPath, { phase: phase, completed: completed, total: total });
         if (phase === "reading_backdrop" && total > 0) {
-            showProgress("Reading the document for Painter's look  " + completed + " / " + total, completed / total);
+            showProgress(progressLine("reading", completed, total), completed / total);
         } else {
-            showProgress("Opening the document...", 0);
+            showProgress(progressLine("opening"), 0);
         }
     }
 

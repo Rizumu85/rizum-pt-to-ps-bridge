@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .localization import text
+
 LAUNCHER_FILENAME = "_build_in_photoshop.jsx"
 _EXPORT_LIST_TOKEN = "__RIZUM_EXPORT_LIST_PATH__"
 _BUILD_PROGRESS_TOKEN = "__RIZUM_BUILD_PROGRESS_PATH__"
@@ -19,6 +21,7 @@ _TRANSFER_REQUEST_TOKEN = "__RIZUM_TRANSFER_REQUEST_PATH__"
 _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 _MASK_RUNTIME_TOKEN = "__RIZUM_MASK_RUNTIME__"
 _TARGET_RUNTIME_TOKEN = "__RIZUM_TARGET_RUNTIME__"
+_PROGRESS_TEXT_TOKEN = "__RIZUM_PROGRESS_TEXT__"
 BACKDROP_LAUNCHER_FILENAME = "_read_photoshop_backdrop.jsx"
 BACKDROP_RESULT_FILENAME = "photoshop_backdrop_result.json"
 BACKDROP_PROGRESS_FILENAME = "photoshop_backdrop_progress.json"
@@ -52,11 +55,24 @@ def _embed_mask_runtime(template):
     return template.replace(_MASK_RUNTIME_TOKEN, runtime)
 
 
-def _embed_target_runtime(template):
+def _embed_target_runtime(template, language=None):
     if template.count(_TARGET_RUNTIME_TOKEN) != 1:
         raise RuntimeError("Photoshop template has an invalid target runtime token")
     # Every Bridge script finds the PSD and its layers with this one copy.
     runtime = (Path(__file__).parent / "photoshop_targets.jsx").read_text(encoding="utf-8")
+    if runtime.count(_PROGRESS_TEXT_TOKEN) != 1:
+        raise RuntimeError("Photoshop target runtime has an invalid progress text token")
+    # The script's own progress window says what Painter's dialog says, in
+    # Painter's language. The counts are filled in by the script, and the
+    # ASCII escapes keep the text intact whatever encoding Photoshop assumes.
+    counts = {"completed": "{completed}", "total": "{total}"}
+    progress_text = {
+        "opening": text("photoshop_opening_document", language=language),
+        "reading": text("photoshop_reading_document", language=language, **counts),
+        "inserting": text("photoshop_inserting_layers", language=language, **counts),
+        "saving": text("photoshop_saving_document", language=language),
+    }
+    runtime = runtime.replace(_PROGRESS_TEXT_TOKEN, json.dumps(progress_text, ensure_ascii=True))
     return template.replace(_TARGET_RUNTIME_TOKEN, runtime)
 
 
@@ -126,15 +142,18 @@ def write_photoshop_launcher(export_list_path, receipt_dir):
     return PhotoshopScriptLaunch(launcher_path, export_list, result_path, progress_path)
 
 
-def write_photoshop_transfer_launcher(request_path):
-    """Write the JSX entry point for mapped Painter-to-Photoshop inserts."""
+def write_photoshop_transfer_launcher(request_path, language=None):
+    """Write the JSX entry point for mapped Painter-to-Photoshop inserts.
+
+    ``language`` is the script's progress text language; Painter's by default.
+    """
     request = Path(request_path).resolve()
     template_path = Path(__file__).with_name("photoshop_transfer.jsx")
     template = template_path.read_text(encoding="utf-8")
     if template.count(_TRANSFER_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop transfer template has an invalid request token")
 
-    script = _embed_target_runtime(_embed_mask_runtime(_embed_json_runtime(template))).replace(
+    script = _embed_target_runtime(_embed_mask_runtime(_embed_json_runtime(template)), language).replace(
         _TRANSFER_REQUEST_TOKEN,
         json.dumps(str(request), ensure_ascii=True),
     )
@@ -147,13 +166,13 @@ def write_photoshop_transfer_launcher(request_path):
     return PhotoshopScriptLaunch(launcher_path, request, result_path, progress_path)
 
 
-def write_photoshop_backdrop_launcher(request_path):
+def write_photoshop_backdrop_launcher(request_path, language=None):
     """Write the JSX that reads what a PSD shows below each Bridge insert."""
     request = Path(request_path).resolve()
     template = Path(__file__).with_name("photoshop_backdrop.jsx").read_text(encoding="utf-8")
     if template.count(_BACKDROP_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop backdrop template has an invalid request token")
-    script = _embed_target_runtime(_embed_json_runtime(template)).replace(
+    script = _embed_target_runtime(_embed_json_runtime(template), language).replace(
         _BACKDROP_REQUEST_TOKEN,
         json.dumps(str(request), ensure_ascii=True),
     )

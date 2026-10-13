@@ -95,6 +95,11 @@
     // ScriptUI palette: no panel is open that could draw progress instead.
     // It can never be worth failing an insert, hence the silent catches.
     var progressWindow = null;
+    var progressText = __RIZUM_PROGRESS_TEXT__;
+
+    function progressLine(key, completed, total) {
+        return String(progressText[key]).replace("{completed}", completed).replace("{total}", total);
+    }
 
     function showProgress(status, fraction) {
         try {

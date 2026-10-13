@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "Photoshop レイヤーを挿入中 : {completed} / {total}",
   "photoshop_saving_document": "Photoshop ドキュメントを保存中...",
   "photoshop_opening_document": "Photoshop ドキュメントを開いています...",
+  "photoshop_reading_document": "Photoshop ドキュメントを読み取り中 : {completed} / {total}",
   "photoshop_start_timeout": "Photoshop が 2 分以内にスクリプトを開始しませんでした。Photoshop に起動時またはスクリプト確認のダイアログが表示されていないか確認してください。",
   "photoshop_finish_timeout": "Photoshop が 30 分以内に処理を完了しませんでした。",
   "photoshop_result_unreadable": "Photoshop の結果を読み取れませんでした : {error}",

@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "Photoshop-Ebenen werden eingefügt: {completed} / {total}",
   "photoshop_saving_document": "Photoshop-Dokument wird gespeichert...",
   "photoshop_opening_document": "Photoshop-Dokument wird geöffnet...",
+  "photoshop_reading_document": "Photoshop-Dokument wird gelesen: {completed} / {total}",
   "photoshop_start_timeout": "Photoshop hat das Skript nicht innerhalb von 2 Minuten gestartet. Prüfen Sie, ob Photoshop einen Start- oder Skript-Bestätigungsdialog anzeigt.",
   "photoshop_finish_timeout": "Photoshop hat den Vorgang nicht innerhalb von 30 Minuten abgeschlossen.",
   "photoshop_result_unreadable": "Das Photoshop-Ergebnis konnte nicht gelesen werden: {error}",

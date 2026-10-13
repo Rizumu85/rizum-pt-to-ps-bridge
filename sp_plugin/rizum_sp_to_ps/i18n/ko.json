@@ -101,6 +101,7 @@
   "photoshop_inserting_layers": "Photoshop 레이어 삽입 중: {completed} / {total}",
   "photoshop_saving_document": "Photoshop 문서 저장 중...",
   "photoshop_opening_document": "Photoshop 문서 여는 중...",
+  "photoshop_reading_document": "Photoshop 문서 읽는 중: {completed} / {total}",
   "photoshop_start_timeout": "Photoshop이 2분 내에 스크립트를 시작하지 않았습니다. Photoshop에 시작 또는 스크립트 확인 대화 상자가 표시되어 있는지 확인하십시오.",
   "photoshop_finish_timeout": "Photoshop이 30분 내에 작업을 완료하지 않았습니다.",
   "photoshop_result_unreadable": "Photoshop 결과를 읽을 수 없음: {error}",

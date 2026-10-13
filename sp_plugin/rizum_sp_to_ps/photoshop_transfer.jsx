@@ -113,11 +113,11 @@ __RIZUM_TARGET_RUNTIME__
     function publishProgress(phase, completed, total) {
         writeJsonAtomic(progressPath, { phase: phase, completed: completed, total: total });
         if (phase === "transferring_layers" && total > 0) {
-            showProgress("Adding layers from Painter  " + completed + " / " + total, completed / total);
+            showProgress(progressLine("inserting", completed, total), completed / total);
         } else if (phase === "saving_document") {
-            showProgress("Saving the document...", 1);
+            showProgress(progressLine("saving"), 1);
         } else {
-            showProgress("Opening the document...", 0);
+            showProgress(progressLine("opening"), 0);
         }
     }
 

@@ -53,7 +53,8 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             self.assertIn("document.save();", script)
 
 
-    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False, folded=False):
+    def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False, folded=False,
+                           language="en"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -83,7 +84,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                     ],
                 }],
             }), encoding="utf-8")
-            launch = write_photoshop_transfer_launcher(request)
+            launch = write_photoshop_transfer_launcher(request, language=language)
             host = Path(__file__).parent / "fixtures" / "photoshop_transfer_host.cjs"
             environment = {
                 **os.environ,
@@ -141,10 +142,15 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         progress = self.run_group_transfer("after", 3, "Base")["progress"]
 
         statuses = [status for status, _value in progress["shown"]]
-        self.assertEqual(statuses[0], "Opening the document...")
-        self.assertIn("Adding layers from Painter  2 / 5", statuses)
-        self.assertEqual(progress["shown"][-1], ["Saving the document...", 100])
+        self.assertEqual(statuses[0], "Opening Photoshop document...")
+        self.assertIn("Inserting Photoshop layers: 2 / 5", statuses)
+        self.assertEqual(progress["shown"][-1], ["Saving Photoshop document...", 100])
         self.assertFalse(progress["open"])
+
+    def test_photoshop_progress_is_in_painters_language(self):
+        progress = self.run_group_transfer("after", 3, "Base", language="zh-CN")["progress"]
+
+        self.assertIn("正在插入 Photoshop 图层：2 / 5", [status for status, _value in progress["shown"]])
 
     def test_before_places_above_the_target_including_the_topmost_layer(self):
         document = self.run_group_transfer("before", 1, "Group")
