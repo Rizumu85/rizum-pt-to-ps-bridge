@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import localization
 from .localization import text
 
 LAUNCHER_FILENAME = "_build_in_photoshop.jsx"
@@ -22,6 +23,9 @@ _JSON_RUNTIME_TOKEN = "__RIZUM_JSON_RUNTIME__"
 _MASK_RUNTIME_TOKEN = "__RIZUM_MASK_RUNTIME__"
 _TARGET_RUNTIME_TOKEN = "__RIZUM_TARGET_RUNTIME__"
 _PROGRESS_TEXT_TOKEN = "__RIZUM_PROGRESS_TEXT__"
+# ScriptUI's own font has no CJK glyphs, and the ones Windows substituted came
+# out far smaller than the Latin text beside them.
+_PROGRESS_FONTS = {"zh": "Microsoft YaHei UI", "ja": "Yu Gothic UI", "ko": "Malgun Gothic"}
 BACKDROP_LAUNCHER_FILENAME = "_read_photoshop_backdrop.jsx"
 BACKDROP_RESULT_FILENAME = "photoshop_backdrop_result.json"
 BACKDROP_PROGRESS_FILENAME = "photoshop_backdrop_progress.json"
@@ -71,6 +75,10 @@ def _embed_target_runtime(template, language=None):
         "reading": text("photoshop_reading_document", language=language, **counts),
         "inserting": text("photoshop_inserting_layers", language=language, **counts),
         "saving": text("photoshop_saving_document", language=language),
+        "font": _PROGRESS_FONTS.get(
+            (localization.resolve_language(language) if language else localization.CURRENT_LANGUAGE)[:2],
+            "Segoe UI",
+        ),
     }
     runtime = runtime.replace(_PROGRESS_TEXT_TOKEN, json.dumps(progress_text, ensure_ascii=True))
     return template.replace(_TARGET_RUNTIME_TOKEN, runtime)
