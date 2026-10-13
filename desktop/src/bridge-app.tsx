@@ -28,6 +28,7 @@ import {
   type LayerNode,
   type Placement,
 } from "./model"
+import { t } from "./i18n"
 import { colors, metrics, typography } from "./theme"
 import { normalizedBlendMode, renderScalesFor, sameDocument, stagesFor, type ApplyOutcome, type ApplyProgress, type ApplyStage, type BridgeSession, type PainterContext, type RenderScale } from "./transport"
 import {
@@ -84,7 +85,7 @@ export function BridgeApp({
   const [status, setStatus] = useState(session.status)
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(false)
-  const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: "Preparing mapped items..." })
+  const [applyProgress, setApplyProgress] = useState<ApplyProgress>({ message: t("Preparing mapped items...") })
   const [applySteps, setApplySteps] = useState<ApplyStage[]>([])
   const [renderScale, setRenderScale] = useState<RenderScale>(defaultRenderScale)
   const applyAbort = useRef<AbortController | null>(null)
@@ -117,7 +118,7 @@ export function BridgeApp({
   const pendingNotes = useMemo(() => {
     const notes = photoshopPendingNotes(bridge, session.importBlendModes)
     for (const [, entry] of replacedTargets(bridge)) {
-      for (const row of entry.by) notes.set(row.id, `${notes.get(row.id) ?? "Pending"} · replaces ${entry.target.name}`)
+      for (const row of entry.by) notes.set(row.id, t("{note} · replaces {name}", { note: notes.get(row.id) ?? t("Pending"), name: entry.target.name }))
     }
     return notes
   }, [bridge, session.importBlendModes])
@@ -130,7 +131,7 @@ export function BridgeApp({
     on: new Set(bridge.mappings.filter(mapping => mapping.replace).map(mapping => mapping.sourceId)),
     allowed: new Set(bridge.mappings.filter(mapping => canReplace(bridge, mapping.sourceId)).map(mapping => mapping.sourceId)),
     targets: new Map([...replaced].map(([id, entry]) =>
-      [id, `Deleted on Apply · replaced by ${entry.by.map(node => node.name).join(", ")}`])),
+      [id, t("Deleted on Apply · replaced by {names}", { names: entry.by.map(node => node.name).join(", ") })])),
   }), [bridge, replaced])
   const activePainterContext = useMemo(
     () => session.painterContexts.find((context) => context.id === activePainterContextId) ?? null,
@@ -164,11 +165,11 @@ export function BridgeApp({
   const removeSource = (host: HostId, id: string) => {
     const next = removeFromHost(bridge, host, id)
     if (next === bridge) {
-      setStatus("This target has pending transfers")
+      setStatus(t("This target has pending transfers"))
       setFailed(true)
       return
     }
-    mutate(next, "Layer removed from this mapping session", new Set([id]))
+    mutate(next, t("Layer removed from this mapping session"), new Set([id]))
   }
 
   const endDrag = (landed = false) => {
@@ -271,10 +272,10 @@ export function BridgeApp({
       ? transferSelection(bridge, gesture.selectedIds, aimed.dropTargetId, aimed.dropPlacement ?? undefined)
       : transferSelection(bridge, gesture.selectedIds, targetId)
     if (next === bridge) {
-      setStatus("This target has pending transfers")
+      setStatus(t("This target has pending transfers"))
       setFailed(true)
     }
-    mutate(next, "Mapping updated", gesture.selectedIds)
+    mutate(next, t("Mapping updated"), gesture.selectedIds)
     endDrag(next !== bridge)
   }
 
@@ -302,7 +303,7 @@ export function BridgeApp({
     setBridge(previous)
     setSelectedIds(new Set())
     setHistory((current) => current.slice(0, -1))
-    setStatus("Last mapping undone")
+    setStatus(t("Last mapping undone"))
     setFailed(false)
   }
 
@@ -317,7 +318,7 @@ export function BridgeApp({
     setBridge(next)
     setSelectedIds(new Set())
     setRedoStack((current) => current.slice(0, -1))
-    setStatus("Last mapping restored")
+    setStatus(t("Last mapping restored"))
     setFailed(false)
   }
 
@@ -326,11 +327,11 @@ export function BridgeApp({
     const next = bridgeStateForContext(session, activePainterContext)
     // Reset is an edit to the staging area, not a destructive history boundary.
     if (JSON.stringify(next) === JSON.stringify(bridge)) return
-    mutate(next, "Mapping reset")
+    mutate(next, t("Mapping reset"))
     endDrag(true)
     selectionAnchor.current = null
     setExpanded(collectExpandedIds(next))
-    setStatus("Mapping reset")
+    setStatus(t("Mapping reset"))
     setFailed(false)
   }
 
@@ -338,7 +339,7 @@ export function BridgeApp({
     if (pending.current) return
     if (!context || context.id === activePainterContextId) return
     if (bridge.mappings.length > 0) {
-      setStatus("Apply or reset pending transfers before changing the target.")
+      setStatus(t("Apply or reset pending transfers before changing the target."))
       setFailed(true)
       return
     }
@@ -346,10 +347,10 @@ export function BridgeApp({
     // or to one channel where the artist connected a different one there.
     if (onLoadPhotoshop && !sameDocument(context.photoshopDocument, session.photoshop?.path ?? null)) {
       void replacePhotoshop(
-        "Reading this target's Photoshop document...",
+        t("Reading this target's Photoshop document..."),
         () => onLoadPhotoshop(session, context.photoshopDocument),
         "",
-        { contextId: context.id, message: `Target changed · ${context.subtitle}` },
+        { contextId: context.id, message: t("Target changed · {target}", { target: context.subtitle }) },
       )
       return
     }
@@ -365,7 +366,7 @@ export function BridgeApp({
     endDrag(true)
     selectionAnchor.current = null
     setExpanded(collectExpandedIds(next))
-    setStatus(`Target changed · ${context.subtitle}`)
+    setStatus(t("Target changed · {target}", { target: context.subtitle }))
     setFailed(false)
   }
 
@@ -382,7 +383,7 @@ export function BridgeApp({
   const changeReplace = (id: string) => {
     const next = toggleReplace(bridge, id)
     const on = next.mappings.find(mapping => mapping.sourceId === id)?.replace
-    mutate(next, on ? "The old layer will be deleted on Apply" : "The old layer is kept")
+    mutate(next, on ? t("The old layer will be deleted on Apply") : t("The old layer is kept"))
   }
 
   const apply = async (confirmed = false) => {
@@ -402,9 +403,9 @@ export function BridgeApp({
     const abort = new AbortController()
     applyAbort.current = abort
     setCancelling(false)
-    setApplyProgress({ stage: steps[0], message: "Preparing mapped items..." })
+    setApplyProgress({ stage: steps[0], message: t("Preparing mapped items...") })
     setFailed(false)
-    setStatus("Applying in Painter...")
+    setStatus(t("Applying in Painter..."))
     try {
       const outcome = await onApply(bridge, activePainterContextId, session, (next) =>
         setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })), appliedScale, abort.signal)
@@ -449,7 +450,7 @@ export function BridgeApp({
   ) => {
     if (pending.current) return
     if (bridge.mappings.length > 0) {
-      setStatus("Apply or reset pending transfers before changing documents.")
+      setStatus(t("Apply or reset pending transfers before changing documents."))
       setFailed(true)
       return
     }
@@ -472,15 +473,15 @@ export function BridgeApp({
   }
 
   const connectPhotoshop = () => replacePhotoshop(
-    "Choose a Photoshop document in Painter...",
+    t("Choose a Photoshop document in Painter..."),
     () => onConnectPhotoshop(session, activePainterContext),
-    "Photoshop connection cancelled",
+    t("Photoshop connection cancelled"),
   )
 
   // Photoshop edits reach the mapper only through the saved file, so a reload
   // is the way to pick them up without choosing the document again.
   const reloadPhotoshop = () => replacePhotoshop(
-    "Reading the saved PSD...",
+    t("Reading the saved PSD..."),
     async () => onLoadPhotoshop && session.photoshop ? onLoadPhotoshop(session, session.photoshop.path) : null,
     "",
   )
@@ -491,15 +492,15 @@ export function BridgeApp({
   const refreshFromPainter = () => {
     if (pending.current) return
     if (bridge.mappings.length > 0) {
-      setStatus("Pending transfers kept · apply or reset them to reload the layers")
+      setStatus(t("Pending transfers kept · apply or reset them to reload the layers"))
       setFailed(false)
       return
     }
     void replacePhotoshop(
-      "Reloading layers...",
+      t("Reloading layers..."),
       async () => onLoadPhotoshop ? onLoadPhotoshop(session, session.photoshop?.path ?? null) : null,
       "",
-      { contextId: activePainterContextId, message: "Layers reloaded" },
+      { contextId: activePainterContextId, message: t("Layers reloaded") },
     )
   }
 
@@ -601,7 +602,7 @@ export function BridgeApp({
           }}
         >
           <ContextSelect
-            label="Texture Set:"
+            label={t("Texture Set:")}
             value={activeStackId}
             options={painterStackOptions}
             width={176}
@@ -610,7 +611,7 @@ export function BridgeApp({
             onValueChange={changePainterStack}
           />
           <ContextSelect
-            label="Channel:"
+            label={t("Channel:")}
             value={activePainterContextId}
             options={channelOptions}
             width={152}
@@ -624,7 +625,7 @@ export function BridgeApp({
           />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ContextSelect
-            label="Render:"
+            label={t("Render:")}
             value={String(appliedScale)}
             options={scaleOptions}
             width={96}
@@ -632,10 +633,10 @@ export function BridgeApp({
             onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
           />
           <div style={{ flexGrow: 1 }} />
-          <IconAction icon="eraser" label="Reset mapping" testId="action:reset" disabled={busy || !hasChanges} onClick={reset} />
+          <IconAction icon="eraser" label={t("Reset mapping")} testId="action:reset" disabled={busy || !hasChanges} onClick={reset} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
-          <IconAction icon="undo" label="Undo" disabled={busy || !hasChanges} onClick={undo} />
-          <IconAction icon="redo" label="Redo" disabled={busy || !canRedo} onClick={redo} />
+          <IconAction icon="undo" label={t("Undo")} disabled={busy || !hasChanges} onClick={undo} />
+          <IconAction icon="redo" label={t("Redo")} disabled={busy || !canRedo} onClick={redo} />
           <div style={{ width: 1, height: 18, flexShrink: 0, backgroundColor: colors.line }} />
           <ApplyAction
             disabled={busy || !hasChanges || bridge.mappings.length === 0}
@@ -671,14 +672,14 @@ export function BridgeApp({
                 <div style={{ display: "flex", flexDirection: "row", gap: 2 }}>
                   {onLoadPhotoshop ? <IconAction
                     icon="refresh"
-                    label="Reload the saved PSD"
+                    label={t("Reload the saved PSD")}
                     testId="reload-photoshop"
                     disabled={busy}
                     onClick={reloadPhotoshop}
                   /> : null}
                   <IconAction
                     icon="folder"
-                    label="Change Photoshop document"
+                    label={t("Change Photoshop document")}
                     testId="change-photoshop"
                     disabled={busy}
                     onClick={connectPhotoshop}
@@ -712,7 +713,7 @@ export function BridgeApp({
           <HostPanel
             panelId="painter"
             title="SUBSTANCE PAINTER"
-            subtitle={activePainterContext?.subtitle || "No snapshot loaded"}
+            subtitle={activePainterContext?.subtitle || t("No snapshot loaded")}
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
@@ -741,9 +742,9 @@ export function BridgeApp({
               fontFamily: typography.family,
               whiteSpace: "normal",
             }}>{failed || busy ? status : [
-              selectedIds.size ? `${selectedIds.size} selected` : "",
-              bridge.mappings.length ? `${bridge.mappings.length} pending transfer${bridge.mappings.length === 1 ? "" : "s"}` : "",
-              replaced.size ? `${replaced.size} to delete` : "",
+              selectedIds.size ? t("{count} selected", { count: selectedIds.size }) : "",
+              bridge.mappings.length ? t(bridge.mappings.length === 1 ? "{count} pending transfer" : "{count} pending transfers", { count: bridge.mappings.length }) : "",
+              replaced.size ? t("{count} to delete", { count: replaced.size }) : "",
             ].filter(Boolean).join(" · ") || status}</text>
         </Motion>
         </motion.div>
@@ -800,9 +801,9 @@ function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string>
       node.children?.forEach(visit)
     }
     visit(root)
-    const parts = ["Pending"]
-    for (const mode of renamed) parts.push(`${mode.replace(/\b\w/g, (letter) => letter.toUpperCase())} becomes Normal`)
-    if (skipped) parts.push(`${skipped} layer${skipped === 1 ? "" : "s"} skipped`)
+    const parts = [t("Pending")]
+    for (const mode of renamed) parts.push(t("{mode} becomes Normal", { mode: mode.replace(/\b\w/g, (letter) => letter.toUpperCase()) }))
+    if (skipped) parts.push(t(skipped === 1 ? "{count} layer skipped" : "{count} layers skipped", { count: skipped }))
     if (parts.length > 1) notes.set(mapping.sourceId, parts.join(" · "))
   }
   return notes

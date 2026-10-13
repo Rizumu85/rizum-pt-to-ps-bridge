@@ -300,6 +300,8 @@ describe("desktop file transport", () => {
     expect(renderScalesFor({ width: 8192, height: 8192 })).toEqual([1])
     expect(parseSessionOptions(["--painter", "a.json", "--render-scale", "4"], {}).renderScale).toBe(4)
     expect(parseSessionOptions(["--painter", "a.json", "--render-scale", "3"], {}).renderScale).toBe(1)
+    // Painter also names its language; the window reads that as it loads.
+    expect(parseSessionOptions(["--painter", "a.json", "--language", "zh"], {}).painterSnapshot).toBe("a.json")
   })
 
   it("accepts environment paths without hidden discovery", () => {

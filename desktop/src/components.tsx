@@ -14,6 +14,7 @@ import {
   type MotionEase,
   type PublicInstance,
 } from "@gpuix/react"
+import { t } from "./i18n"
 import { colors, metrics, typography } from "./theme"
 import { createPointerFollower } from "./drag-feedback"
 import type { ApplyProgress, ApplyStage } from "./transport"
@@ -158,13 +159,14 @@ export function InsetSeparator() {
   )
 }
 
-const stageTitles: Record<ApplyStage, string> = {
-  read: "Reading Photoshop layers",
-  render: "Rendering Painter layers",
-  match: "Matching Painter's look",
-  import: "Importing into Painter",
-  photoshop: "Inserting into Photoshop",
-}
+// A function, not a table: the titles are read in the window's language.
+const stageTitle = (stage: ApplyStage): string => ({
+  read: t("Reading Photoshop layers"),
+  render: t("Rendering Painter layers"),
+  match: t("Matching Painter's look"),
+  import: t("Importing into Painter"),
+  photoshop: t("Inserting into Photoshop"),
+})[stage]
 
 // Host phases have different units. Show their real counts, never a synthetic
 // overall percentage; saving and host waits remain indeterminate. The user
@@ -193,8 +195,8 @@ export function ApplyProgressDialog({ progress, steps, cancelling = false, onCan
       <div style={{ width: 320, padding: 20, borderRadius: 8, backgroundColor: colors.panel,
         display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <PrimaryText>{step >= 0 ? stageTitles[progress.stage!] : "Applying changes"}</PrimaryText>
-          {step >= 0 && steps.length > 1 ? <SecondaryText>{`Step ${step + 1} of ${steps.length}`}</SecondaryText> : null}
+          <PrimaryText>{step >= 0 ? stageTitle(progress.stage!) : t("Applying changes")}</PrimaryText>
+          {step >= 0 && steps.length > 1 ? <SecondaryText>{t("Step {step} of {total}", { step: step + 1, total: steps.length })}</SecondaryText> : null}
         </div>
         <text style={{ fontFamily: typography.family, fontSize: typography.secondarySize,
           fontWeight: typography.secondaryWeight, color: colors.secondary, whiteSpace: "normal" }}>{progress.message}</text>
@@ -249,22 +251,22 @@ export function ReplaceConfirmDialog({ items, onConfirm, onCancel }: {
         display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 340, padding: 20, borderRadius: 8, backgroundColor: colors.panel,
         display: "flex", flexDirection: "column", gap: 12 }}>
-        <PrimaryText>{`Delete ${items.length} layer${items.length === 1 ? "" : "s"}?`}</PrimaryText>
+        <PrimaryText>{t(items.length === 1 ? "Delete {count} layer?" : "Delete {count} layers?", { count: items.length })}</PrimaryText>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {items.map(item => (
             <div key={`${item.host}:${item.target}:${item.by}`} style={{ display: "flex", flexDirection: "column" }}>
               <PrimaryText lineHeight={16}>{`${item.host} · ${item.target}`}</PrimaryText>
-              <SecondaryText>{`Replaced by ${item.by}`}</SecondaryText>
+              <SecondaryText>{t("Replaced by {names}", { names: item.by })}</SecondaryText>
             </div>
           ))}
         </div>
         <text style={{ fontFamily: typography.family, fontSize: typography.secondarySize,
           fontWeight: typography.secondaryWeight, color: colors.secondary, whiteSpace: "normal" }}>
-          Each is deleted once its replacement is in place. Undo in that app brings it back.
+          {t("Each is deleted once its replacement is in place. Undo in that app brings it back.")}
         </text>
         <div style={{ display: "flex", flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>
-          {action("replace-cancel", "Cancel", false, onCancel)}
-          {action("replace-confirm-apply", "Delete and apply", true, onConfirm)}
+          {action("replace-cancel", t("Cancel"), false, onCancel)}
+          {action("replace-confirm-apply", t("Delete and apply"), true, onConfirm)}
         </div>
       </div>
     </div>
@@ -295,7 +297,7 @@ function CancelAction({ cancelling, writing, onClick }: { cancelling: boolean; w
         active: disabled ? undefined : { backgroundColor: colors.controlActive },
       }}
     >
-      <PrimaryText>{cancelling ? "Cancelling..." : "Cancel"}</PrimaryText>
+      <PrimaryText>{cancelling ? t("Cancelling...") : t("Cancel")}</PrimaryText>
     </div>
   )
   if (!writing || cancelling) return button
@@ -306,7 +308,7 @@ function CancelAction({ cancelling, writing, onClick }: { cancelling: boolean; w
         paddingTop: 5, paddingRight: 8, paddingBottom: 5, paddingLeft: 8,
         borderRadius: 5, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.control,
       }}>
-        <SecondaryText>Writing into Painter and Photoshop; stopping now would leave them half-applied</SecondaryText>
+        <SecondaryText>{t("Writing into Painter and Photoshop; stopping now would leave them half-applied")}</SecondaryText>
       </TooltipContent>
     </Tooltip>
   )
@@ -627,7 +629,7 @@ export function ApplyAction({ disabled, onClick }: { disabled: boolean; onClick:
         fontSize: typography.primarySize,
         fontWeight: typography.primaryWeight,
         whiteSpace: "nowrap",
-      }}>Apply</text>
+      }}>{t("Apply")}</text>
     </div>
   )
 }
@@ -665,7 +667,7 @@ export function ConnectPhotoshopAction({ onClick, busy = false }: { onClick: () 
       }}
     >
       <Icon name="folder" size={14} />
-      <PrimaryText>{busy ? "Connecting..." : "Connect Photoshop"}</PrimaryText>
+      <PrimaryText>{busy ? t("Connecting...") : t("Connect Photoshop")}</PrimaryText>
     </div>
   )
 }
@@ -696,7 +698,7 @@ export function MappingHelpPopover() {
           fainter "?" beside them read as a mismatch, not as quieter help. */}
       <IconAction
         icon="help"
-        label="How mapping works"
+        label={t("How mapping works")}
         testId="mapping-help-trigger"
         onClick={() => setOpen((current) => !current)}
       />
@@ -744,11 +746,11 @@ export function MappingHelpPopover() {
               },
             }}
           >
-            <PrimaryText>How mapping works</PrimaryText>
-            <PopoverText>Drag layers from one side to the other.</PopoverText>
-            <PopoverText>Aim at the top of a row to place them above it, or lower to place them below.</PopoverText>
-            <PopoverText>Drop onto a folder to put them inside.</PopoverText>
-            <PopoverText>Nothing is copied until you press Apply.</PopoverText>
+            <PrimaryText>{t("How mapping works")}</PrimaryText>
+            <PopoverText>{t("Drag layers from one side to the other.")}</PopoverText>
+            <PopoverText>{t("Aim at the top of a row to place them above it, or lower to place them below.")}</PopoverText>
+            <PopoverText>{t("Drop onto a folder to put them inside.")}</PopoverText>
+            <PopoverText>{t("Nothing is copied until you press Apply.")}</PopoverText>
           </motion.div>
         </anchored>
       ) : null}</AnimatePresence>

@@ -12,6 +12,7 @@ import {
   type PixelData,
 } from "ag-psd"
 
+import { t } from "./i18n"
 import type { HostLayerRef, LayerNode } from "./model"
 import { encodePng, pngDataUrl, type RasterImage } from "./png"
 
@@ -71,7 +72,7 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
     skipThumbnail: true,
     skipLinkedFilesData: true,
   })
-  if (psd.colorMode !== 3) throw new Error("Only RGB Photoshop documents can be connected")
+  if (psd.colorMode !== 3) throw new Error(t("Only RGB Photoshop documents can be connected"))
   const document: PhotoshopDocument = {
     path: resolved,
     name: path.basename(resolved),
@@ -101,7 +102,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
   }
 
   const nodes = [...layers].reverse().map((layer, index) => {
-    const name = layer.name || `Layer ${layers.length - index}`
+    const name = layer.name || t("Layer {index}", { index: layers.length - index })
     const layerPath = parentPath ? `${parentPath}/${name}` : name
     const indexPath = [...parentIndex, index]
     // Many production PSDs carry no persistent layer id ("lyid"). Their layers
@@ -129,7 +130,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
     }
     document.layers.set(node.id, layer)
     if (layer.children) {
-      node.detail = "Group"
+      node.detail = t("Group")
       node.children = layerNodes(document, layer.children, layerPath, indexPath)
       node.open = layer.opened !== false
     }
@@ -143,10 +144,10 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
       node.clipped = true
       const baseNode = byLayer.get(clipBase)!
       if (clipBase.children) {
-        node.locked = "Clipped to a folder · not supported"
+        node.locked = t("Clipped to a folder · not supported")
       } else {
         // Painter has no clipping, so the clipped stack travels as one layer.
-        node.locked = `Clipped · merges into ${baseNode.name}`
+        node.locked = t("Clipped · merges into {name}", { name: baseNode.name })
         const list = document.clipped.get(baseNode.id) ?? []
         list.unshift(layer)
         document.clipped.set(baseNode.id, list)
@@ -160,7 +161,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
     if (layer.children) continue
     const color = layer.vectorMask ? null : solidFillColor(layer)
     if (layer.adjustment) {
-      node.locked = "Adjustment layer · not supported"
+      node.locked = t("Adjustment layer · not supported")
     } else if (color) {
       // A solid colour fill stays a colour in Painter instead of a baked bitmap,
       // so it remains editable there; shapes keep their pixels because the
@@ -168,13 +169,13 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
       document.colors.set(node.id, color)
       node.thumbnailPath = swatch(color)
     } else if (layer.vectorFill?.type === "color" && !layer.vectorMask) {
-      node.locked = "Fill colour model not supported"
+      node.locked = t("Fill colour model not supported")
     } else {
       const pixels = getLayerImageData(layer)
       if (pixels) node.thumbnailPath = thumbnail(document, layer, pixels)
-      else if (layer.vectorMask) node.locked = "Shape layer · not supported"
-      else if (layer.vectorFill) node.locked = "Gradient or pattern fill · not supported"
-      else node.locked = "Empty layer"
+      else if (layer.vectorMask) node.locked = t("Shape layer · not supported")
+      else if (layer.vectorFill) node.locked = t("Gradient or pattern fill · not supported")
+      else node.locked = t("Empty layer")
     }
     node.detail = node.locked
       ?? layerDetail(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
@@ -185,17 +186,17 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
 
 function layerDetail(layer: Layer, clippedCount: number, colorFill: boolean): string {
   const parts = [`${humanize(layer.blendMode ?? "normal")} · ${Math.round((layer.opacity ?? 1) * 100)}%`]
-  if (colorFill) parts.push("colour fill")
-  if (clippedCount) parts.push(`merges ${clippedCount} clipped`)
-  if (layer.effects && !layer.effects.disabled) parts.push("styles not transferred")
+  if (colorFill) parts.push(t("colour fill"))
+  if (clippedCount) parts.push(t("merges {count} clipped", { count: clippedCount }))
+  if (layer.effects && !layer.effects.disabled) parts.push(t("styles not transferred"))
   return parts.join(" · ")
 }
 
 function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): string | undefined {
   const parts = []
-  if (colorFill) parts.push("Colour fill")
-  if (clippedCount) parts.push(`Merges ${clippedCount} clipped`)
-  if (layer.effects && !layer.effects.disabled) parts.push("Styles not transferred")
+  if (colorFill) parts.push(t("Colour fill"))
+  if (clippedCount) parts.push(t("Merges {count} clipped", { count: clippedCount }))
+  if (layer.effects && !layer.effects.disabled) parts.push(t("Styles not transferred"))
   return parts.length ? parts.join(" · ") : undefined
 }
 
@@ -278,9 +279,9 @@ export async function renderPhotoshopTransfer(
   warnings: string[],
 ): Promise<PhotoshopTransferSource | null> {
   const layer = document.layers.get(node.id)
-  if (!layer) throw new Error(`Photoshop layer is no longer in ${document.name}`)
+  if (!layer) throw new Error(t("Photoshop layer is no longer in {name}", { name: document.name }))
   if (node.locked) {
-    if (!document.merged.has(node.id)) warnings.push(`${node.name}: ${node.locked}, skipped.`)
+    if (!document.merged.has(node.id)) warnings.push(t("{name}: {reason}, skipped.", { name: node.name, reason: node.locked }))
     return null
   }
   await mkdir(directory, { recursive: true })

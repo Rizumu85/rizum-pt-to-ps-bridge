@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
@@ -72,7 +73,8 @@ export function parseSessionOptions(
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]
     const value = argv[index + 1]
-    if (!["--psd", "--painter", "--documents", "--output", "--render-scale"].includes(flag)) {
+    // --language is read by i18n.ts as it loads; it is only accepted here.
+    if (!["--psd", "--painter", "--documents", "--output", "--render-scale", "--language"].includes(flag)) {
       throw new Error(`Unknown desktop argument: ${flag}`)
     }
     if (!value || value.startsWith("--")) {
@@ -139,12 +141,12 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
     targetSnapshotPath,
     documentsPath: options.documents ? path.resolve(options.documents) : undefined,
     outputPath,
-    photoshopSubtitle: photoshop ? photoshop.name : "No document connected",
+    photoshopSubtitle: photoshop ? photoshop.name : t("No document connected"),
     painterContexts: contexts,
     initialPainterContextId: initialContext.id,
     status: photoshop
-      ? "Drag layers between Photoshop and Painter to map a transfer"
-      : "Connect Photoshop to start mapping layers",
+      ? t("Drag layers between Photoshop and Painter to map a transfer")
+      : t("Connect Photoshop to start mapping layers"),
     // Painter renders transfers for this size instead of its own.
     sourceDocument: photoshop ? { name: photoshop.name, path: photoshop.path, width: photoshop.width, height: photoshop.height } : {},
     sourceContext,
@@ -160,7 +162,7 @@ export function failedBridgeSession(error: unknown): BridgeSession {
     importBlendModes: null,
     targetSnapshotPath: "",
     outputPath: "",
-    photoshopSubtitle: "No document connected",
+    photoshopSubtitle: t("No document connected"),
     painterContexts: [],
     initialPainterContextId: "",
     status: message,
@@ -221,7 +223,7 @@ export type ApplyOutcome = {
   cancelled?: boolean
 }
 
-const cancelledOutcome = (message = "Apply cancelled. Nothing was changed in Painter or Photoshop."): ApplyOutcome =>
+const cancelledOutcome = (message = t("Apply cancelled. Nothing was changed in Painter or Photoshop.")): ApplyOutcome =>
   ({ session: null, message, failed: false, cancelled: true })
 
 class ApplyCancelled extends Error {}
@@ -247,7 +249,7 @@ export function createPainterLink(
   const close = () => {
     if (closed) return
     closed = true
-    settle(new Error("Painter closed the Bridge connection"))
+    settle(new Error(t("Painter closed the Bridge connection")))
     onClosed?.()
   }
 
@@ -278,7 +280,7 @@ export function createPainterLink(
       if (!closed && waiting) write(`${PAINTER_REQUEST_MARKER}${JSON.stringify({ type: "cancel_apply" })}\n`)
     },
     request(type, fields = {}, onProgress) {
-      if (closed) return Promise.reject(new Error("Painter closed the Bridge connection"))
+      if (closed) return Promise.reject(new Error(t("Painter closed the Bridge connection")))
       if (waiting) return Promise.reject(new Error("A Painter request is already pending"))
       return new Promise((resolve, reject) => {
         waiting = { resolve, reject, onProgress }
@@ -300,7 +302,7 @@ function parsePainterReply(line: string): PainterReply | Error {
     const completed = total && typeof reply.completed === "number" && Number.isFinite(reply.completed)
       ? Math.max(0, Math.min(total, reply.completed)) : undefined
     const stage = applyStages.find(candidate => candidate === reply.stage)
-    return { type: "apply_progress", stage, message: textValue(reply.message) || "Applying changes...", completed, total }
+    return { type: "apply_progress", stage, message: textValue(reply.message) || t("Applying changes..."), completed, total }
   }
   if (reply.type === "photoshop_connected" && textValue(reply.psd)) {
     return { type: "photoshop_connected", psd: textValue(reply.psd) }
@@ -308,12 +310,12 @@ function parsePainterReply(line: string): PainterReply | Error {
   if (reply.type === "photoshop_connect_cancelled") return { type: "photoshop_connect_cancelled" }
   if (reply.type === "refresh") return { type: "refresh" }
   if (reply.type === "photoshop_connect_failed") {
-    return { type: "photoshop_connect_failed", message: textValue(reply.message) || "Photoshop connection failed" }
+    return { type: "photoshop_connect_failed", message: textValue(reply.message) || t("Photoshop connection failed") }
   }
   if (reply.type === "applied" || reply.type === "apply_failed" || reply.type === "apply_cancelled") {
     return {
       type: reply.type,
-      message: textValue(reply.message) || (reply.type === "applied" ? "Applied" : reply.type === "apply_cancelled" ? "Apply cancelled" : "Apply failed"),
+      message: textValue(reply.message) || (reply.type === "applied" ? t("Applied") : reply.type === "apply_cancelled" ? t("Apply cancelled") : t("Apply failed")),
       snapshot: textValue(reply.snapshot) || null,
     }
   }
@@ -342,7 +344,7 @@ export async function applyTransfer(
     throw error
   }
   if (signal?.aborted) return cancelledOutcome()
-  onProgress?.({ message: "Waiting for Painter..." })
+  onProgress?.({ message: t("Waiting for Painter...") })
   const cancel = () => link.cancelApply()
   signal?.addEventListener("abort", cancel)
   let reply: PainterReply
@@ -359,7 +361,7 @@ export async function applyTransfer(
   }
   const failed = reply.type === "apply_failed"
   if (!reply.snapshot) return { session: null, message: reply.message, failed }
-  onProgress?.({ message: "Refreshing layer lists..." })
+  onProgress?.({ message: t("Refreshing layer lists...") })
   const next = await loadBridgeSession({
     // Photoshop inserts are saved into the same file, so it is read again too.
     photoshopDocument: session.photoshop?.path ?? null,
@@ -400,9 +402,9 @@ export async function writeTransferManifest(
   signal?: AbortSignal,
 ): Promise<string> {
   if (!session.outputPath) throw new Error("The transfer session has no output path")
-  if (state.mappings.length === 0) throw new Error("Map at least one layer before Apply")
+  if (state.mappings.length === 0) throw new Error(t("Map at least one layer before Apply"))
   const painterContext = session.painterContexts.find((context) => context.id === painterContextId)
-  if (!painterContext) throw new Error("The selected Painter context is no longer available")
+  if (!painterContext) throw new Error(t("The selected Painter context is no longer available"))
 
   // Photoshop pixels are rendered only for what the user mapped, at Apply.
   const assets = path.join(path.dirname(session.outputPath), "photoshop_assets")
@@ -417,12 +419,12 @@ export async function writeTransferManifest(
     let source: unknown = manifestRef(mapping.source)
     if (mapping.direction === "photoshop_to_painter") {
       const node = findNode(state.painter, mapping.sourceId)
-      if (!node || !session.photoshop) throw new Error("A mapped Photoshop layer is no longer available")
+      if (!node || !session.photoshop) throw new Error(t("A mapped Photoshop layer is no longer available"))
       if (signal?.aborted) throw new ApplyCancelled()
-      onProgress?.({ stage: "read", message: `Layer “${node.name}”`, completed: read, total: reads })
+      onProgress?.({ stage: "read", message: t("Layer “{name}”", { name: node.name }), completed: read, total: reads })
       source = await renderPhotoshopTransfer(session.photoshop, node, assets, warnings)
       read += 1
-      onProgress?.({ stage: "read", message: `Layer “${node.name}”`, completed: read, total: reads })
+      onProgress?.({ stage: "read", message: t("Layer “{name}”", { name: node.name }), completed: read, total: reads })
     }
     transfers.push({
       order,
@@ -547,7 +549,7 @@ function painterContexts(snapshot: JsonObject, documents: Map<string, string>): 
 function requestNodes(values: unknown[], parentPath: string, channel: string): LayerNode[] {
   return values.map((value, index) => {
     const node = objectValue(value)
-    const name = textValue(node.name) || textValue(node.display_name) || `Layer ${index + 1}`
+    const name = textValue(node.name) || textValue(node.display_name) || t("Layer {index}", { index: index + 1 })
     const kindText = textValue(node.kind) || "layer"
     const childValues = arrayValue(node.children)
     const isGroup = /group/i.test(kindText) || childValues.length > 0
@@ -558,7 +560,7 @@ function requestNodes(values: unknown[], parentPath: string, channel: string): L
       id: `substance_painter:${uid}`,
       kind: isGroup ? "group" : "layer",
       name,
-      detail: isGroup ? `${childValues.length} Layers` : layerDetail(node),
+      detail: isGroup ? t("{count} Layers", { count: childValues.length }) : layerDetail(node),
       masked: Boolean(node.mask_asset) || node.has_mask === true,
       thumbnailPath: availableThumbnail(resolvedAsset),
       ref: {

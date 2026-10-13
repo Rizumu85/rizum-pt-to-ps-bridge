@@ -1,3 +1,5 @@
+import { language } from "./i18n"
+
 export const colors = {
   canvas: "#1B1B1B",
   panel: "#222222",
@@ -23,7 +25,8 @@ export const colors = {
 // The upstream GPUI preview remains the visual contract; keeping its tokens
 // explicit here lets the real bridge evolve without importing preview runtime code.
 export const typography = {
-  family: "MiSans VF",
+  // The bundled MiSans has no Hangul at all, so Korean uses the system's own UI font.
+  family: language() === "ko" ? "Malgun Gothic" : "MiSans VF",
   primarySize: 13,
   primaryWeight: 400,
   labelSize: 12,

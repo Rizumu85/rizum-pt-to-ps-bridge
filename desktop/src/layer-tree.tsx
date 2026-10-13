@@ -7,6 +7,7 @@ import {
   type PublicInstance,
 } from "@gpuix/react"
 import { findNode, type HostId, type LayerNode, type Placement } from "./model"
+import { t } from "./i18n"
 import { colors, metrics, typography } from "./theme"
 import {
   DisclosureIcon,
@@ -329,7 +330,7 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
             {mapped || replacedBy || node.locked || node.note ? <text style={{
               fontSize: typography.secondarySize, lineHeight: 14, color: replacedBy ? colors.danger : colors.secondary,
               whiteSpace: "nowrap", textOverflow: "ellipsis",
-            }}>{mapped ? pendingNotes.get(node.id) ?? "Pending" : replacedBy ?? node.locked ?? node.note}</text> : null}
+            }}>{mapped ? pendingNotes.get(node.id) ?? t("Pending") : replacedBy ?? node.locked ?? node.note}</text> : null}
           </div>
         </div>
         {nativeNode ? <div
@@ -366,7 +367,7 @@ const LayerRow = memo(function LayerRow({ node, depth, leaving = false, onLeft, 
           <text style={{
             fontFamily: typography.family, fontSize: typography.secondarySize, lineHeight: 14,
             color: replaces ? colors.canvas : colors.secondary, whiteSpace: "nowrap",
-          }}>Replace</text>
+          }}>{t("Replace")}</text>
         </div> : null}
         {/* Hover never lights folders, so a drop says where it lands on its own:
             a framed folder takes the layers inside, a line marks above or below.
