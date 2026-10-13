@@ -54,7 +54,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
 
 
     def run_group_transfer(self, insertion, target_id, target_name, view_offset=None, replace=False, folded=False,
-                           language="en"):
+                           language="en", disk_changed=""):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             png = lambda name: str((root / f"{name}.png").resolve())
@@ -90,6 +90,7 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
                 **os.environ,
                 "FAKE_VIEW_OFFSET": ",".join(map(str, view_offset or (0, 0))),
                 "FAKE_FOLDED": "1" if folded else "0",
+                "FAKE_DISK_CHANGED": disk_changed,
             }
             completed = subprocess.run(
                 ["node", str(host), str(launch.launcher_path), str(request)],
@@ -97,8 +98,9 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             result = json.loads(launch.result_path.read_text(encoding="utf-8"))
-            self.assertTrue(result["success"], result["errors"])
             self.last_result = result
+            if disk_changed != "unsaved":
+                self.assertTrue(result["success"], result["errors"])
             return json.loads(completed.stdout)
 
     @staticmethod
@@ -151,6 +153,20 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         progress = self.run_group_transfer("after", 3, "Base", language="zh-CN")["progress"]
 
         self.assertIn("正在插入 Photoshop 图层：2 / 5", [status for status, _value in progress["shown"]])
+
+    def test_a_psd_another_program_saved_is_opened_afresh_before_the_insert(self):
+        # Photoshop still shows the copy it opened; the mapper read the newer file.
+        document = self.run_group_transfer("after", 3, "Base", disk_changed="saved")
+
+        self.assertTrue(document["reopened"])
+        self.assertIn("Working", [item["name"] for item in document["layers"]])
+
+    def test_unsaved_photoshop_changes_are_not_dropped_for_the_newer_file(self):
+        document = self.run_group_transfer("after", 3, "Base", disk_changed="unsaved")
+
+        self.assertFalse(document["reopened"])
+        self.assertNotIn("Working", [item["name"] for item in document["layers"]])
+        self.assertIn("has unsaved changes in Photoshop", self.last_result["errors"][0]["message"])
 
     def test_before_places_above_the_target_including_the_topmost_layer(self):
         document = self.run_group_transfer("before", 1, "Group")

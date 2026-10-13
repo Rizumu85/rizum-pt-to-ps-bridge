@@ -19,7 +19,10 @@ function File(filename) {
     fsName: filename,
     name: path.basename(filename),
     parent: { fsName: path.dirname(filename) },
-    get exists() { return fs.existsSync(filename); },
+    get exists() { return fs.existsSync(filename) || filename === request.document.path; },
+    // Written a minute ago by another program, when the test says so.
+    get modified() { return new Date(Date.now() - 60000); },
+    length: 1000,
     open(mode) {
       if (mode === "r") return fs.existsSync(filename);
       fs.writeFileSync(filename, "");
@@ -112,7 +115,14 @@ const document = container({
   id: 10, name: path.basename(request.document.path), fullName: File(request.document.path),
   get activeLayer() { return active; },
   set activeLayer(layer) { select(layer); },
-  saved: false,
+  // FAKE_DISK_CHANGED: Photoshop opened this an hour ago and the file is newer;
+  // "saved" has nothing unsaved in Photoshop, "unsaved" has.
+  saved: process.env.FAKE_DISK_CHANGED === "saved",
+  ...(process.env.FAKE_DISK_CHANGED ? {
+    xmpMetadata: { rawData: `<x xmp:MetadataDate="${new Date(Date.now() - 3600000).toISOString().slice(0, 19)}Z"/>` },
+  } : {}),
+  reopened: false,
+  close() { this.closed = true; },
   save() { this.saved = true; },
   selection: { selectAll() {}, deselect() {} },
 });
@@ -212,12 +222,19 @@ const names = (list) => Object.fromEntries(list.map((name) => [name, name]));
 const app = {
   displayDialogs: "original", preferences: { rulerUnits: "original" }, documents: [document],
   activeDocument: document, bringToFront() {},
-  open() { throw new Error("The mapped document is already open"); },
+  open() {
+    if (!document.closed) throw new Error("The mapped document is already open");
+    document.closed = false;
+    document.reopened = true;
+    delete document.xmpMetadata;
+    return document;
+  },
 };
 const context = vm.createContext({
   JSON: undefined, File, app, Window, Math, ActionDescriptor, ActionReference, executeAction, executeActionGet,
   charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id, typeIDToStringID: (id) => id,
-  DialogModes: { NO: "none" }, Units: { PIXELS: "pixels" },
+  DialogModes: { NO: "none" }, Units: { PIXELS: "pixels" }, Date, Number, String,
+  SaveOptions: { DONOTSAVECHANGES: "DONOTSAVECHANGES" },
   RasterizeType: { ENTIRELAYER: "ENTIRELAYER" },
   ElementPlacement: names(["PLACEAFTER", "PLACEBEFORE", "PLACEATEND", "PLACEATBEGINNING"]),
   BlendMode: Object.fromEntries([
@@ -235,4 +252,6 @@ const tree = (list) => list.map((layer) => ({
   visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null, offset: layer.offset,
   ...(layer.typename === "LayerSet" ? { expanded: layer.expanded, layers: tree(layer.layers) } : {}),
 }));
-process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers), progress }));
+process.stdout.write(JSON.stringify({
+  saved: document.saved, reopened: document.reopened, layers: tree(document.layers), progress,
+}));

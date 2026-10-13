@@ -12,7 +12,7 @@
             // Native IDs are session-local and can be reused after Photoshop
             // restarts. A saved document's path is the authoritative identity.
             if (targetPath) {
-                if (documentPath(candidate) === normalizedPath(targetPath)) return candidate;
+                if (documentPath(candidate) === normalizedPath(targetPath)) return currentDocument(candidate, targetPath);
             } else if (!isNaN(targetId) && Number(candidate.id) === targetId) {
                 return candidate;
             }
@@ -21,6 +21,52 @@
             return app.open(File(targetPath));
         }
         throw new Error("The Photoshop document used by Desktop Bridge is not open or available");
+    }
+
+    // Another program can rewrite the PSD while Photoshop keeps an older copy
+    // open: the user paints in Clip Studio and saves the same file. The
+    // mapper read the file, so an insert into the open copy missed the mapped
+    // layers, or could not be saved over the newer file. Photoshop stamps a
+    // document's metadata with the file's time when it opens or saves it, so
+    // a file clearly newer than the stamp was written by someone else. With
+    // nothing unsaved in Photoshop, the newer file is opened in its place.
+    function currentDocument(document, path) {
+        if (!changedOnDisk(document, path)) return document;
+        if (!document.saved) {
+            throw new Error(
+                String(document.name) + " has unsaved changes in Photoshop, and another program has saved the file since. "
+                + "Save or close it in Photoshop, then reload it in Bridge."
+            );
+        }
+        document.close(SaveOptions.DONOTSAVECHANGES);
+        return app.open(File(path));
+    }
+
+    function changedOnDisk(document, path) {
+        try {
+            var file = File(path);
+            var stamp = metadataTime(String(document.xmpMetadata.rawData));
+            if (stamp === null || !file.exists) return false;
+            // A save stamps first and finishes writing later, the later the larger the file.
+            return file.modified.getTime() - stamp > 10000 + file.length / 10000;
+        } catch (ignored) {
+            return false;
+        }
+    }
+
+    function metadataTime(xmp) {
+        var match = xmp.match(/xmp:MetadataDate(?:="|>)(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)?/);
+        if (!match) return null;
+        var zone = match[7];
+        if (!zone) {
+            return new Date(Number(match[1]), match[2] - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])).getTime();
+        }
+        var time = Date.UTC(Number(match[1]), match[2] - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
+        if (zone !== "Z") {
+            var minutes = Number(zone.substr(1, 2)) * 60 + Number(zone.substr(4, 2));
+            time += (zone.charAt(0) === "-" ? 1 : -1) * minutes * 60000;
+        }
+        return time;
     }
 
     function documentPath(document) {
@@ -56,7 +102,8 @@
         }
         if (!layer || String(layer.name) !== String(mapped.target_name)) {
             throw new Error(
-                "Photoshop layers changed since Bridge read the PSD. Save it in Photoshop and reconnect: "
+                "Photoshop's layers differ from the PSD Bridge read. Save the document in Photoshop, "
+                + "reload it in Bridge and map again: "
                 + mapped.target_name
             );
         }
@@ -111,8 +158,11 @@
                 progressWindow.alignChildren = ["fill", "top"];
                 progressWindow.status = progressWindow.add("statictext", undefined, "");
                 progressWindow.bar = progressWindow.add("progressbar", undefined, 0, 100);
-                progressWindow.status.preferredSize = [360, 20];
-                progressWindow.bar.preferredSize = [360, 14];
+                progressWindow.status.preferredSize = [400, 26];
+                progressWindow.bar.preferredSize = [400, 14];
+                try {
+                    progressWindow.status.graphics.font = ScriptUI.newFont(progressText.font, "REGULAR", 15);
+                } catch (ignored) {}
                 progressWindow.center();
             }
             progressWindow.status.text = status;
