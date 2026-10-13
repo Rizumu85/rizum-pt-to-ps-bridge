@@ -113,6 +113,35 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.choose(body, channel="Normal")
         self.assertEqual(self.documents()[("M_body", "Normal")], str(body))
 
+    def rename_body_to(self, name):
+        """Painter's snapshot after the user renamed the M_body texture set."""
+        self.controller._snapshot_path.write_text(json.dumps({
+            "project": {"uuid": "project-1"},
+            "contexts": [
+                {"texture_set": name, "texture_set_original": "M_body", "stack": "", "channel": "BaseColor"},
+            ],
+        }), encoding="utf-8")
+        self.controller._write_document_map()
+
+    def test_a_renamed_texture_set_keeps_its_psd(self):
+        source = self.psd("body.psd")
+        self.choose(source)
+
+        self.rename_body_to("Body")
+
+        self.assertEqual(self.documents(), {("Body", "BaseColor"): str(source)})
+
+    def test_a_psd_connected_after_the_rename_is_kept_through_the_next_one(self):
+        self.rename_body_to("Body")
+        source = self.psd("body.psd")
+        self.controller._connect_context = {"texture_set": "Body", "stack": "", "channel": "BaseColor"}
+        with patch.object(QtWidgets.QFileDialog, "getOpenFileName", return_value=(str(source), "")):
+            self.controller._connect_photoshop()
+
+        self.rename_body_to("Torso")
+
+        self.assertEqual(self.documents(), {("Torso", "BaseColor"): str(source)})
+
     def test_remembered_psd_that_moved_opens_bridge_disconnected(self):
         source = self.psd("external.psd")
         self.choose(source)

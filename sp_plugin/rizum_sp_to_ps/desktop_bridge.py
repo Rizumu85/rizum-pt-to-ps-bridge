@@ -13,7 +13,12 @@ from pathlib import Path
 from . import desktop_transfer, exporter, localization
 from .localization import text
 from .mapper_process import mapper_process_class
-from .photoshop_documents import SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY, DocumentMemory, project_key
+from .photoshop_documents import (
+    SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY,
+    DocumentMemory,
+    material_name,
+    project_key,
+)
 from .photoshop_job import PhotoshopJob
 from .ui_dialogs import CompactProgressDialog
 
@@ -40,6 +45,8 @@ class DesktopBridgeController:
         self._snapshot_path = None
         self._documents_path = None
         self._project_key = None
+        # Current texture set name -> the material name its PSDs are kept under.
+        self._material_names = {}
         self._connect_context = {}
         self._closing = False
         self._applying_transfer = False
@@ -189,9 +196,11 @@ class DesktopBridgeController:
         self._project_key = project_key(snapshot.get("project"))
         memory = self._document_memory()
         documents = []
+        self._material_names = {}
         for context in snapshot.get("contexts") or []:
+            self._material_names[context.get("texture_set")] = material_name(context)
             psd = memory.resolve(
-                self._project_key, context.get("texture_set"), context.get("stack") or "", context.get("channel"),
+                self._project_key, material_name(context), context.get("stack") or "", context.get("channel"),
             )
             documents.append({
                 "texture_set": context.get("texture_set"),
@@ -248,7 +257,8 @@ class DesktopBridgeController:
         memory = self._document_memory()
         memory.remember(
             self._project_key,
-            context.get("texture_set"),
+            # The mapper names the texture set as the snapshot showed it.
+            self._material_names.get(context.get("texture_set"), context.get("texture_set")),
             context.get("stack") or "",
             context.get("channel"),
             str(source_path),

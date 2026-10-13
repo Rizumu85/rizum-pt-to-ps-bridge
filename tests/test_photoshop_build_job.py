@@ -83,7 +83,9 @@ class PhotoshopBuildJobTests(unittest.TestCase):
             psd.write_bytes(b"psd")
             request = self.root / f"{channel}.json"
             request.write_text(json.dumps({
-                "project": {"uuid": "project-1", "path": "hero.spp"}, "texture_set": "M_veil", "stack": "",
+                "project": {"uuid": "project-1", "path": "hero.spp"},
+                # Renamed in Painter; the link is kept under the material's own name.
+                "texture_set": "Veil", "texture_set_original": "M_veil", "stack": "",
                 "channel": channel, "psd_file": str(psd),
             }), encoding="utf-8")
             requests.append({"path": str(request)})

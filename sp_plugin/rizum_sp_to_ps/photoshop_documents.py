@@ -15,6 +15,18 @@ def project_key(project):
     return project.get("uuid") or project.get("path") or "unsaved"
 
 
+def material_name(record):
+    """Return the name a texture set's PSDs are remembered under.
+
+    That is the mesh's own material name, which Painter keeps when a texture
+    set is renamed. The user renames texture sets (dropping an "M_" prefix so
+    exports are named as they want); remembered under the current name, every
+    rename lost the texture set's PSDs. An unrenamed texture set has the same
+    name either way, so what was remembered before this still resolves.
+    """
+    return record.get("texture_set_original") or record.get("texture_set")
+
+
 def exported_documents(export_list_path):
     """List (project, texture set, stack, channel, PSD) for every request of an export."""
     try:
@@ -29,7 +41,7 @@ def exported_documents(export_list_path):
             continue
         documents.append((
             project_key(request.get("project")),
-            request.get("texture_set"),
+            material_name(request),
             request.get("stack") or "",
             request.get("channel"),
             request.get("psd_file"),

@@ -633,7 +633,9 @@ connected PSD belongs to the Painter target shown when it is connected, which
 Painter remembers per project (`photoshop_documents.py`). A PSD that Export
 builds is remembered the same way for the texture set and channel it was
 exported from, once Photoshop reports it saved, so Bridge opens it there
-without a manual connect.
+without a manual connect. A texture set's PSDs are remembered under the mesh's
+material name (`TextureSet.original_name`), not its current name, so renaming
+a texture set in Painter keeps them.
 
 ### 7.3 Build request preview
 
