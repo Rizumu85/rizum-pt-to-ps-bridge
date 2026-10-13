@@ -26,6 +26,23 @@ _PROGRESS_TEXT_TOKEN = "__RIZUM_PROGRESS_TEXT__"
 # ScriptUI's own font has no CJK glyphs, and the ones Windows substituted came
 # out far smaller than the Latin text beside them.
 _PROGRESS_FONTS = {"zh": "Microsoft YaHei UI", "ja": "Yu Gothic UI", "ko": "Malgun Gothic"}
+
+# The script sources are read once, as this module loads, never per launch.
+# They and this module's token handling are one version of the plugin: read
+# per launch, a Painter still running older Python picked up newer scripts
+# from an updated plugin folder, left a token it did not know unreplaced, and
+# every Apply failed with a script error until Painter was restarted.
+_SOURCES = {
+    name: (Path(__file__).parent / name).read_text(encoding="utf-8")
+    for name in (
+        "vendor/json2.js",
+        "photoshop_masks.jsx",
+        "photoshop_targets.jsx",
+        "photoshop_build.jsx",
+        "photoshop_transfer.jsx",
+        "photoshop_backdrop.jsx",
+    )
+}
 BACKDROP_LAUNCHER_FILENAME = "_read_photoshop_backdrop.jsx"
 BACKDROP_RESULT_FILENAME = "photoshop_backdrop_result.json"
 BACKDROP_PROGRESS_FILENAME = "photoshop_backdrop_progress.json"
@@ -47,7 +64,7 @@ def _embed_json_runtime(template):
     # transfer receipts never depend on another installed extension.
     # Unmodified public-domain JSON-js, commit 7e83f38a2312429fd4933169c1f6a27fd65e889c:
     # https://github.com/douglascrockford/JSON-js/blob/7e83f38a2312429fd4933169c1f6a27fd65e889c/json2.js
-    codec = (Path(__file__).parent / "vendor" / "json2.js").read_text(encoding="utf-8")
+    codec = _SOURCES["vendor/json2.js"]
     return template.replace(_JSON_RUNTIME_TOKEN, "var JSON = {};\n" + codec)
 
 
@@ -55,7 +72,7 @@ def _embed_mask_runtime(template):
     if template.count(_MASK_RUNTIME_TOKEN) != 1:
         raise RuntimeError("Photoshop template has an invalid mask runtime token")
     # Both scripts build layer masks; one shared copy keeps them in step.
-    runtime = (Path(__file__).parent / "photoshop_masks.jsx").read_text(encoding="utf-8")
+    runtime = _SOURCES["photoshop_masks.jsx"]
     return template.replace(_MASK_RUNTIME_TOKEN, runtime)
 
 
@@ -63,7 +80,7 @@ def _embed_target_runtime(template, language=None):
     if template.count(_TARGET_RUNTIME_TOKEN) != 1:
         raise RuntimeError("Photoshop template has an invalid target runtime token")
     # Every Bridge script finds the PSD and its layers with this one copy.
-    runtime = (Path(__file__).parent / "photoshop_targets.jsx").read_text(encoding="utf-8")
+    runtime = _SOURCES["photoshop_targets.jsx"]
     if runtime.count(_PROGRESS_TEXT_TOKEN) != 1:
         raise RuntimeError("Photoshop target runtime has an invalid progress text token")
     # The script's own progress window says what Painter's dialog says, in
@@ -131,8 +148,7 @@ def write_photoshop_launcher(export_list_path, receipt_dir):
     result_path = receipts / BUILD_RESULT_FILENAME
     progress_path.unlink(missing_ok=True)
     result_path.unlink(missing_ok=True)
-    template_path = Path(__file__).with_name("photoshop_build.jsx")
-    template = template_path.read_text(encoding="utf-8")
+    template = _SOURCES["photoshop_build.jsx"]
 
     # Photoshop still accepts JSX as a process argument while UXP scripts do
     # not. Keep the paths as data so the builder stays generic and inspectable.
@@ -156,8 +172,7 @@ def write_photoshop_transfer_launcher(request_path, language=None):
     ``language`` is the script's progress text language; Painter's by default.
     """
     request = Path(request_path).resolve()
-    template_path = Path(__file__).with_name("photoshop_transfer.jsx")
-    template = template_path.read_text(encoding="utf-8")
+    template = _SOURCES["photoshop_transfer.jsx"]
     if template.count(_TRANSFER_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop transfer template has an invalid request token")
 
@@ -177,7 +192,7 @@ def write_photoshop_transfer_launcher(request_path, language=None):
 def write_photoshop_backdrop_launcher(request_path, language=None):
     """Write the JSX that reads what a PSD shows below each Bridge insert."""
     request = Path(request_path).resolve()
-    template = Path(__file__).with_name("photoshop_backdrop.jsx").read_text(encoding="utf-8")
+    template = _SOURCES["photoshop_backdrop.jsx"]
     if template.count(_BACKDROP_REQUEST_TOKEN) != 1:
         raise RuntimeError("Photoshop backdrop template has an invalid request token")
     script = _embed_target_runtime(_embed_json_runtime(template), language).replace(
