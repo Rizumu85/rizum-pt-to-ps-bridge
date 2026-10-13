@@ -252,9 +252,15 @@ def show_modal_message(QtWidgets, parent, title, message):
 
 
 class CompactProgressDialog:
-    """Compact progress dialog shared by Painter export and Photoshop jobs."""
+    """The mapper's Apply card as a Painter dialog, for Export and Photoshop jobs.
 
-    def __init__(self, panel, title, status, *, cancellable=True, modal=True):
+    The user asked that Export read exactly as Bridge does: the step's title
+    with its number beside it, what is being worked on, a thin line, and the
+    real count under it next to Cancel. A count is never a percentage of the
+    whole export: steps have different units and each counts its own work.
+    """
+
+    def __init__(self, panel, title, heading, *, cancellable=True, modal=True):
         self.QtCore = panel.QtCore
         self.QtWidgets = panel.QtWidgets
         self._cancellable = cancellable
@@ -271,34 +277,43 @@ class CompactProgressDialog:
             width=340,
             body_spacing=12,
         )
-        # Laid out like the desktop mapper's Apply card, which the user asked
-        # this to match: the message, a thin line, then the amount under it.
-        self.status_label = self.QtWidgets.QLabel(status)
-        self.status_label.setObjectName("RizumSettingsItemName")
-        self.status_label.setWordWrap(True)
-        self.shell.body_layout.addWidget(self.status_label)
+        heading_row = self.QtWidgets.QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        self.heading_label = self.QtWidgets.QLabel(heading)
+        self.heading_label.setObjectName("RizumSettingsItemName")
+        self.step_label = self.QtWidgets.QLabel("")
+        self.step_label.setObjectName("RizumSettingsItemMeta")
+        heading_row.addWidget(self.heading_label, 1)
+        heading_row.addWidget(self.step_label)
+        self.shell.body_layout.addLayout(heading_row)
+
+        self.message_label = self.QtWidgets.QLabel("")
+        self.message_label.setObjectName("RizumSettingsItemMeta")
+        self.message_label.setWordWrap(True)
+        self.shell.body_layout.addWidget(self.message_label)
 
         self.progress_bar = ProgressTrack()
         self.progress_bar.setRange(0, 0)
         self.shell.body_layout.addWidget(self.progress_bar)
 
-        self.percent_label = self.QtWidgets.QLabel("")
-        self.percent_label.setObjectName("RizumSettingsItemMeta")
-        self.shell.body_layout.addWidget(self.percent_label)
-
+        action_row = self.QtWidgets.QHBoxLayout()
+        action_row.setContentsMargins(0, 0, 0, 0)
+        self.count_label = self.QtWidgets.QLabel("")
+        self.count_label.setObjectName("RizumSettingsItemMeta")
+        action_row.addWidget(self.count_label, 1)
         self.cancel_button = None
         if cancellable:
-            self.shell.footer_layout.addStretch(1)
             self.cancel_button = self.shell.add_action(
                 text("cancel"),
                 minimum=72,
                 maximum=104,
             )
             self.cancel_button.clicked.connect(self._request_cancel)
-            self.shell.footer_layout.addWidget(self.cancel_button)
-        else:
-            self.shell.footer_separator.hide()
-            self.shell.footer.hide()
+            action_row.addWidget(self.cancel_button)
+        self.shell.body_layout.addLayout(action_row)
+        # The card has no footer: Cancel sits on the count's line, as in the mapper.
+        self.shell.footer_separator.hide()
+        self.shell.footer.hide()
         self.shell.add_scale_callback(self._apply_ui_scale)
         self.dialog = self.shell.finalize()
         self.dialog.rejected.connect(self._window_rejected)
@@ -308,16 +323,17 @@ class CompactProgressDialog:
 
     def _apply_ui_scale(self, _scale):
         self.progress_bar.setFixedHeight(self.shell._metric(4, 3))
-        # The amount line keeps its height while work has no count, so the
-        # dialog does not jump when a count starts or ends.
-        self.percent_label.setMinimumHeight(self.percent_label.fontMetrics().height())
+        # Both lines keep their height while they are empty, so the dialog
+        # does not jump when a message or a count starts or ends.
+        for label in (self.message_label, self.count_label):
+            label.setMinimumHeight(label.fontMetrics().height())
 
     def _request_cancel(self):
         if self._cancelled or not self._cancellable:
             return
         self._cancelled = True
         self.cancel_button.setEnabled(False)
-        self.status_label.setText(text("cancelling"))
+        self.cancel_button.setText(text("cancelling"))
 
     def _window_rejected(self):
         if not self._finishing:
@@ -330,32 +346,30 @@ class CompactProgressDialog:
         self._finishing = True
         self.dialog.close()
 
+    def setHeading(self, heading, step=""):
+        """Name the step being worked on; ``step`` is its "Step 2 of 3"."""
+        self.heading_label.setText(str(heading))
+        self.step_label.setText(str(step))
+
     def setRange(self, minimum, maximum):
         self._minimum = int(minimum)
         self._maximum = int(maximum)
         self.progress_bar.setRange(self._minimum, self._maximum)
-        if self._maximum <= self._minimum:
-            self.percent_label.clear()
-        else:
-            self._update_percent(self.progress_bar.value())
+        self._update_count(self.progress_bar.value())
 
     def setValue(self, value):
         self.progress_bar.setValue(int(value))
-        self._update_percent(value)
+        self._update_count(value)
 
-    def _update_percent(self, value):
+    def _update_count(self, value):
         if self._maximum <= self._minimum:
-            self.percent_label.clear()
+            self.count_label.clear()
             return
-        progress = (float(value) - self._minimum) / (
-            self._maximum - self._minimum
-        )
-        percent = round(max(0.0, min(1.0, progress)) * 100)
-        self.percent_label.setText(f"{percent}%")
+        done = max(self._minimum, min(self._maximum, int(value))) - self._minimum
+        self.count_label.setText(f"{done} / {self._maximum - self._minimum}")
 
     def setLabelText(self, text):
-        if not self._cancelled:
-            self.status_label.setText(str(text))
+        self.message_label.setText(str(text))
 
     def wasCanceled(self):
         return self._cancelled

@@ -180,14 +180,20 @@ def write_build_bundles(
     settings=None,
     progress_callback=None,
 ):
-    """Write one build bundle per generated request and return JSON paths."""
+    """Write one build bundle per generated request and return JSON paths.
+
+    Progress events carry ``stage`` ("prepare", "render", "match", or
+    "heartbeat"), ``value`` and ``total`` in that stage's own units, a
+    ``detail`` naming what is worked on, and for "render" the ``context`` of
+    its PSD when the export writes several.
+    """
     settings = settings or {}
     _notify_progress(
         progress_callback,
         stage="prepare",
         value=0,
         total=0,
-        text=text("progress_preparing"),
+        detail=text("progress_preparing"),
     )
     modules = _load_painter_modules()
     stack_records = list(_iter_stack_records(modules, settings))
@@ -197,102 +203,94 @@ def write_build_bundles(
     output_path.mkdir(parents=True, exist_ok=True)
     snapshot_path = output_path / PAINTER_SNAPSHOT_FILENAME
     _write_json_atomic(snapshot_path, snapshot)
-    total = len(requests)
-    _notify_progress(
-        progress_callback,
-        stage="bundles",
-        value=0,
-        total=total,
-        text=text("progress_writing_requests", total=total),
-    )
 
-    written = []
+    # The user asked that Export's progress read as the mapper's Apply does.
+    # So every request is planned before anything renders, and all render
+    # before any is matched: each step then counts its work once, instead of
+    # starting over for every PSD.
+    planned = []
+    for index, request in enumerate(requests, start=1):
+        request["painter_snapshot_file"] = str(snapshot_path)
+        validate_request_preview(request)
+        bundle_path = output_path / _bundle_name(request, index)
+        (bundle_path / "png").mkdir(parents=True, exist_ok=True)
+        build_request = build_request_from_preview(request, bundle_path, settings)
+        planned.append((request, bundle_path, build_request, _plan_asset_work(build_request)[-1]))
+    render_total = sum(work for *_rest, work in planned)
+
     geometry_baker = geometry_mask.GeometryMaskBaker(
         checkpoint=lambda: _notify_progress(
             progress_callback,
             stage="heartbeat",
             value=0,
             total=0,
-            text="",
         )
     )
     node_exporter = stack_node_export.StackNodeExporter()
+    rendered = []
+    done = 0
     try:
-        for index, request in enumerate(requests, start=1):
-            request["painter_snapshot_file"] = str(snapshot_path)
-            _notify_progress(
-                progress_callback,
-                stage="bundles",
-                value=index - 1,
-                total=total,
-                text=text(
-                    "progress_exporting_request",
-                    index=index,
-                    total=total,
-                    label=_request_label(request),
-                ),
-            )
-            validate_request_preview(request)
-            bundle_path = output_path / _bundle_name(request, index)
-            asset_path = bundle_path / "png"
-            asset_path.mkdir(parents=True, exist_ok=True)
+        for request, bundle_path, build_request, work in planned:
+            context = _request_label(request) if len(planned) > 1 else ""
 
-            build_request = build_request_from_preview(request, bundle_path, settings)
-            request_progress = _scope_request_progress(
-                progress_callback,
-                index,
-                total,
-            )
+            def forward(event, done=done, context=context):
+                if event.get("stage") == "heartbeat":
+                    return progress_callback(event)
+                return progress_callback({
+                    "stage": "render",
+                    "value": done + int(event.get("value") or 0),
+                    "total": render_total,
+                    "detail": event.get("detail") or "",
+                    "context": context,
+                })
+
             export_request_assets(
                 build_request,
-                progress_callback=request_progress,
-                progress_prefix=text("progress_position", index=index, total=total),
+                progress_callback=forward if progress_callback else None,
                 geometry_baker=geometry_baker,
                 node_exporter=node_exporter,
             )
+            done += work
             if _count_layer_assets(build_request["layers"]) == 0:
                 shutil.rmtree(bundle_path, ignore_errors=True)
                 continue
-            _notify_progress(
-                progress_callback,
-                stage="bundles",
-                value=index - 1,
-                total=total,
-                text=text(
-                    "progress_matching_look",
-                    index=index,
-                    total=total,
-                    label=_request_label(request),
-                ),
-            )
-            # Only a new PSD has the whole Painter stack as each layer's
-            # backdrop; Bridge inserts into a PSD that may have drifted.
-            build_request["painter_look"] = painter_look.rewrite_request(
-                build_request, settings
-            )
-
-            request_path = bundle_path / BUILD_REQUEST_FILENAME
-            build_request["build_request_file"] = str(request_path)
-            request_path.write_text(
-                json.dumps(build_request, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-            written.append(request_path)
-            _notify_progress(
-                progress_callback,
-                stage="bundles",
-                value=index,
-                total=total,
-                text=text(
-                    "progress_finished_request",
-                    index=index,
-                    total=total,
-                    label=_request_label(request),
-                ),
-            )
+            rendered.append((request, bundle_path, build_request))
     finally:
         node_exporter.close()
         geometry_baker.close()
+
+    written = []
+    matching = painter_look.matches_painter(settings)
+    for index, (request, bundle_path, build_request) in enumerate(rendered, start=1):
+        if matching:
+            _notify_progress(
+                progress_callback,
+                stage="match",
+                value=index - 1,
+                total=len(rendered),
+                detail=_request_label(request),
+            )
+        # Only a new PSD has the whole Painter stack as each layer's
+        # backdrop; Bridge inserts into a PSD that may have drifted.
+        build_request["painter_look"] = painter_look.rewrite_request(
+            build_request, settings
+        )
+
+        request_path = bundle_path / BUILD_REQUEST_FILENAME
+        build_request["build_request_file"] = str(request_path)
+        request_path.write_text(
+            json.dumps(build_request, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        written.append(request_path)
+    if matching and rendered:
+        _notify_progress(
+            progress_callback,
+            stage="match",
+            value=len(rendered),
+            total=len(rendered),
+            detail="",
+        )
 
     return written
 
@@ -540,7 +538,6 @@ def export_request_assets(
     build_request,
     node_exporter,
     progress_callback=None,
-    progress_prefix="",
     geometry_baker=None,
 ):
     """Export all PNG payloads referenced by a build request."""
@@ -566,14 +563,7 @@ def export_request_assets(
             stage="assets",
             value=index - 1,
             total=total,
-            text=_step_text(
-                progress_prefix,
-                "progress_exporting_png",
-                index=index,
-                total=export_work_total,
-                label=layer_label,
-            ),
-            detail=f"Layer \u201c{layer_label}\u201d",
+            detail=text("bridge_progress_layer", name=layer_label),
         )
         if pixel_export.export_layer_png(
             asset,
@@ -590,14 +580,7 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=_step_text(
-                progress_prefix,
-                "progress_finished_png",
-                index=index,
-                total=export_work_total,
-                label=layer_label,
-            ),
-            detail=f"Layer \u201c{layer_label}\u201d",
+            detail=text("bridge_progress_layer", name=layer_label),
         )
 
     # Re-plan masks after empty channel layers are pruned so their now-orphaned
@@ -616,14 +599,7 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=_step_text(
-                progress_prefix,
-                "progress_exporting_png",
-                index=index,
-                total=export_work_total,
-                label=layer_label,
-            ),
-            detail=f"Mask of \u201c{layer_label}\u201d",
+            detail=text("progress_mask", name=layer_label),
         )
         pixel_export.export_mask_png(
             asset,
@@ -637,14 +613,7 @@ def export_request_assets(
             stage="assets",
             value=completed,
             total=total,
-            text=_step_text(
-                progress_prefix,
-                "progress_finished_png",
-                index=index,
-                total=export_work_total,
-                label=layer_label,
-            ),
-            detail=f"Mask of \u201c{layer_label}\u201d",
+            detail=text("progress_mask", name=layer_label),
         )
 
     geometry_assets = [
@@ -661,7 +630,6 @@ def export_request_assets(
                 stage="heartbeat",
                 value=0,
                 total=0,
-                text="",
             )
         )
     try:
@@ -674,14 +642,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=_step_text(
-                    progress_prefix,
-                    "progress_exporting_geometry_mask",
-                    index=index,
-                    total=export_work_total,
-                    label=layer_label,
-                ),
-                detail=f"Geometry mask of \u201c{layer_label}\u201d",
+                detail=text("progress_geometry_mask", name=layer_label),
             )
             try:
                 diagnostics.append(geometry_baker.bake(asset, asset["path"]))
@@ -698,14 +659,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=_step_text(
-                    progress_prefix,
-                    "progress_finished_geometry_mask",
-                    index=index,
-                    total=export_work_total,
-                    label=layer_label,
-                ),
-                detail=f"Geometry mask of \u201c{layer_label}\u201d",
+                detail=text("progress_geometry_mask", name=layer_label),
             )
         if diagnostics:
             build_request["geometry_mask_diagnostics"] = diagnostics
@@ -717,13 +671,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=_step_text(
-                    progress_prefix,
-                    "progress_exporting_uv_map",
-                    index=index,
-                    total=export_work_total,
-                ),
-                detail="UV map",
+                detail=text("progress_uv_map"),
             )
             try:
                 build_request["uv_map_diagnostics"] = geometry_baker.bake_uv_map(
@@ -748,13 +696,7 @@ def export_request_assets(
                 stage="assets",
                 value=completed,
                 total=total,
-                text=_step_text(
-                    progress_prefix,
-                    "progress_finished_uv_map",
-                    index=index,
-                    total=export_work_total,
-                ),
-                detail="UV map",
+                detail=text("progress_uv_map"),
             )
     finally:
         if owns_baker:
@@ -765,7 +707,6 @@ def export_request_assets(
     build_request["edge_smoothing"] = _smooth_exported_assets(
         build_request,
         progress_callback=progress_callback,
-        progress_prefix=progress_prefix,
         progress_offset=export_work_total,
         progress_total=total,
     )
@@ -774,11 +715,6 @@ def export_request_assets(
         stage="assets",
         value=total,
         total=total,
-        text=(
-            text("progress_assets_complete_prefixed", prefix=progress_prefix)
-            if progress_prefix
-            else text("progress_assets_complete")
-        ),
     )
     build_request["empty_layer_assets_removed"] = _count_pruned_assets(
         build_request["layers"]
@@ -1279,39 +1215,12 @@ def _notify_progress(callback, **payload):
         raise ExportCancelled("Export cancelled by user.")
 
 
-def _step_text(progress_prefix, key, **values):
-    step = text(key, **values)
-    if not progress_prefix:
-        return step
-    return text("progress_prefixed", prefix=progress_prefix, step=step)
-
-
-def _scope_request_progress(callback, request_index, request_total):
-    if callback is None:
-        return None
-
-    def forward(payload):
-        event = dict(payload)
-        local_total = int(event.get("total") or 0)
-        if event.get("stage") != "heartbeat" and local_total > 0:
-            scale = 1000
-            local_value = max(0, min(int(event.get("value") or 0), local_total))
-            event["value"] = (
-                (int(request_index) - 1) * scale
-                + round((local_value / local_total) * scale)
-            )
-            event["total"] = max(1, int(request_total)) * scale
-        return callback(event)
-
-    return forward
-
-
 def _request_label(request):
-    stack = request.get("stack") or text("default_stack")
-    channel = request.get("channel_label") or request.get("channel")
-    udim = request.get("udim")
-    tile = "" if not _request_uses_udim(request) else f" / {udim}"
-    return f"{request.get('texture_set')} / {stack} / {channel}{tile}"
+    """Name one PSD of an export: its texture set, stack if it has one, channel and tile."""
+    parts = [request.get("texture_set"), request.get("stack"), request.get("channel_label") or request.get("channel")]
+    if _request_uses_udim(request):
+        parts.append(request.get("udim"))
+    return " / ".join(str(part) for part in parts if part)
 
 
 def _channel_role(channel_name, is_color):
@@ -1803,7 +1712,6 @@ def _count_layer_assets(nodes):
 def _smooth_exported_assets(
     build_request,
     progress_callback=None,
-    progress_prefix="",
     progress_offset=0,
     progress_total=None,
 ):
@@ -1835,14 +1743,7 @@ def _smooth_exported_assets(
             stage="smoothing",
             value=progress_offset + index - 1,
             total=progress_total,
-            text=_step_text(
-                progress_prefix,
-                "progress_smoothing_png",
-                index=index,
-                total=len(assets),
-                label=label,
-            ),
-            detail=f"Smoothing \u201c{label}\u201d",
+            detail=text("progress_smoothing", name=label),
         )
         export_settings = build_request.get("export_settings", {})
         # Smoothing runs at the render size, where Painter's polygon fills are
@@ -1871,14 +1772,7 @@ def _smooth_exported_assets(
             stage="smoothing",
             value=progress_offset + index,
             total=progress_total,
-            text=_step_text(
-                progress_prefix,
-                "progress_smoothed_png",
-                index=index,
-                total=len(assets),
-                label=label,
-            ),
-            detail=f"Smoothing \u201c{label}\u201d",
+            detail=text("progress_smoothing", name=label),
         )
 
     return {

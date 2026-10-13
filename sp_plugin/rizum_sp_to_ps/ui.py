@@ -484,10 +484,12 @@ class BridgePanel:
         channels = []
 
         self._set_action_buttons_enabled(False)
-        progress = self._create_export_progress(label)
+        progress = self._create_export_progress()
+        # Each texture set renders, then matches Painter's look when asked to.
+        steps_each = 2 if painter_look.matches_painter(base_settings) else 1
 
         try:
-            for target, selected_channels in selections:
+            for order, (target, selected_channels) in enumerate(selections):
                 texture_set = target["texture_set"]
                 stack = target["stack"]
                 settings = {
@@ -503,9 +505,12 @@ class BridgePanel:
                     write_build_bundles(
                         output_dir,
                         settings=settings,
-                        progress_callback=lambda event: self._update_export_progress(
+                        progress_callback=lambda event, order=order, texture_set=texture_set: self._update_export_progress(
                             progress,
                             event,
+                            first_step=order * steps_each + 1,
+                            step_total=len(selections) * steps_each,
+                            target=texture_set if len(selections) > 1 else "",
                         ),
                     )
                 )
@@ -655,18 +660,15 @@ class BridgePanel:
         self.dock_export_button.setEnabled(enabled)
         self.dock_settings_button.setEnabled(enabled)
 
-    def _create_export_progress(self, label):
-        progress = CompactProgressDialog(
-            self,
-            text("export"),
-            text("export_starting", label=label),
-        )
+    def _create_export_progress(self):
+        progress = CompactProgressDialog(self, text("export"), text("exporting"))
         progress.show()
         self.QtWidgets.QApplication.processEvents()
         return progress
 
-    def _update_export_progress(self, progress, event):
-        if event.get("stage") == "heartbeat":
+    def _update_export_progress(self, progress, event, first_step=1, step_total=1, target=""):
+        stage = event.get("stage")
+        if stage == "heartbeat":
             # Painter host exports must stay on its UI thread. Geometry work
             # therefore yields cooperatively so returning to Painter still
             # repaints the dialog and lets Cancel or the title-bar X respond.
@@ -674,15 +676,25 @@ class BridgePanel:
             self.QtWidgets.QApplication.processEvents()
             return not progress.wasCanceled()
 
+        if stage in ("render", "match"):
+            step = first_step + (stage == "match")
+            progress.setHeading(
+                text(f"progress_stage_{stage}"),
+                text("progress_step", step=step, total=step_total) if step_total > 1 else "",
+            )
         total = int(event.get("total") or 0)
         value = int(event.get("value") or 0)
-        status = event.get("text") or text("exporting")
         if total > 0:
             progress.setRange(0, total)
             progress.setValue(max(0, min(value, total)))
         else:
             progress.setRange(0, 0)
-        progress.setLabelText(status)
+        # The exporter names the PSD when a texture set has several; across
+        # texture sets the dialog adds which one it is on.
+        context = event.get("context") or (target if stage == "render" else "")
+        message = " \u00b7 ".join(part for part in (context, event.get("detail")) if part)
+        if message:
+            progress.setLabelText(message)
         progress.dialog.repaint()
         self.QtWidgets.QApplication.processEvents()
         return not progress.wasCanceled()

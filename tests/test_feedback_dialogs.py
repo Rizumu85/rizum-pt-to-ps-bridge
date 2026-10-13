@@ -76,21 +76,49 @@ class FeedbackDialogTests(unittest.TestCase):
         panel.QtWidgets = QtWidgets
         panel.widget = self.panel.widget
 
-        progress = panel._create_export_progress("selected channels")
-        progress.setRange(0, 4)
-        progress.setValue(1)
-        progress.setLabelText("Exporting Base Color...")
-        self.app.processEvents()
+        progress = panel._create_export_progress()
+        update = lambda event, **steps: panel._update_export_progress(progress, event, **steps)
+        self.assertTrue(update(
+            {"stage": "render", "value": 1, "total": 4, "detail": "Layer \u201cPaint\u201d", "context": ""},
+            first_step=1, step_total=2,
+        ))
 
         self.assertIsInstance(progress.dialog, ui_kit.PainterSettingsDialog)
         self.assertNotIsInstance(progress.dialog, QtWidgets.QProgressDialog)
-        self.assertEqual(progress.percent_label.text(), "25%")
-        self.assertEqual(progress.status_label.text(), "Exporting Base Color...")
+        # The mapper's Apply card: the step and its number, what is worked
+        # on, and the step's own count instead of a share of the whole export.
+        self.assertEqual(progress.heading_label.text(), "Rendering Painter layers")
+        self.assertEqual(progress.step_label.text(), "Step 1 of 2")
+        self.assertEqual(progress.message_label.text(), "Layer \u201cPaint\u201d")
+        self.assertEqual(progress.count_label.text(), "1 / 4")
         self.assertGreaterEqual(progress.progress_bar.height(), 3)
+
+        update({"stage": "match", "value": 0, "total": 1, "detail": "M_body / Base Color"}, first_step=1, step_total=2)
+        self.assertEqual(progress.heading_label.text(), "Matching Painter's look")
+        self.assertEqual(progress.step_label.text(), "Step 2 of 2")
+        self.assertEqual(progress.count_label.text(), "0 / 1")
 
         progress.cancel_button.click()
         self.assertTrue(progress.wasCanceled())
         self.assertFalse(progress.cancel_button.isEnabled())
+        self.assertFalse(update({"stage": "match", "value": 1, "total": 1, "detail": ""}))
+        progress.close()
+
+    def test_one_step_export_is_not_numbered_and_names_its_texture_set_among_several(self):
+        panel = BridgePanel.__new__(BridgePanel)
+        panel.QtCore = QtCore
+        panel.QtWidgets = QtWidgets
+        panel.widget = self.panel.widget
+        progress = panel._create_export_progress()
+
+        event = {"stage": "render", "value": 0, "total": 3, "detail": "Layer \u201cPaint\u201d", "context": ""}
+        panel._update_export_progress(progress, event)
+        self.assertEqual(progress.step_label.text(), "")
+        self.assertEqual(progress.message_label.text(), "Layer \u201cPaint\u201d")
+
+        panel._update_export_progress(progress, event, first_step=3, step_total=4, target="M_dress2")
+        self.assertEqual(progress.step_label.text(), "Step 3 of 4")
+        self.assertEqual(progress.message_label.text(), "M_dress2 \u00b7 Layer \u201cPaint\u201d")
         progress.close()
 
 

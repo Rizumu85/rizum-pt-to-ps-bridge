@@ -140,7 +140,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         request.write_text("{}", encoding="utf-8")
         launch = write_photoshop_transfer_launcher(request)
         transfer = TransferResult(2, 3, (), (), launch)
-        self.controller._start_photoshop_job(launch, "Insert 3 layers", transfer)
+        self.controller._start_photoshop_job(launch, transfer)
         return launch
 
     def poll(self):
@@ -172,7 +172,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         progress = self.controller._photoshop_progress_dialog
         self.assertEqual(progress.progress_bar.value(), 2)
         self.assertEqual(progress.progress_bar.maximum(), 5)
-        self.assertIn("2 / 5", progress.status_label.text())
+        self.assertEqual(progress.count_label.text(), "2 / 5")
         self.assertTrue(self.controller._photoshop_job.started)
 
     def test_missing_start_ack_times_out(self):

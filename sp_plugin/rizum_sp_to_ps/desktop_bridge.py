@@ -274,16 +274,17 @@ class DesktopBridgeController:
         self._trace("desktop_reply", payload.get("type", ""))
         process.write((json.dumps(payload) + "\n").encode("utf-8"))
 
-    def _start_photoshop_job(self, launch, label, transfer_result):
+    def _start_photoshop_job(self, launch, transfer_result):
         self._apply_progress({"stage": "photoshop", "message": text("photoshop_opening_document")})
         self._clear_photoshop_export()
         self._pending_transfer_result = transfer_result
         # Only Painter reads the script's progress receipts, so Painter shows
-        # the layer count in the same compact dialog style as export.
+        # the layer count in the same card as export and the mapper.
         self._photoshop_progress_dialog = CompactProgressDialog(
-            self.panel, text("photoshop"), text("photoshop_opening", label=label),
+            self.panel, text("photoshop"), text("progress_stage_photoshop"),
             cancellable=False, modal=False,
         )
+        self._photoshop_progress_dialog.setLabelText(text("photoshop_opening_document"))
         self._photoshop_progress_dialog.show()
         try:
             launched, message = self.panel.launch_photoshop(
@@ -318,25 +319,20 @@ class DesktopBridgeController:
         if not isinstance(total, int) or not isinstance(completed, int):
             return
         counted = phase == "transferring_layers" and total > 0
-        values = {}
+        # Both cards show the count under the step's title, not in the message.
         if counted:
-            if dialog is not None:
-                dialog.setRange(0, total)
-                dialog.setValue(max(0, min(completed, total)))
-            status = "photoshop_inserting_layers"
-            values = {"completed": completed, "total": total}
+            message = text("bridge_progress_adding_layers")
         elif phase == "saving_document":
-            status = "photoshop_saving_document"
+            message = text("photoshop_saving_document")
         else:
-            status = "photoshop_opening_document"
+            message = text("photoshop_opening_document")
         if dialog is not None:
-            if not counted:
-                dialog.setRange(0, 0)
-            dialog.setLabelText(text(status, **values))
-        # The mapper shows the count under its step title, not in the message.
-        self._apply_progress({"stage": "photoshop", **(
-            {"message": text("bridge_progress_adding_layers"), "completed": completed, "total": total} if counted
-            else {"message": text(status)}
+            dialog.setRange(0, total if counted else 0)
+            if counted:
+                dialog.setValue(max(0, min(completed, total)))
+            dialog.setLabelText(message)
+        self._apply_progress({"stage": "photoshop", "message": message, **(
+            {"completed": completed, "total": total} if counted else {}
         )})
 
     def _photoshop_job_failed(self, message):
@@ -622,11 +618,7 @@ class DesktopBridgeController:
         if result is None:
             return
         if result.photoshop_launch is not None:
-            self._start_photoshop_job(
-                result.photoshop_launch,
-                text("photoshop_insert_label", count=result.exported_count),
-                result,
-            )
+            self._start_photoshop_job(result.photoshop_launch, result)
         else:
             self._report_transfer_complete(result.imported_count, 0, result.warnings)
 
