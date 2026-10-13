@@ -197,6 +197,17 @@ function executeAction(id, descriptor) {
   placed.offset = [...viewOffset];
   insertAboveActive(placed);
 }
+// A ScriptUI palette: records each status it was shown with, and its close.
+const progress = { shown: [], open: false };
+function Window() {
+  return {
+    add: () => ({}),
+    center() {},
+    show() { progress.open = true; progress.shown.push([this.status.text, this.bar.value]); },
+    update() {},
+    close() { progress.open = false; },
+  };
+}
 const names = (list) => Object.fromEntries(list.map((name) => [name, name]));
 const app = {
   displayDialogs: "original", preferences: { rulerUnits: "original" }, documents: [document],
@@ -204,7 +215,7 @@ const app = {
   open() { throw new Error("The mapped document is already open"); },
 };
 const context = vm.createContext({
-  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction, executeActionGet,
+  JSON: undefined, File, app, Window, Math, ActionDescriptor, ActionReference, executeAction, executeActionGet,
   charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id, typeIDToStringID: (id) => id,
   DialogModes: { NO: "none" }, Units: { PIXELS: "pixels" },
   RasterizeType: { ENTIRELAYER: "ENTIRELAYER" },
@@ -224,4 +235,4 @@ const tree = (list) => list.map((layer) => ({
   visible: layer.visible, rasterized: layer.rasterized, mask: layer.mask || null, offset: layer.offset,
   ...(layer.typename === "LayerSet" ? { expanded: layer.expanded, layers: tree(layer.layers) } : {}),
 }));
-process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers) }));
+process.stdout.write(JSON.stringify({ saved: document.saved, layers: tree(document.layers), progress }));

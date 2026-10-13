@@ -52,12 +52,18 @@ __RIZUM_TARGET_RUNTIME__
     } catch (error) {
         result.errors.push({ name: requestPath, message: errorMessage(error) });
     } finally {
+        closeProgress();
         app.displayDialogs = previousDialogs;
         writeJsonAtomic(resultPath, result);
     }
 
     function publishProgress(phase, completed, total) {
         writeJsonAtomic(progressPath, { phase: phase, completed: completed, total: total });
+        if (phase === "reading_backdrop" && total > 0) {
+            showProgress("Reading the document for Painter's look  " + completed + " / " + total, completed / total);
+        } else {
+            showProgress("Opening the document...", 0);
+        }
     }
 
     function indexPath(layer) {

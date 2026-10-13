@@ -89,6 +89,41 @@
         executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
     }
 
+    // Photoshop comes to the front while a Bridge script runs and covers the
+    // progress Painter and the mapper show, so a user watching Photoshop took
+    // a running insert for a finished one. This is the PSD builder's kind of
+    // ScriptUI palette: no panel is open that could draw progress instead.
+    // It can never be worth failing an insert, hence the silent catches.
+    var progressWindow = null;
+
+    function showProgress(status, fraction) {
+        try {
+            if (!progressWindow) {
+                progressWindow = new Window("palette", "PT Bridge", undefined, {
+                    closeButton: false, maximizeButton: false, minimizeButton: false
+                });
+                progressWindow.orientation = "column";
+                progressWindow.alignChildren = ["fill", "top"];
+                progressWindow.status = progressWindow.add("statictext", undefined, "");
+                progressWindow.bar = progressWindow.add("progressbar", undefined, 0, 100);
+                progressWindow.status.preferredSize = [360, 20];
+                progressWindow.bar.preferredSize = [360, 14];
+                progressWindow.center();
+            }
+            progressWindow.status.text = status;
+            progressWindow.bar.value = Math.round(Math.max(0, Math.min(1, fraction || 0)) * 100);
+            progressWindow.show();
+            progressWindow.update();
+        } catch (ignored) {}
+    }
+
+    function closeProgress() {
+        try {
+            if (progressWindow) progressWindow.close();
+        } catch (ignored) {}
+        progressWindow = null;
+    }
+
     function readJson(path) {
         var file = File(path);
         file.encoding = "UTF8";

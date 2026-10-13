@@ -136,6 +136,16 @@ class PhotoshopTransferLauncherTests(unittest.TestCase):
         # The folder this Apply added stays as Photoshop opened it.
         self.assertTrue(group["layers"][0]["expanded"])
 
+    def test_photoshop_shows_the_insert_progressing_and_then_clears_it(self):
+        # Photoshop is in front while this runs; Painter's dialog is behind it.
+        progress = self.run_group_transfer("after", 3, "Base")["progress"]
+
+        statuses = [status for status, _value in progress["shown"]]
+        self.assertEqual(statuses[0], "Opening the document...")
+        self.assertIn("Adding layers from Painter  2 / 5", statuses)
+        self.assertEqual(progress["shown"][-1], ["Saving the document...", 100])
+        self.assertFalse(progress["open"])
+
     def test_before_places_above_the_target_including_the_topmost_layer(self):
         document = self.run_group_transfer("before", 1, "Group")
 

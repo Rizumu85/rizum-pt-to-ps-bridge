@@ -104,6 +104,7 @@ __RIZUM_TARGET_RUNTIME__
     } catch (error) {
         result.errors.push({ name: requestPath, message: errorMessage(error) });
     } finally {
+        closeProgress();
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
         writeJsonAtomic(resultPath, result);
@@ -111,6 +112,13 @@ __RIZUM_TARGET_RUNTIME__
 
     function publishProgress(phase, completed, total) {
         writeJsonAtomic(progressPath, { phase: phase, completed: completed, total: total });
+        if (phase === "transferring_layers" && total > 0) {
+            showProgress("Adding layers from Painter  " + completed + " / " + total, completed / total);
+        } else if (phase === "saving_document") {
+            showProgress("Saving the document...", 1);
+        } else {
+            showProgress("Opening the document...", 0);
+        }
     }
 
     // Selecting a layer makes Photoshop open every folder above it, and the
