@@ -266,11 +266,11 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.controller._show_message_callback.assert_not_called()
         self.assertEqual(self.controller._process, self.process)
 
-    def test_outcome_is_english_for_the_mapper_and_painters_language_in_its_dialog(self):
+    def test_outcome_is_in_painters_language_in_the_mapper_and_in_its_own_dialog(self):
         with patch.object(localization, "CURRENT_LANGUAGE", "zh"):
             self.apply_request(TransferResult(2, 0, (), (), None))
             self.assertEqual(
-                self.replies()[-1]["message"], "Imported 2 Photoshop layer(s) into Painter.",
+                self.replies()[-1]["message"], localization.text("bridge_imported", language="zh", imported=2),
             )
             self.controller._show_message_callback.assert_not_called()
 
@@ -326,7 +326,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
 
         # Photoshop reads first; neither document is touched until it answers,
         # and Painter stays free meanwhile.
-        self.panel.launch_photoshop.assert_called_once_with(launch.launcher_path, language="en")
+        self.panel.launch_photoshop.assert_called_once_with(launch.launcher_path)
         finish.assert_not_called()
         self.assertFalse(self.panel.dock_bridge_button.isEnabled())
         payload = {"success": True, "backdrops": [{"key": "3|before", "png": None}], "errors": []}

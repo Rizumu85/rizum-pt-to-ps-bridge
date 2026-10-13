@@ -542,11 +542,11 @@ class BridgePanel:
     def photoshop_executable(self):
         return find_photoshop_executable(self.user_settings.get("photoshop_path") or "")
 
-    def launch_photoshop(self, launcher_path, language=None):
-        """Start Photoshop on a script; ``language`` is the failure text's language."""
+    def launch_photoshop(self, launcher_path):
+        """Start Photoshop on a script."""
         executable = self.photoshop_executable()
         if executable is None:
-            return False, text("photoshop_not_found", language=language)
+            return False, text("photoshop_not_found")
 
         # Passing JSX to Photoshop is the host-supported zero-click path used
         # by the released exporter; UXP panels are lazy and cannot receive a
@@ -564,7 +564,6 @@ class BridgePanel:
         except OSError as exc:
             return False, text(
                 "photoshop_launch_failed",
-                language=language,
                 executable=executable,
                 error=exc,
             )

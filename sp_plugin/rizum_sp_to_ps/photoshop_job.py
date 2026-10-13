@@ -22,11 +22,8 @@ class PhotoshopJob:
     """
 
     def __init__(self, QtCore, parent, launch, *, on_progress, on_done, on_failed,
-                 cancelled=None, on_cancelled=None, language=None):
+                 cancelled=None, on_cancelled=None):
         self.launch = launch
-        # Called when the job fails: the surface that shows the failure, and
-        # so its language, can change while Photoshop works.
-        self._language = language
         self.started = False
         self._on_progress = on_progress
         self._on_done = on_done
@@ -87,8 +84,7 @@ class PhotoshopJob:
 
     def _fail(self, key, **values):
         self.stop()
-        language = self._language() if self._language is not None else None
-        self._on_failed(text(key, language=language, **values))
+        self._on_failed(text(key, **values))
 
 
 def _read_json(path):

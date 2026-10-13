@@ -248,7 +248,7 @@ def finish_transfer(prepared, backdrop_result=None, progress_callback=None, canc
         _rewrite_inserts(prepared, backdrop_result, progress_callback)
     elif prepared.rendered and progress_callback is not None:
         # The mapper lists this step for every insert; say why it is empty.
-        progress_callback({"stage": "match", "message": f"Not needed for the {plan.channel} channel"})
+        progress_callback({"stage": "match", "message": text("bridge_progress_match_not_needed", channel=plan.channel)})
     launcher = _write_transfer_request(prepared) if prepared.rendered else None
     _raise_if_cancelled(cancelled)
     result = apply_transfer_plan(plan, prepared.painter, progress_callback)
@@ -291,7 +291,7 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
             progress_callback({"stage": "import", "message": message, **counted})
 
     for index, path in enumerate(assets):
-        report(f"Texture \u201c{Path(path).stem}\u201d", index)
+        report(text("bridge_progress_texture", name=Path(path).stem), index)
         resources[path] = _import_texture(path, painter.resource)
 
     warnings = []
@@ -305,11 +305,11 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
         modification = _NullContext()
     with modification:
         for index, (item, target_node, channel_type, channel_is_color) in enumerate(resolved):
-            report(f"Layer \u201c{item.name}\u201d", len(assets) + index)
+            report(text("bridge_progress_layer", name=item.name), len(assets) + index)
             position = _insertion_position(item, target_node, painter.layerstack)
             target = _InsertTarget(painter, channel_type, channel_is_color, resources, warnings)
             _insert_photoshop_layer(item.layer, position, target)
-            report(f"Layer \u201c{item.name}\u201d", len(assets) + index + 1)
+            report(text("bridge_progress_layer", name=item.name), len(assets) + index + 1)
         # Replaced layers go last and inside the same history entry: every
         # insert positioned itself against them, and one undo restores them.
         # A failed insert raises before this, so nothing is deleted for it.
@@ -317,7 +317,7 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
         for node in replaced.values():
             painter.layerstack.delete_node(node)
         if resolved:
-            report("Updating Painter stack...")
+            report(text("bridge_progress_updating_stack"))
 
     return TransferResult(
         imported_count=len(plan.painter_imports),
@@ -538,7 +538,7 @@ def _rewrite_inserts(prepared, backdrop_result, progress_callback=None):
             raise DesktopTransferError(f"Photoshop did not read the place for {point.target_name}.")
         if progress_callback is not None:
             progress_callback({
-                "stage": "match", "message": "Matching Painter's look...",
+                "stage": "match", "message": text("bridge_progress_matching"),
                 "completed": index - 1, "total": len(prepared.points),
             })
         backdrop = backdrops[point.key]
@@ -553,7 +553,7 @@ def _rewrite_inserts(prepared, backdrop_result, progress_callback=None):
                 Path(backdrop).unlink(missing_ok=True)
     if progress_callback is not None:
         progress_callback({
-            "stage": "match", "message": "Matching Painter's look...",
+            "stage": "match", "message": text("bridge_progress_matching"),
             "completed": len(prepared.points), "total": len(prepared.points),
         })
 
