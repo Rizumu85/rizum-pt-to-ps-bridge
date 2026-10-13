@@ -12,6 +12,7 @@ from PySide6 import QtCore, QtGui, QtWidgets  # noqa: E402
 
 from sp_plugin.rizum_sp_to_ps import ui  # noqa: E402
 from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog  # noqa: E402
+from sp_plugin.rizum_sp_to_ps.photoshop_documents import SETTINGS_KEY, DocumentMemory  # noqa: E402
 from sp_plugin.rizum_sp_to_ps.photoshop_automation import (  # noqa: E402
     find_photoshop_executable,
     write_photoshop_launcher,
@@ -72,6 +73,57 @@ class PhotoshopBuildJobTests(unittest.TestCase):
         modal.assert_not_called()
         self.assertIsNone(self.panel._build_job)
         self.assertFalse(launch.result_path.exists())
+
+    def export_two_channels(self):
+        """An export list of a BaseColor and an Opacity PSD for M_veil; returns their paths."""
+        psds = []
+        requests = []
+        for channel in ("BaseColor", "Opacity"):
+            psd = self.root / f"Tex_Hero_M_veil_{channel}.psd"
+            psd.write_bytes(b"psd")
+            request = self.root / f"{channel}.json"
+            request.write_text(json.dumps({
+                "project": {"uuid": "project-1", "path": "hero.spp"}, "texture_set": "M_veil", "stack": "",
+                "channel": channel, "psd_file": str(psd),
+            }), encoding="utf-8")
+            requests.append({"path": str(request)})
+            psds.append(str(psd))
+        self.export_list.write_text(json.dumps({"build_requests": requests}), encoding="utf-8")
+        values = {}
+        self.panel._document_store = lambda: SimpleNamespace(
+            value=lambda key, default, _type: values.get(key, default),
+            setValue=values.__setitem__, sync=lambda: None,
+        )
+        return psds, values
+
+    def finish_build(self, built):
+        launch = self.panel._build_job.launch
+        # Photoshop deletes the requests with the working folder before it reports.
+        for request in self.root.glob("*.json"):
+            request.unlink()
+        launch.progress_path.write_text('{"phase":"building"}', encoding="utf-8")
+        launch.result_path.write_text(json.dumps({"built": built, "errors": []}), encoding="utf-8")
+        self.panel._build_job.poll()
+
+    def test_built_psds_become_the_documents_bridge_opens_for_their_texture_set(self):
+        (base, opacity), values = self.export_two_channels()
+        self.start()
+        self.finish_build([base, opacity])
+
+        memory = DocumentMemory(values[SETTINGS_KEY])
+        self.assertEqual(memory.resolve("project-1", "M_veil", "", "BaseColor"), base)
+        self.assertEqual(memory.resolve("project-1", "M_veil", "", "Opacity"), opacity)
+        # The first PSD of the texture set also serves the channels that have none.
+        self.assertEqual(memory.resolve("project-1", "M_veil", "", "Roughness"), base)
+
+    def test_a_psd_photoshop_did_not_save_is_not_linked(self):
+        (base, opacity), values = self.export_two_channels()
+        self.start()
+        self.finish_build([opacity])
+
+        memory = DocumentMemory(values[SETTINGS_KEY])
+        self.assertEqual(memory.resolve("project-1", "M_veil", "", "BaseColor"), opacity)
+        self.assertNotIn(Path(base).name, values[SETTINGS_KEY])
 
     def test_script_that_never_starts_is_reported_in_painter(self):
         self.start()

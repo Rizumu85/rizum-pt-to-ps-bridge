@@ -630,7 +630,10 @@ could open a connected PSD on the channel it was exported from. It no longer
 does: PSDs now sit in the user's export path, where a companion file per PSD
 is clutter, and the user's own workflow already moved PSDs without them. A
 connected PSD belongs to the Painter target shown when it is connected, which
-Painter remembers per project (`photoshop_documents.py`).
+Painter remembers per project (`photoshop_documents.py`). A PSD that Export
+builds is remembered the same way for the texture set and channel it was
+exported from, once Photoshop reports it saved, so Bridge opens it there
+without a manual connect.
 
 ### 7.3 Build request preview
 

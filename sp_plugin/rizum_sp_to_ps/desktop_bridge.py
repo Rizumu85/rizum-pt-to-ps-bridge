@@ -13,7 +13,7 @@ from pathlib import Path
 from . import desktop_transfer, exporter, localization
 from .localization import text
 from .mapper_process import mapper_process_class
-from .photoshop_documents import SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY, DocumentMemory
+from .photoshop_documents import SETTINGS_KEY as PHOTOSHOP_DOCUMENTS_KEY, DocumentMemory, project_key
 from .photoshop_job import PhotoshopJob
 from .ui_dialogs import CompactProgressDialog
 
@@ -186,8 +186,7 @@ class DesktopBridgeController:
     def _write_document_map(self):
         """Tell the mapper which PSD each Painter context in its snapshot uses."""
         snapshot = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
-        project = snapshot.get("project") or {}
-        self._project_key = project.get("uuid") or project.get("path") or "unsaved"
+        self._project_key = project_key(snapshot.get("project"))
         memory = self._document_memory()
         documents = []
         for context in snapshot.get("contexts") or []:

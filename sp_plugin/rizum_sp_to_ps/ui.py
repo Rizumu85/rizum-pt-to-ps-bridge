@@ -13,7 +13,7 @@ from .exporter import (
     session_dir,
     write_build_bundles,
 )
-from . import painter_look
+from . import painter_look, photoshop_documents
 from .edge_smoothing import DEFAULT_STRENGTH
 from .localization import text
 from .photoshop_automation import find_photoshop_executable, write_photoshop_launcher
@@ -586,6 +586,8 @@ class BridgePanel:
         """Launch the PSD build and watch it until Photoshop reports back."""
         # Outside the working folder, which the build removes when it succeeds.
         receipts = session_dir() / "photoshop_build"
+        # Read now, for the same reason: the requests are gone by then.
+        exported = photoshop_documents.exported_documents(export_list)
         launch = write_photoshop_launcher(export_list, receipts)
         launched, message = self.launch_photoshop(launch.launcher_path)
         if not launched:
@@ -599,16 +601,39 @@ class BridgePanel:
             self.widget,
             launch,
             on_progress=lambda _progress: None,
-            on_done=lambda _result: self._photoshop_build_finished(launch),
+            on_done=lambda result: self._photoshop_build_finished(launch, exported, result),
             on_failed=self._photoshop_build_failed,
         )
         self._build_job.start()
         return True, ""
 
-    def _photoshop_build_finished(self, launch):
+    def _photoshop_build_finished(self, launch, exported=(), result=None):
         self._build_job = None
         for receipt in (launch.progress_path, launch.result_path):
             receipt.unlink(missing_ok=True)
+        self._link_built_psds(exported, result)
+
+    def _link_built_psds(self, exported, result):
+        # The user asked that a PSD Export builds be the one Bridge opens for
+        # its texture set, without connecting it by hand first. Only PSDs
+        # Photoshop reports as saved are linked. DocumentMemory keeps its
+        # rule: the first PSD of a texture set serves all its channels, and a
+        # different one exported for a channel belongs to that channel alone.
+        built = set((result or {}).get("built") or []) if isinstance(result, dict) else set()
+        linked = [entry for entry in exported if entry[-1] in built]
+        if not linked:
+            return
+        store = self._document_store()
+        memory = photoshop_documents.DocumentMemory(
+            store.value(photoshop_documents.SETTINGS_KEY, "", str) or ""
+        )
+        for entry in linked:
+            memory.remember(*entry)
+        store.setValue(photoshop_documents.SETTINGS_KEY, memory.dumps())
+        store.sync()
+
+    def _document_store(self):
+        return self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
 
     def _photoshop_build_failed(self, message):
         self._build_job = None

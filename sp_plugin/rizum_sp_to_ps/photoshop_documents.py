@@ -9,6 +9,34 @@ from pathlib import Path
 SETTINGS_KEY = "photoshop_documents"
 
 
+def project_key(project):
+    """Identify a Painter project from its snapshot or build-request record."""
+    project = project or {}
+    return project.get("uuid") or project.get("path") or "unsaved"
+
+
+def exported_documents(export_list_path):
+    """List (project, texture set, stack, channel, PSD) for every request of an export."""
+    try:
+        listed = json.loads(Path(export_list_path).read_text(encoding="utf-8")).get("build_requests") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    documents = []
+    for entry in listed:
+        try:
+            request = json.loads(Path(entry["path"]).read_text(encoding="utf-8"))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        documents.append((
+            project_key(request.get("project")),
+            request.get("texture_set"),
+            request.get("stack") or "",
+            request.get("channel"),
+            request.get("psd_file"),
+        ))
+    return documents
+
+
 def _texture_set_key(texture_set, stack):
     return f"{texture_set}/{stack}" if stack else str(texture_set)
 
