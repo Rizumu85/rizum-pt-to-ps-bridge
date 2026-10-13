@@ -251,6 +251,41 @@ def show_modal_message(QtWidgets, parent, title, message):
     return build_modal_message(QtWidgets, parent, title, message).exec()
 
 
+def build_modal_question(QtWidgets, parent, title, message, confirm_text):
+    """A message with Cancel and one confirming action; accepted means confirmed."""
+    shell = CompactDialogShell(
+        QtWidgets,
+        parent,
+        title,
+        "RizumFeedbackDialog",
+        width=320,
+        body_spacing=0,
+    )
+    message_label = QtWidgets.QLabel(message)
+    message_label.setObjectName("RizumSettingsItemMeta")
+    message_label.setWordWrap(True)
+    shell.body_layout.addWidget(message_label)
+
+    shell.footer_layout.addStretch(1)
+    cancel_button = shell.add_action(text("cancel"), minimum=68, maximum=104)
+    cancel_button.clicked.connect(shell.dialog.reject)
+    shell.footer_layout.addWidget(cancel_button)
+    confirm_button = shell.add_action(confirm_text, primary=True, minimum=68, maximum=128)
+    confirm_button.clicked.connect(shell.dialog.accept)
+    shell.footer_layout.addWidget(confirm_button)
+
+    dialog = shell.finalize()
+    dialog._rizum_message_label = message_label
+    dialog._rizum_confirm_button = confirm_button
+    dialog._rizum_cancel_button = cancel_button
+    return dialog
+
+
+def ask_modal_question(QtWidgets, parent, title, message, confirm_text):
+    dialog = build_modal_question(QtWidgets, parent, title, message, confirm_text)
+    return dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted
+
+
 class CompactProgressDialog:
     """The mapper's Apply card as a Painter dialog, for Export and Photoshop jobs.
 

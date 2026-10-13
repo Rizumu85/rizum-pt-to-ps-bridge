@@ -9,6 +9,8 @@ from pathlib import Path
 from .exporter import (
     ExportCancelled,
     default_output_dir,
+    export_root,
+    session_dir,
     write_build_bundles,
 )
 from . import painter_look
@@ -478,6 +480,9 @@ class BridgePanel:
 
         base_settings = self._base_export_settings(overrides)
         output_dir = default_output_dir(base_settings)
+        # The PSDs are the deliverable and go where Painter exports textures;
+        # everything else stays in the working folder beside them.
+        base_settings.setdefault("psd_dir", str(export_root()))
         all_paths = []
         texture_sets = []
         stacks = []
@@ -542,6 +547,9 @@ class BridgePanel:
             "output_dir": output_dir,
             "export_list": export_list,
             "paths": list(all_paths),
+            "psd_files": [
+                json.loads(Path(path).read_text(encoding="utf-8"))["psd_file"] for path in all_paths
+            ],
         }
 
     def photoshop_executable(self):
@@ -574,9 +582,10 @@ class BridgePanel:
             )
         return True, ""
 
-    def start_photoshop_build(self, export_list, output_dir):
+    def start_photoshop_build(self, export_list):
         """Launch the PSD build and watch it until Photoshop reports back."""
-        receipts = Path(output_dir) / "_desktop_bridge" / "photoshop_build"
+        # Outside the working folder, which the build removes when it succeeds.
+        receipts = session_dir() / "photoshop_build"
         launch = write_photoshop_launcher(export_list, receipts)
         launched, message = self.launch_photoshop(launch.launcher_path)
         if not launched:

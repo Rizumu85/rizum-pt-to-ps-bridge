@@ -109,9 +109,7 @@ class DesktopBridgeController:
     def _launch_desktop(self):
         try:
             executable = _desktop_executable()
-            session_dir = exporter.default_output_dir(
-                self.panel.user_settings
-            ) / "_desktop_bridge"
+            session_dir = exporter.session_dir()
             session_dir.mkdir(parents=True, exist_ok=True)
             self._trace_path = session_dir / "desktop_session.log"
             self._trace("preparing_snapshot", reset=True)

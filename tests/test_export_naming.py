@@ -86,6 +86,18 @@ class ExportNamingTests(unittest.TestCase):
 
         self.assertIsInstance(preset, Preset)
 
+    def test_psd_goes_to_the_named_folder_and_otherwise_beside_its_bundle(self):
+        from sp_plugin.rizum_sp_to_ps.exporter import _psd_path
+
+        request = {**_request(), "output_naming": {"stem": "Tex_Hero_M_body"}}
+        bundle = Path("work") / "Hero_photoshop_export" / "0001_Tex_Hero_M_body"
+
+        self.assertEqual(
+            _psd_path(request, bundle, {"psd_dir": str(Path("textures"))}),
+            Path("textures") / "Tex_Hero_M_body.psd",
+        )
+        self.assertEqual(_psd_path(request, bundle, {}), bundle.parent / "Tex_Hero_M_body.psd")
+
     def test_prefers_a_single_channel_map_over_a_packed_map(self):
         maps = [
             {

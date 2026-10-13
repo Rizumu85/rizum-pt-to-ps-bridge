@@ -109,10 +109,11 @@ machine. Most UI text should use 13px/600, Painter dock action labels should
 use 10px/500, secondary metadata should use 11px/400, and the mockup may expose
 a small live font-size control while the final type scale is being tuned.
 
-Painter writes build bundles to `<exportPath>/<project>_photoshop_export/`,
-resolving Painter's project export path through the JS
-`alg.mapexport.exportPath()` fallback, plus `_last_export.json` listing the
-exact requests of that run. The plugin is an automation bridge, so every
+Painter writes build bundles to the working folder
+`<exportPath>/<project>_photoshop_export/`, resolving Painter's project export
+path through the JS `alg.mapexport.exportPath()` fallback, plus
+`_last_export.json` listing the exact requests of that run. The PSDs
+themselves are saved straight into `<exportPath>` (see section 3). The plugin is an automation bridge, so every
 successful export continues straight into Photoshop: Painter writes a JSX
 launcher for the export list and starts the configured Photoshop executable
 with it. There is no auto-open setting and no manual handoff dialog. An invalid
@@ -287,8 +288,16 @@ The plugin uses SP's **project-level** export path, fetched fresh at the
 moment of each export via `alg.mapexport.exportPath()` (JS bridge, see
 `analysis.md §2.1`). This path tracks whatever the user has configured in
 Painter's Export Textures dialog and updates dynamically if they change it.
-PSDs are written to `<exportPath>/<project>_photoshop_export/` (matching the
-v1.1.8 layout).
+PSDs are written straight into `<exportPath>`, beside the textures Painter
+exports there: the PSD is the deliverable, and the user asked that an export
+leave nothing else behind. The bundles Photoshop builds from go to the working
+folder `<exportPath>/<project>_photoshop_export/`. A fully successful build
+with "Clean up layer PNGs" on deletes what the export wrote there and then the
+folder itself if it is empty; files the user keeps in it are never deleted.
+Because the export path also holds the PSDs the user works in, Painter asks
+before a build replaces a PSD of the same name. Bridge sessions and build
+receipts live in the system temp folder (`rizum-pt-bridge/<project>/`), not in
+the export path.
 
 The Python-side `sp.export.get_default_export_path()` returns the
 **application** default, not the project-specific path — not suitable here.
@@ -612,25 +621,16 @@ The return path deliberately does not:
 ### 7.1 Photoshop layer names
 
 Plugin-created Photoshop layers and groups use clean user-facing names, without
-visible ` [rz:<uid>]` suffixes. Provenance lives in the build request and the
-PSD sidecar instead.
+visible ` [rz:<uid>]` suffixes. Provenance lives in the build request instead.
 
-### 7.2 Sidecar JSON
+### 7.2 No sidecar file
 
-The Photoshop build writes `<psdname>.rizum.json` next to each saved PSD. It
-carries only what the desktop mapper reads to open a connected PSD on its
-source Painter context:
-
-```json
-{
-  "schema_version": 1,
-  "psd_file": "C:/.../Body_basecolor.psd",
-  "texture_set": "Body",
-  "stack": "",
-  "channel": "BaseColor",
-  "channel_label": "Base Color"
-}
-```
+The build used to write `<psdname>.rizum.json` next to each PSD so the mapper
+could open a connected PSD on the channel it was exported from. It no longer
+does: PSDs now sit in the user's export path, where a companion file per PSD
+is clutter, and the user's own workflow already moved PSDs without them. A
+connected PSD belongs to the Painter target shown when it is connected, which
+Painter remembers per project (`photoshop_documents.py`).
 
 ### 7.3 Build request preview
 

@@ -43,7 +43,7 @@ class PhotoshopBuildJobTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_build_receipts_stay_out_of_the_export_folder(self):
-        launch = write_photoshop_launcher(self.export_list, self.root / "_desktop_bridge" / "photoshop_build")
+        launch = write_photoshop_launcher(self.export_list, self.root / "session" / "photoshop_build")
         script = launch.launcher_path.read_text(encoding="utf-8")
 
         self.assertEqual(launch.result_path.parent.name, "photoshop_build")
@@ -58,7 +58,9 @@ class PhotoshopBuildJobTests(unittest.TestCase):
 
     def start(self, launched=(True, "")):
         self.panel.launch_photoshop = mock.Mock(return_value=launched)
-        return self.panel.start_photoshop_build(self.export_list, self.root)
+        # The receipts live in the session folder, not beside the export.
+        with mock.patch.object(ui, "session_dir", return_value=self.root / "session"):
+            return self.panel.start_photoshop_build(self.export_list)
 
     def test_successful_build_is_quiet_and_cleans_its_receipts(self):
         self.assertEqual(self.start(), (True, ""))

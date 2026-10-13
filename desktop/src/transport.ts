@@ -56,7 +56,6 @@ export type BridgeSession = {
   initialPainterContextId: string
   status: string
   sourceDocument: JsonObject
-  sourceContext: JsonObject
   targetDocument: JsonObject
 }
 
@@ -116,16 +115,12 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
     context.textureSet === textValue(active.texture_set) && context.stack === textValue(active.stack))
   const working = activeContexts.length ? activeContexts : contexts
   // Painter's current working stack comes first. Opening without a named
-  // document takes that target's remembered PSD; a named one (just connected
-  // or reloaded) also picks the channel its PSD was exported from.
+  // document takes that target's remembered PSD.
   const documentPath = options.photoshopDocument === undefined
     ? working[0]?.photoshopDocument ?? null
     : options.photoshopDocument
   const photoshop = documentPath ? await readPhotoshopDocument(documentPath) : null
-  const sourceContext = photoshop ? await photoshopSidecar(photoshop.path) : {}
-  const initialContext = options.photoshopDocument
-    ? matchingPainterContext(working, sourceContext) ?? working[0]
-    : working[0]
+  const initialContext = working[0]
   if (!initialContext) throw new Error("Painter snapshot has no addressable contexts")
 
   const outputPath = path.resolve(
@@ -149,7 +144,6 @@ export async function loadBridgeSession(options: SessionOptions): Promise<Bridge
       : t("Connect Photoshop to start mapping layers"),
     // Painter renders transfers for this size instead of its own.
     sourceDocument: photoshop ? { name: photoshop.name, path: photoshop.path, width: photoshop.width, height: photoshop.height } : {},
-    sourceContext,
     targetDocument: objectValue(target.project),
   }
 }
@@ -167,7 +161,6 @@ export function failedBridgeSession(error: unknown): BridgeSession {
     initialPainterContextId: "",
     status: message,
     sourceDocument: {},
-    sourceContext: {},
     targetDocument: {},
   }
 }
@@ -442,7 +435,6 @@ export async function writeTransferManifest(
     created_at: new Date().toISOString(),
     photoshop: {
       document: session.sourceDocument,
-      context: session.sourceContext,
     },
     painter: {
       snapshot: session.targetSnapshotPath,
@@ -629,32 +621,6 @@ function manifestRef(ref: HostLayerRef) {
 
 export function normalizedBlendMode(mode: string): string {
   return mode.toLowerCase().replace(/[^a-z0-9]/g, "")
-}
-
-async function photoshopSidecar(psdPath: string): Promise<JsonObject> {
-  // Written by the Photoshop build next to each PSD it saves.
-  const sidecarPath = psdPath.replace(/\.[^.\\/]*$/, "") + ".rizum.json"
-  if (!existsSync(sidecarPath)) return {}
-  const candidate = await readJsonObject(sidecarPath)
-  return textValue(candidate.texture_set) && textValue(candidate.channel) ? candidate : {}
-}
-
-function matchingPainterContext(
-  contexts: PainterContext[],
-  sourceContext: JsonObject,
-): PainterContext | null {
-  const textureSet = textValue(sourceContext.texture_set)
-  const stack = textValue(sourceContext.stack)
-  const channel = textValue(sourceContext.channel)
-  if (!textureSet || !channel) return null
-  return (
-    contexts.find(
-      (context) =>
-        context.textureSet === textureSet &&
-        context.stack === stack &&
-        context.channel === channel,
-    ) ?? null
-  )
 }
 
 function assetPath(value: unknown): string | null {

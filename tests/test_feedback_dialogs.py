@@ -122,6 +122,16 @@ class FeedbackDialogTests(unittest.TestCase):
         progress.close()
 
 
+    def test_question_dialog_confirms_only_on_its_named_action(self):
+        dialog = ui_dialogs.build_modal_question(
+            QtWidgets, self.panel.widget, "Replace existing PSDs?", "Tex_Hero_M_body.psd", "Replace",
+        )
+        self.assertEqual(dialog._rizum_confirm_button.text(), "Replace")
+        dialog._rizum_cancel_button.click()
+        self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Rejected)
+        dialog._rizum_confirm_button.click()
+        self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Accepted)
+
     def test_long_message_is_not_clipped(self):
         message = (
             "Imported 3 Photoshop layer(s) into Painter.\n\n"

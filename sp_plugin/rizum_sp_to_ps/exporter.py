@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,15 +136,37 @@ def write_json_atomic(path, payload):
 
 
 def default_output_dir(settings=None):
-    """Return the default folder for Painter-to-Photoshop build bundles."""
+    """Return the working folder an export renders its build bundles into.
+
+    The user asked that an export leave only its PSDs behind, in Painter's
+    own export path (see export_root), so this folder holds what Photoshop
+    builds them from and is removed once the build succeeds.
+    """
     settings = settings or {}
     if settings.get("output_dir"):
         return Path(settings["output_dir"])
+    return export_root() / f"{_project_name()}_photoshop_export"
 
-    modules = _load_painter_modules()
-    project = modules["project"]
-    project_name = _safe_filename(_call_or_attr(project, "name") or "project")
 
+def session_dir():
+    """Return the folder for Bridge sessions and Photoshop build receipts.
+
+    These outlive an export's working folder and are no one's deliverable.
+    They sat inside that folder, which kept it from ever being removed and
+    put a mapper's logs and renders into the user's (often cloud-synced)
+    texture folder.
+    """
+    return Path(tempfile.gettempdir()) / "rizum-pt-bridge" / _project_name()
+
+
+def _project_name():
+    project = _load_painter_modules()["project"]
+    return _safe_filename(_call_or_attr(project, "name") or "project")
+
+
+def export_root():
+    """Return Painter's export path for this project, where its PSDs are saved."""
+    project = _load_painter_modules()["project"]
     export_root = None
     try:
         export_root_text = bridge.export_project_path()
@@ -156,7 +179,7 @@ def default_output_dir(settings=None):
         project_path = _call_or_attr(project, "file_path")
         export_root = Path(project_path).parent if project_path else Path.cwd()
 
-    return export_root / f"{project_name}_photoshop_export"
+    return export_root
 
 
 def write_request_previews(output_dir, settings=None):
@@ -1452,10 +1475,13 @@ def _bundle_name(request, index):
 def _psd_path(request, bundle_path, settings):
     if settings.get("psd_file"):
         return Path(settings["psd_file"])
+    # An export names Painter's export path here; without one the PSD stays
+    # beside its bundle.
+    folder = Path(settings["psd_dir"]) if settings.get("psd_dir") else bundle_path.parent
     output_stem = (request.get("output_naming") or {}).get("stem")
     if output_stem:
-        return bundle_path.parent / f"{output_stem}.psd"
-    return bundle_path.parent / f"{_bundle_name(request, 0)[5:]}.psd"
+        return folder / f"{output_stem}.psd"
+    return folder / f"{_bundle_name(request, 0)[5:]}.psd"
 
 
 def _name_parts(request, index):

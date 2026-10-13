@@ -66,7 +66,6 @@
                     pending.request.psd_file,
                     pending.request.color_management
                 );
-                writeSidecar(pending.request);
                 result.built.push(pending.request.psd_file);
                 progress.finishSave(
                     saveIndex,
@@ -96,8 +95,9 @@
         var cleanup = !exportList || !exportList.settings
             || exportList.settings.cleanup_layer_pngs !== false;
         if (result.errors.length === 0 && cleanup) {
-            // PSDs live beside the temporary bundle folders, so a fully
-            // successful build can leave the user's export directory PSD-only.
+            // The PSDs are saved into Painter's export path, outside this
+            // working folder, so a fully successful build removes the folder
+            // and leaves the user's export directory with the PSDs only.
             // Users who keep the layer PNGs turn "Clean up layer PNGs" off.
             cleanupSuccessfulExport(exportListPath, requestPaths);
         }
@@ -618,29 +618,6 @@ __RIZUM_MASK_RUNTIME__
         document.saveAs(File(path), options, false, Extension.LOWERCASE);
     }
 
-    function writeSidecar(request) {
-        // The desktop mapper reads this to open a connected PSD on the Painter
-        // texture set, stack and channel it was built from.
-        // ExtendScript ends a regex at an unescaped "/" even inside a class
-        // after "\\", which failed the whole script to parse; keep it escaped.
-        var file = File(String(request.psd_file).replace(/\.[^.\\\/]*$/, "") + ".rizum.json");
-        if (!file.open("w")) {
-            throw new Error("Could not write " + file.fsName);
-        }
-        file.encoding = "UTF8";
-        file.write(
-            "{\n" +
-            "  \"schema_version\": 1,\n" +
-            "  \"psd_file\": " + jsonQuote(request.psd_file) + ",\n" +
-            "  \"texture_set\": " + jsonQuote(request.texture_set || "") + ",\n" +
-            "  \"stack\": " + jsonQuote(request.stack || "") + ",\n" +
-            "  \"channel\": " + jsonQuote(request.channel || "") + ",\n" +
-            "  \"channel_label\": " + jsonQuote(request.channel_label || request.channel || "") + "\n" +
-            "}\n"
-        );
-        file.close();
-    }
-
     function resolvePsdBitDepth(request) {
         var value = Number(
             request && request.export_settings && request.export_settings.bit_depth
@@ -809,9 +786,14 @@ __RIZUM_MASK_RUNTIME__
             removedFolders[bundleKey] = true;
         }
         removeFileIfPresent(File(exportListPath));
+        removeFileIfPresent(File(outputFolder.fsName + "/painter_snapshot.json"));
         if ($.fileName) {
             removeFileIfPresent(File($.fileName));
         }
+        // Only what this export wrote is deleted. remove() takes an empty
+        // folder alone, so anything else the user has here, such as PSDs an
+        // earlier version saved inside, keeps the folder and stays untouched.
+        outputFolder.remove();
     }
 
     function removeFolderTree(folder) {

@@ -1,7 +1,6 @@
-"""Metadata constants and sidecar helpers shared by Painter code."""
+"""Metadata constants shared by Painter code."""
 
 UID_SUFFIX_PREFIX = "\u2021"
-SIDECAR_EXTENSION = ".rizum.json"
 
 
 def format_uid_suffix(uid_hex):

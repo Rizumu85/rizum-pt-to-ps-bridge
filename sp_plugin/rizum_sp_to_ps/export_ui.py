@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .exporter import list_export_targets
 from .export_selection_memory import (
     ExportSelectionMemory,
@@ -31,7 +33,7 @@ from .ui_kit import (
     make_mock_checkbox,
     update_export_tree_item,
 )
-from .ui_dialogs import show_modal_message
+from .ui_dialogs import ask_modal_question, show_modal_message
 from .settings_ui import RENDER_SCALE_OPTIONS, psd_size_options
 
 
@@ -1253,12 +1255,23 @@ QLabel#RizumSvgLabel:hover {{
             )
             return
 
+        # PSDs are saved straight into Painter's export path, where the user
+        # also keeps the PSDs they work in. Photoshop replaces a file of the
+        # same name without asking, so Painter asks first.
+        existing = [Path(path).name for path in result.get("psd_files", []) if Path(path).is_file()]
+        if existing and not ask_modal_question(
+            self.QtWidgets,
+            self.dialog,
+            text("export_replace_title"),
+            text("export_replace_message", files="\n".join(existing)),
+            text("export_replace_confirm"),
+        ):
+            return
+
         # The plugin is an automation bridge: every export continues straight
         # into the Photoshop build, so there is no manual handoff to choose.
         try:
-            launched, message = self.panel.start_photoshop_build(
-                result["export_list"], result["output_dir"]
-            )
+            launched, message = self.panel.start_photoshop_build(result["export_list"])
         except Exception as exc:  # noqa: BLE001 - surface launch preparation errors.
             launched, message = False, text("photoshop_script_failed", error=exc)
         if not launched:

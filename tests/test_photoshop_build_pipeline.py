@@ -122,22 +122,17 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertIn("removeFolderTree(bundle)", cleanup)
         self.assertIn("removeFileIfPresent(File(exportListPath))", cleanup)
         self.assertIn("removeFileIfPresent(File($.fileName))", cleanup)
+        # The working folder goes last and only if nothing else is in it:
+        # remove() refuses a folder that still holds a user's files.
+        own = cleanup[: cleanup.index("function removeFolderTree")]
+        self.assertTrue(own.rstrip().endswith("outputFolder.remove();\n    }"), own[-200:])
+        self.assertNotIn("removeFolderTree(outputFolder)", own)
 
 
-    def test_saved_psd_gets_the_context_sidecar_the_mapper_reads(self):
-        save_loop = self.source[
-            self.source.index("progress.beginSavePhase") :
-            self.source.index("result.timings.save_ms")
-        ]
-        writer = self.source[
-            self.source.index("function writeSidecar") :
-            self.source.index("function resolvePsdBitDepth")
-        ]
-
-        self.assertLess(save_loop.index("savePsd("), save_loop.index("writeSidecar("))
-        self.assertIn('".rizum.json"', writer)
-        for key in ("texture_set", "stack", "channel"):
-            self.assertIn(f'\\"{key}\\": " + jsonQuote(request.{key}', writer)
+    def test_a_psd_is_saved_alone_with_no_file_beside_it(self):
+        # The PSD goes into the user's texture folder; nothing else may land there.
+        self.assertNotIn(".rizum.json", self.source)
+        self.assertNotIn("writeSidecar", self.source)
 
     def test_scripts_avoid_regex_classes_extendscript_cannot_parse(self):
         # ExtendScript ends a regex literal at "/" after "\\" even inside a
