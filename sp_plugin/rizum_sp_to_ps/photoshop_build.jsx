@@ -92,13 +92,13 @@
         }
         app.displayDialogs = previousDialogs;
         app.preferences.rulerUnits = previousRulerUnits;
-        var cleanup = !exportList || !exportList.settings
-            || exportList.settings.cleanup_layer_pngs !== false;
-        if (result.errors.length === 0 && cleanup) {
+        if (result.errors.length === 0) {
             // The PSDs are saved into Painter's export path, outside this
             // working folder, so a fully successful build removes the folder
             // and leaves the user's export directory with the PSDs only.
-            // Users who keep the layer PNGs turn "Clean up layer PNGs" off.
+            // This used to be a setting; the user dropped it once the PSDs
+            // left the folder, as no one kept the PNGs. A failed build keeps
+            // everything for a retry or a look.
             cleanupSuccessfulExport(exportListPath, requestPaths);
         }
         writeResult(resultPath, exportListPath, result);

@@ -67,8 +67,6 @@
   "blend_keep_modes_hint": "色が Painter と異なる場合があります",
   "uv_map": "UV マップ",
   "uv_map_hint": "ワイヤーフレームを Photoshop の最上位レイヤーとして追加",
-  "cleanup_pngs": "レイヤー PNG を削除",
-  "cleanup_pngs_hint": "PSD 用に作成した PNG のみ削除します",
   "edge_smoothing": "エッジスムージング",
   "edge_smoothing_hint": "ジャギーを滑らかにします · {strength}",
   "edge_smoothing_off": "ジャギーを滑らかにします · オフ",

@@ -374,7 +374,7 @@ class DesktopBridgeController:
             ))
             return
         self._trace("photoshop_transfer_ready", str(count))
-        if payload.get("saved") is True and self.panel.user_settings.get("cleanup_layer_pngs", True):
+        if payload.get("saved") is True:
             # Photoshop saved the inserted layers into the PSD, so the PNGs
             # rendered for them are no longer needed. A failed or unsaved
             # insert keeps them for a retry or a look.

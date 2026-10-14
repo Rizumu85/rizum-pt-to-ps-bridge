@@ -421,8 +421,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.poll()
         self.assertIn("not been saved", self.controller._show_message_callback.call_args.args[-1])
 
-    def finish_saved_transfer(self, cleanup):
-        self.panel.user_settings = {"cleanup_layer_pngs": cleanup}
+    def finish_saved_transfer(self):
         launch = self.begin_transfer()
         assets = launch.request_path.parent / "assets"
         (assets / "001_Layer" / "png").mkdir(parents=True)
@@ -434,14 +433,11 @@ class DesktopConnectDialogTests(unittest.TestCase):
         return assets
 
     def test_saved_transfer_cleans_up_only_its_layer_pngs(self):
-        assets = self.finish_saved_transfer(cleanup=True)
+        assets = self.finish_saved_transfer()
         self.assertFalse(assets.exists())
         # The request and receipts beside them are not layer images.
         self.assertTrue((assets.parent / "photoshop_transfer.json").exists())
 
-    def test_saved_transfer_keeps_layer_pngs_when_cleanup_is_off(self):
-        assets = self.finish_saved_transfer(cleanup=False)
-        self.assertTrue((assets / "001_Layer" / "png" / "layer.png").exists())
 
 if __name__ == "__main__":
     unittest.main()

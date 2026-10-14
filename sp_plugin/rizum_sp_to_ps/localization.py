@@ -87,8 +87,6 @@ FALLBACK_TEXT = {
     "blend_keep_modes_hint": "Colors can drift from Painter",
     "uv_map": "UV map",
     "uv_map_hint": "Add wireframe as the top Photoshop layer",
-    "cleanup_pngs": "Clean up layer PNGs",
-    "cleanup_pngs_hint": "Deletes only the PNGs made for the PSD",
     "edge_smoothing": "Edge smoothing",
     "edge_smoothing_hint": "Softens jagged edges · {strength}",
     "edge_smoothing_off": "Softens jagged edges · Off",

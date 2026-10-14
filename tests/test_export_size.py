@@ -35,16 +35,15 @@ class ExportSizeTests(unittest.TestCase):
         self.assertEqual(result["output_resolution"], [2048, 2048])
         self.assertEqual(result["resolution"], [4096, 4096])
 
-    def test_exports_read_smoothing_cleanup_and_size_from_settings(self):
+    def test_exports_read_smoothing_and_size_from_settings(self):
         from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
         panel = BridgePanel.__new__(BridgePanel)
         panel.user_settings = {
-            "edge_smoothing": 40, "cleanup_layer_pngs": False, "psd_size": 2048, "render_scale": 2,
+            "edge_smoothing": 40, "psd_size": 2048, "render_scale": 2,
         }
         settings = panel._base_export_settings({"render_scale": 4})
         self.assertEqual(settings["edge_smoothing"], 40)
-        self.assertFalse(settings["cleanup_layer_pngs"])
         self.assertEqual(settings["psd_size"], 2048)
         # The Export dialog's choice wins for this export.
         self.assertEqual(settings["render_scale"], 4)

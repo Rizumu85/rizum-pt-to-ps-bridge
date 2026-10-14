@@ -67,8 +67,6 @@
   "blend_keep_modes_hint": "颜色可能与 Painter 有偏差",
   "uv_map": "UV 贴图",
   "uv_map_hint": "将线框添加为 Photoshop 的顶层图层",
-  "cleanup_pngs": "清理图层 PNG",
-  "cleanup_pngs_hint": "仅删除为 PSD 生成的 PNG",
   "edge_smoothing": "边缘平滑",
   "edge_smoothing_hint": "柔化锯齿边缘 · {strength}",
   "edge_smoothing_off": "柔化锯齿边缘 · 关闭",

@@ -630,23 +630,6 @@ class SettingsDialog:
         uv_map_layout.addWidget(self.export_uv_map)
         body_layout.addWidget(uv_map_row)
 
-        self.cleanup_layer_pngs = _make_settings_toggle(self.QtCore, self.QtGui, self.QtWidgets)
-        cleanup_row, cleanup_layout = _settings_frame_row(
-            self.QtWidgets,
-            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
-        )
-        self._settings_rows.append(cleanup_row)
-        # The user asked that this never read as deleting their own files:
-        # the subtitle names exactly what goes, the PNGs made for the PSD.
-        self.cleanup_texts = self._make_text_block(
-            text("cleanup_pngs"),
-            text("cleanup_pngs_hint"),
-        )
-        cleanup_layout.addWidget(self.cleanup_texts)
-        cleanup_layout.addStretch(1)
-        cleanup_layout.addWidget(self.cleanup_layer_pngs)
-        body_layout.addWidget(cleanup_row)
-
         # Edge smoothing has one setting on purpose: texture export should not
         # ask for a colour threshold, gamma or extra-smooth. Strength covers
         # off (0) to the full reconstruction (100).
@@ -766,8 +749,6 @@ class SettingsDialog:
 
         self._bind_toggle_row(padding_row, self.infinite_padding)
         self._bind_toggle_row(uv_map_row, self.export_uv_map)
-        self._bind_toggle_row(cleanup_row, self.cleanup_layer_pngs)
-        self.cleanup_layer_pngs.toggled.connect(self._save_live)
         self.infinite_padding.toggled.connect(self._sync_padding_mode)
         self.infinite_padding.toggled.connect(self._save_live)
         self.dilation_stepper.valueChanged.connect(self._save_live)
@@ -876,12 +857,6 @@ class SettingsDialog:
             + self.export_uv_map.width()
             + 2 * body_margin
         )
-        cleanup_need = (
-            self.cleanup_texts.sizeHint().width()
-            + PAINTER_SETTINGS_LAYOUT.row_spacing
-            + self.cleanup_layer_pngs.width()
-            + 2 * body_margin
-        )
         # Rows whose subtitle changes are sized for every text they can
         # show, so the dialog keeps one width while a setting changes.
         smoothing_need = (
@@ -922,7 +897,6 @@ class SettingsDialog:
             footer_need,
             bit_depth_need,
             uv_map_need,
-            cleanup_need,
             smoothing_need,
             padding_need,
             render_need,
@@ -972,7 +946,6 @@ class SettingsDialog:
 
         self.infinite_padding.setCompactHeight(metric(20))
         self.export_uv_map.setCompactHeight(metric(20))
-        self.cleanup_layer_pngs.setCompactHeight(metric(20))
         self.smoothing_slider.setFixedWidth(metric(132, 99))
         self.smoothing_slider.setFixedHeight(metric(20))
         self.smoothing_preview.setFixedHeight(metric(62, 46))
@@ -1184,7 +1157,6 @@ QPushButton[variant="icon"]:pressed {{
                 emit=False,
             )
             self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
-            self.cleanup_layer_pngs.setChecked(bool(settings.get("cleanup_layer_pngs", True)))
             strength = settings.get("edge_smoothing")
             self.smoothing_slider.setValue(
                 edge_smoothing.DEFAULT_STRENGTH if strength is None else int(strength)
@@ -1265,7 +1237,6 @@ QPushButton[variant="icon"]:pressed {{
             "render_scale": self.render_scale.currentData(),
             "blend_modes": self.blend_modes.currentData(),
             "edge_smoothing": self.smoothing_slider.value(),
-            "cleanup_layer_pngs": self.cleanup_layer_pngs.isChecked(),
         }
 
     def _save_live(self, *_args):

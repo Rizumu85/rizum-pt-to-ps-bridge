@@ -440,7 +440,6 @@ class BridgePanel:
             "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
             # On by default: a finished PSD holds the pixels, and 4K PNGs per
             # layer filled the export folder with copies nobody opens.
-            "cleanup_layer_pngs": to_bool(store.value("cleanup_layer_pngs", True)),
             "psd_size": optional_int(store.value("psd_size", None)),
             "render_scale": _render_scale(store.value("render_scale", 1)),
         }
@@ -452,7 +451,6 @@ class BridgePanel:
         store.setValue("dilation", int(values.get("dilation") or 8))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
-        store.setValue("cleanup_layer_pngs", bool(values.get("cleanup_layer_pngs", True)))
         if values.get("psd_size"):
             store.setValue("psd_size", int(values["psd_size"]))
         else:
@@ -650,7 +648,6 @@ class BridgePanel:
             # These were read from Settings only by Bridge transfers; exports
             # silently used their defaults.
             "edge_smoothing": self.user_settings.get("edge_smoothing"),
-            "cleanup_layer_pngs": self.user_settings.get("cleanup_layer_pngs", True),
             "psd_size": self.user_settings.get("psd_size"),
             "render_scale": self.user_settings.get("render_scale", 1),
             "blend_modes": self.user_settings.get("blend_modes", painter_look.DEFAULT_BLEND_MODES),
@@ -675,7 +672,6 @@ class BridgePanel:
                 "stacks": settings.get("stacks"),
                 "channels": settings.get("channels"),
                 "export_uv_map": bool(settings.get("export_uv_map")),
-                "cleanup_layer_pngs": bool(settings.get("cleanup_layer_pngs", True)),
             },
             "build_requests": [
                 {

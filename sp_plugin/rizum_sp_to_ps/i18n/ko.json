@@ -67,8 +67,6 @@
   "blend_keep_modes_hint": "색상이 Painter와 달라질 수 있음",
   "uv_map": "UV 맵",
   "uv_map_hint": "와이어프레임을 Photoshop 최상위 레이어로 추가",
-  "cleanup_pngs": "레이어 PNG 정리",
-  "cleanup_pngs_hint": "PSD용으로 만든 PNG만 삭제",
   "edge_smoothing": "가장자리 매끄럽게",
   "edge_smoothing_hint": "계단 현상 완화 · {strength}",
   "edge_smoothing_off": "계단 현상 완화 · 끔",

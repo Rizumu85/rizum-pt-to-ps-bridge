@@ -67,8 +67,6 @@
   "blend_keep_modes_hint": "I colori possono differire da Painter",
   "uv_map": "Mappa UV",
   "uv_map_hint": "Aggiunge il wireframe come livello superiore in Photoshop",
-  "cleanup_pngs": "Rimuovi i PNG dei livelli",
-  "cleanup_pngs_hint": "Elimina solo i PNG creati per il PSD",
   "edge_smoothing": "Arrotondamento dei bordi",
   "edge_smoothing_hint": "Attenua i bordi seghettati · {strength}",
   "edge_smoothing_off": "Attenua i bordi seghettati · Disattivato",

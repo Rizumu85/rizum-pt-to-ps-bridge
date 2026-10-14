@@ -67,8 +67,6 @@
   "blend_keep_modes_hint": "Farben können von Painter abweichen",
   "uv_map": "UV-Map",
   "uv_map_hint": "Fügt das Drahtgitter als oberste Photoshop-Ebene hinzu",
-  "cleanup_pngs": "Ebenen-PNGs bereinigen",
-  "cleanup_pngs_hint": "Löscht nur die für die PSD erstellten PNGs",
   "edge_smoothing": "Kantenglättung",
   "edge_smoothing_hint": "Glättet gezackte Kanten · {strength}",
   "edge_smoothing_off": "Glättet gezackte Kanten · Aus",

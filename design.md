@@ -292,8 +292,10 @@ PSDs are written straight into `<exportPath>`, beside the textures Painter
 exports there: the PSD is the deliverable, and the user asked that an export
 leave nothing else behind. The bundles Photoshop builds from go to the working
 folder `<exportPath>/<project>_photoshop_export/`. A fully successful build
-with "Clean up layer PNGs" on deletes what the export wrote there and then the
-folder itself if it is empty; files the user keeps in it are never deleted.
+deletes what the export wrote there and then the folder itself if it is empty;
+files the user keeps in it are never deleted. A failed build keeps everything.
+There is no setting to keep the layer PNGs: the user dropped it once the PSDs
+left the folder.
 Because the export path also holds the PSDs the user works in, Painter asks
 before a build replaces a PSD of the same name. Bridge sessions and build
 receipts live in the system temp folder (`rizum-pt-bridge/<project>/`), not in
