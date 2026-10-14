@@ -404,8 +404,11 @@ function DropLine({ testId, top }: { testId: string; top: number }) {
       position: "absolute", left: 0, right: 0, top, height: 6, pointerEvents: "none",
       display: "flex", flexDirection: "row", alignItems: "center",
     }}>
-      <div style={{ width: 6, height: 6, flexShrink: 0, borderRadius: 3, borderWidth: 1.5, borderColor: colors.drop }} />
-      <div style={{ flexGrow: 1, height: 2, backgroundColor: colors.drop }} />
+      {/* GPUiX does not pass pointerEvents down: these need their own. The
+          painted line took the pointer, so a release right on it never
+          reached the row and the drop fell back. */}
+      <div style={{ width: 6, height: 6, flexShrink: 0, borderRadius: 3, borderWidth: 1.5, borderColor: colors.drop, pointerEvents: "none" }} />
+      <div style={{ flexGrow: 1, height: 2, backgroundColor: colors.drop, pointerEvents: "none" }} />
     </div>
   )
 }
