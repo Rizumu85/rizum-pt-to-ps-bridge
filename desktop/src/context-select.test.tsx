@@ -5,7 +5,7 @@ import { createTestRoot } from "./test-root"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { BridgeApp } from "./bridge-app"
-import { setLanguage, t } from "./i18n"
+import { languages, setLanguage, t } from "./i18n"
 import type { BridgeState } from "./model"
 import { loadBridgeSession, type ApplyOutcome, type ApplyProgress } from "./transport"
 import { writeFeaturePsd } from "./test-psd"
@@ -42,15 +42,13 @@ async function measureToolbar(width: number) {
 describe("Painter context selectors", () => {
   afterEach(() => setLanguage("en"))
 
-  it("keeps Apply and the whole Render value inside the window in every language", async () => {
+  it.each(languages)("keeps Apply and the whole Render value inside the window in %s", async language => {
     const wholeScale = (await measureToolbar(1000)).render.value
-    for (const language of ["en", "ja", "de", "es"] as const) {
-      setLanguage(language)
-      for (const width of [560, 700]) {
-        const toolbar = await measureToolbar(width)
-        expect(toolbar.applyRight, `${language} ${width}`).toBeLessThanOrEqual(width - 15)
-        expect(toolbar.render.value, `${language} ${width}`).toBeCloseTo(wholeScale, 1)
-      }
+    setLanguage(language)
+    for (const width of [560, 700]) {
+      const toolbar = await measureToolbar(width)
+      expect(toolbar.applyRight, `${width}`).toBeLessThanOrEqual(width - 15)
+      expect(toolbar.render.value, `${width}`).toBeCloseTo(wholeScale, 1)
     }
   })
 

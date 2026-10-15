@@ -40,7 +40,7 @@ export const translations: Record<string, Row> = {
   // Toolbar and panels
   "Texture Set:": ["纹理集：", "テクスチャセット：", "텍스처 세트:", "Textursatz:", "Jeu de textures :", "Conjunto de texturas:", "Set texture:", "Conjunto de texturas:"],
   "Channel:": ["通道：", "チャンネル：", "채널:", "Kanal:", "Canal :", "Canal:", "Canale:", "Canal:"],
-  "Render:": ["渲染：", "レンダリング：", "렌더:", "Rendern:", "Rendu :", "Render:", "Render:", "Render:"],
+  "Render:": ["渲染：", "レンダリング：", "렌더링:", "Rendern:", "Rendu :", "Renderizado:", "Rendering:", "Renderização:"],
   "Reset mapping": ["重置映射", "マッピングをリセット", "매핑 재설정", "Zuordnung zurücksetzen", "Réinitialiser le mappage", "Restablecer asignación", "Reimposta mappatura", "Redefinir mapeamento"],
   "Undo": ["撤销", "取り消す", "실행 취소", "Rückgängig", "Annuler", "Deshacer", "Annulla", "Desfazer"],
   "Redo": ["重做", "やり直す", "다시 실행", "Wiederholen", "Rétablir", "Rehacer", "Ripeti", "Refazer"],
