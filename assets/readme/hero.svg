@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Rizum PT-to-PS Bridge</title>
+  <desc id="desc">Painter layer stacks become layered PSDs, and Photoshop layers come back as Painter layers. A Painter layer list and a Photoshop layer list are joined by mapping lines.</desc>
+
+  <defs>
+    <linearGradient id="link" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9BE942"/>
+      <stop offset="1" stop-color="#31A8FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" rx="24" fill="#1B1B1B"/>
+
+  <g id="title-block" transform="translate(64 0)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <g id="mark" transform="translate(0 70)">
+      <rect x="0" y="0" width="30" height="30" rx="8" fill="#9BE942"/>
+      <rect x="14" y="14" width="30" height="30" rx="8" fill="#31A8FF"/>
+      <path d="M22 14H30V22A8 8 0 0 1 22 30H14V22A8 8 0 0 1 22 14Z" fill="#F2F2F0"/>
+    </g>
+    <text x="62" y="98" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18" letter-spacing="1.5" fill="#9E9E9E">SUBSTANCE 3D PAINTER ⇄ PHOTOSHOP</text>
+    <text x="0" y="186" font-size="64" font-weight="700" fill="#F2F2F0">PT-to-PS Bridge</text>
+    <text x="0" y="242" font-size="25" fill="#C4C4C4">Painter layer stacks become layered PSDs.</text>
+    <text x="0" y="278" font-size="25" fill="#C4C4C4">Photoshop layers come back as Painter layers.</text>
+    <text x="0" y="352" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18" fill="#808080">Windows · Painter 12.1+ · 9 languages</text>
+  </g>
+
+  <g id="project-proof" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="20">
+    <g id="painter-card" transform="translate(640 60)">
+      <rect width="214" height="300" rx="10" fill="#222222"/>
+      <rect x="16" y="17" width="14" height="14" rx="4" fill="#9BE942"/>
+      <text x="40" y="31" font-weight="600" fill="#E0E0E0">Painter</text>
+      <g transform="translate(8 48)">
+        <rect width="198" height="40" rx="6" fill="#303030"/>
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#505050" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Edge wear</text>
+      </g>
+      <g transform="translate(8 96)">
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#6B4A36" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Rust</text>
+      </g>
+      <g transform="translate(8 144)">
+        <rect width="198" height="40" rx="6" fill="#303030"/>
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#5A5A50" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Dirt</text>
+      </g>
+      <g transform="translate(8 192)">
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#3F5F7A" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Paint</text>
+      </g>
+      <g transform="translate(8 240)">
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#8A8A8A" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Base metal</text>
+      </g>
+    </g>
+
+    <g id="photoshop-card" transform="translate(922 60)">
+      <rect width="214" height="300" rx="10" fill="#222222"/>
+      <rect x="16" y="17" width="14" height="14" rx="4" fill="#31A8FF"/>
+      <text x="40" y="31" font-weight="600" fill="#E0E0E0">Photoshop</text>
+      <g transform="translate(8 48)">
+        <path d="M12 14h7l3 3h10v13h-20z" fill="#9E9E9E"/>
+        <text x="42" y="27" fill="#E0E0E0">Paintover</text>
+      </g>
+      <g transform="translate(8 96)">
+        <rect width="198" height="40" rx="6" fill="#303030"/>
+        <rect x="26" y="8" width="24" height="24" rx="4" fill="#C9C9C9" stroke="#737373"/>
+        <text x="60" y="27" fill="#E0E0E0">Highlights</text>
+      </g>
+      <g transform="translate(8 144)">
+        <rect x="26" y="8" width="24" height="24" rx="4" fill="#4A4A4A" stroke="#737373"/>
+        <text x="60" y="27" fill="#E0E0E0">Scratches</text>
+      </g>
+      <g transform="translate(8 192)">
+        <rect width="198" height="40" rx="6" fill="#303030"/>
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#5A5A50" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Dirt</text>
+      </g>
+      <g transform="translate(8 240)">
+        <rect x="8" y="8" width="24" height="24" rx="4" fill="#8A8A8A" stroke="#737373"/>
+        <text x="42" y="27" fill="#E0E0E0">Base Color</text>
+      </g>
+    </g>
+
+    <g id="mappings" fill="none" stroke="url(#link)" stroke-width="3" stroke-linecap="round">
+      <path d="M846 128 C888 128 880 176 930 176"/>
+      <path d="M846 224 C888 224 880 272 930 272"/>
+      <circle cx="846" cy="128" r="5" fill="#9BE942" stroke="none"/>
+      <circle cx="930" cy="176" r="5" fill="#31A8FF" stroke="none"/>
+      <circle cx="846" cy="224" r="5" fill="#9BE942" stroke="none"/>
+      <circle cx="930" cy="272" r="5" fill="#31A8FF" stroke="none"/>
+    </g>
+  </g>
+</svg>
