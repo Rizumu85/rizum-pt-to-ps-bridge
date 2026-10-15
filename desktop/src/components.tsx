@@ -345,24 +345,26 @@ export function ContextSelect({
   label,
   value,
   options,
-  width,
-  minWidth,
+  shrink = true,
   busy = false,
   onValueChange,
 }: {
   label: string
   value: string
   options: ContextOption[]
-  width: number
-  /** Lets the select give way down to this width in a narrow window, its
-   *  value ending in an ellipsis, so the toolbar never pushes Apply out. */
-  minWidth?: number
+  /** Lets the select give way in a narrow window, its value ending in an
+   *  ellipsis, so the toolbar never pushes Apply out. Off for a value that
+   *  must always be read whole. */
+  shrink?: boolean
   busy?: boolean
   onValueChange: (value: string) => void
 }) {
+  const renderer = useGpuixRequired()
+  const trigger = useRef<PublicInstance>(null)
   const [open, setOpen] = useState(false)
   const disabled = busy || options.length < 2
   const selectedLabel = options.find((option) => option.value === value)?.label || value
+  const triggerWidth = (open && trigger.current && renderer.getElementBounds?.(trigger.current.id)?.width) || 0
 
   return (
     <Select
@@ -371,12 +373,16 @@ export function ContextSelect({
       onOpenChange={setOpen}
       onValueChange={onValueChange}
       disabled={disabled}
-      style={{ flexShrink: minWidth === undefined ? 0 : 1, width, minWidth: minWidth ?? width }}
+      // Sized by its own label and value, not by a width: fixed widths were
+      // set for the English labels and cut the longer translations, down to
+      // losing the value entirely.
+      style={{ flexShrink: shrink ? 1 : 0, minWidth: shrink ? 0 : undefined }}
     >
       <SelectTrigger
+        ref={trigger}
         testId={`context-select:${label}`}
         style={{
-          width: "100%",
+          minWidth: 0,
           height: 26,
           paddingLeft: 9,
           paddingRight: 9,
@@ -391,8 +397,17 @@ export function ContextSelect({
           hover: disabled ? undefined : { backgroundColor: colors.fieldHover },
         }}
       >
-        <SecondaryText>{label}</SecondaryText>
-        <div style={{ minWidth: 0, flexGrow: 1 }}>
+        <div style={{ minWidth: 0 }}>
+          <SecondaryText>{label}</SecondaryText>
+        </div>
+        {/* The lopsided weight empties the value before the label loses a
+            pixel, and the label gives way only after it rather than run into
+            the next select. The value keeps an em, its ellipsis: narrower,
+            the ellipsis paints over the chevron or, clipped, reads as a dot.
+            Known limit: the toolbar splits a squeeze between the selects by
+            their widths, so in the narrowest windows one label can be cut
+            while the other select still shows part of its value. */}
+        <div style={{ minWidth: typography.primarySize, flexGrow: 1, flexShrink: 1_000_000 }}>
           <PrimaryText>{selectedLabel}</PrimaryText>
         </div>
         <div style={{ width: 12, height: 12, flexShrink: 0, position: "relative" }}>
@@ -427,7 +442,9 @@ export function ContextSelect({
         sideOffset={4}
         align="start"
         collisionPadding={8}
-        style={{ width, backgroundColor: "transparent" }}
+        // At least the trigger's width, wider for a long option: the list is
+        // where a value cut short in the toolbar is read whole.
+        style={{ minWidth: triggerWidth, backgroundColor: "transparent" }}
       >
         {/* The floating layer blanks the area under it to the window colour
             for as long as it is mounted, so any transparent moment showed an

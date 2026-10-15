@@ -2,33 +2,66 @@ import path from "node:path"
 
 import { connectTest } from "@gpuix/react/automation"
 import { createTestRoot } from "./test-root"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { BridgeApp } from "./bridge-app"
+import { setLanguage, t } from "./i18n"
 import type { BridgeState } from "./model"
 import { loadBridgeSession, type ApplyOutcome, type ApplyProgress } from "./transport"
 import { writeFeaturePsd } from "./test-psd"
 
 const fixtureDir = path.resolve(import.meta.dirname, "../test-fixtures")
 
+// The fixture's texture set, channel and render scale, as the selects show them.
+const toolbarSelects = [["Texture Set:", "M_body"], ["Channel:", "Base Color"], ["Render:", "1×"]] as const
+
+async function measureToolbar(width: number) {
+  const session = await loadBridgeSession({
+    painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+    photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+  })
+  const root = createTestRoot({ width, height: 480 })
+  const app = await connectTest(root.renderer)
+  try {
+    root.render(<BridgeApp session={session} onConnectPhotoshop={async () => null}
+      onApply={async () => ({ session: null, message: "", failed: false })} />)
+    root.renderer.flush()
+    const [stack, channel, render] = await Promise.all(toolbarSelects.map(async ([label, value]) => {
+      const select = app.getByTestId(`context-select:${t(label)}`)
+      return {
+        select: (await select.bounds()).width,
+        label: (await select.getByText(t(label)).bounds()).width,
+        value: (await select.getByText(value).bounds()).width,
+      }
+    }))
+    const apply = await app.getByTestId("apply-mapping").bounds()
+    return { stack, channel, render, applyRight: apply.x + apply.width }
+  } finally { root.unmount(); await app.close() }
+}
+
 describe("Painter context selectors", () => {
-  it("keeps Apply inside a window at its minimum width by narrowing the selects", async () => {
-    const session = await loadBridgeSession({
-      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
-      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
-    })
-    const root = createTestRoot({ width: 560, height: 480 })
-    const app = await connectTest(root.renderer)
-    try {
-      root.render(<BridgeApp session={session} onConnectPhotoshop={async () => null}
-        onApply={async () => ({ session: null, message: "", failed: false })} />)
-      root.renderer.flush()
-      const apply = await app.getByTestId("apply-mapping").bounds()
-      const stack = await app.getByTestId("context-select:Texture Set:").bounds()
-      expect(apply.x + apply.width).toBeLessThanOrEqual(560 - 15)
-      expect(stack.width).toBeLessThan(176)
-      expect(stack.width).toBeGreaterThanOrEqual(104)
-    } finally { root.unmount(); await app.close() }
+  afterEach(() => setLanguage("en"))
+
+  it("keeps Apply and the whole Render value inside the window in every language", async () => {
+    const wholeScale = (await measureToolbar(1000)).render.value
+    for (const language of ["en", "ja", "de", "es"] as const) {
+      setLanguage(language)
+      for (const width of [560, 700]) {
+        const toolbar = await measureToolbar(width)
+        expect(toolbar.applyRight, `${language} ${width}`).toBeLessThanOrEqual(width - 15)
+        expect(toolbar.render.value, `${language} ${width}`).toBeCloseTo(wholeScale, 1)
+      }
+    }
+  })
+
+  it("fits a long translation's labels whole at the default width, cutting only the values", async () => {
+    setLanguage("ja")
+    const roomy = await measureToolbar(1000)
+    const fitted = await measureToolbar(700)
+    for (const select of ["stack", "channel"] as const) {
+      expect(fitted[select].value, select).toBeLessThan(roomy[select].value)
+      expect(fitted[select].label, select).toBeCloseTo(roomy[select].label, 1)
+    }
   })
 
   it("cancels while nothing is written, and holds Cancel once Painter is written", async () => {

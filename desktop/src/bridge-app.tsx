@@ -605,8 +605,6 @@ export function BridgeApp({
             label={t("Texture Set:")}
             value={activeStackId}
             options={painterStackOptions}
-            width={176}
-            minWidth={104}
             busy={busy}
             onValueChange={changePainterStack}
           />
@@ -614,8 +612,6 @@ export function BridgeApp({
             label={t("Channel:")}
             value={activePainterContextId}
             options={channelOptions}
-            width={152}
-            minWidth={96}
             busy={busy}
             onValueChange={(contextId) =>
               switchPainterContext(
@@ -628,7 +624,7 @@ export function BridgeApp({
             label={t("Render:")}
             value={String(appliedScale)}
             options={scaleOptions}
-            width={96}
+            shrink={false}
             busy={busy}
             onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
           />
