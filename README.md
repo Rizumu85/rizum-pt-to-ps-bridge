@@ -116,3 +116,9 @@ Run the Painter Python tests and the desktop checks with:
 ```text
 pwsh tools/run-checks.ps1
 ```
+
+## License
+
+[MIT](LICENSE). The fonts and libraries bundled with the Bridge window keep
+their own licenses, listed in `desktop/dist/THIRD-PARTY-NOTICES.txt` in the
+release zip.

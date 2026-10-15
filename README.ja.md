@@ -87,3 +87,7 @@ Painter の Python テストとデスクトップのチェックを実行する�
 ```text
 pwsh tools/run-checks.ps1
 ```
+
+## ライセンス
+
+[MIT](LICENSE)。Bridge ウィンドウに同梱しているフォントとライブラリはそれぞれのライセンスに従います。リリースの zip に含まれる `desktop/dist/THIRD-PARTY-NOTICES.txt` を参照してください。

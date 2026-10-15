@@ -87,3 +87,7 @@ Painter 用自己的纹理导出渲染每个图层和遮罩，Photoshop 再通�
 ```text
 pwsh tools/run-checks.ps1
 ```
+
+## 许可证
+
+[MIT](LICENSE)。Bridge 窗口附带的字体和库沿用各自的许可证，见发布包里的 `desktop/dist/THIRD-PARTY-NOTICES.txt`。
