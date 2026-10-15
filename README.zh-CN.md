@@ -8,6 +8,10 @@
 
 这是一个 Substance 3D Painter 插件，给最后要在 Photoshop 里收尾的贴图师用。**导出**把 Painter 的图层堆栈变成分层 PSD。**Bridge** 打开一个窗口，把两边的图层树并排放在一起，你可以在 Painter 和 Photoshop 之间挪动图层，一次应用。
 
+<p align="center">
+  <img src="./assets/readme/showcase.zh-CN.png" width="100%" alt="导出对话框勾选了一个纹理集的通道；Bridge 窗口里一个 Photoshop 图层和一个 Painter 图层已经映射到对面，等待应用">
+</p>
+
 ## 功能
 
 **导出**
@@ -18,7 +22,7 @@
 
 **Bridge**
 
-- 左边是当前纹理集的图层，右边是已连接 PSD 的图层。把图层拖到另一边，放在你想要的位置。
+- 左边是已连接 PSD 的图层，右边是当前纹理集的图层。把图层拖到另一边，放在你想要的位置。
 - Photoshop 的图层会作为图层进入 Painter，Painter 的图层会插入 Photoshop 里的 PSD。按下**应用**之前，两边都不会有任何改动。
 - 插件自己读取 PSD，所以连接文档时不会打开 Photoshop。
 - 每个纹理集会记住自己的 PSD，包括导出生成的那些；纹理集改名后也不会丢。

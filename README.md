@@ -11,6 +11,10 @@ Photoshop. **Export** turns Painter layer stacks into layered PSDs. **Bridge**
 opens a window with both layer trees side by side, so you can move layers
 between Painter and Photoshop and apply them in one go.
 
+<p align="center">
+  <img src="./assets/readme/showcase.png" width="100%" alt="The Export dialog with a texture set's channels ticked, and the Bridge window with a Photoshop layer and a Painter layer mapped across, both pending">
+</p>
+
 ## What it does
 
 **Export**
