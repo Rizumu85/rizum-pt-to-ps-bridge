@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">工作方式</title>
+  <desc id="desc">导出把 Painter 的纹理集变成每个通道、每个 UDIM 各一个分层 PSD。Bridge 打开映射窗口，两个方向都能映射图层，按应用后生效。</desc>
+
+  <defs>
+    <marker id="head-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#31A8FF"/>
+    </marker>
+    <marker id="head-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#9BE942"/>
+    </marker>
+    <linearGradient id="export-line" gradientUnits="userSpaceOnUse" x1="340" y1="0" x2="858" y2="0">
+      <stop offset="0" stop-color="#9BE942"/>
+      <stop offset="1" stop-color="#31A8FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="300" rx="24" fill="#1B1B1B"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif">
+    <g id="painter" transform="translate(64 50)">
+      <rect width="250" height="200" rx="12" fill="#222222"/>
+      <rect x="28" y="32" width="28" height="28" rx="7" fill="#9BE942"/>
+      <text x="28" y="104" font-size="30" font-weight="700" fill="#F2F2F0">Painter</text>
+      <text x="28" y="140" font-size="20" fill="#9E9E9E">纹理集、</text>
+      <text x="28" y="166" font-size="20" fill="#9E9E9E">图层和遮罩</text>
+    </g>
+
+    <g id="photoshop" transform="translate(886 50)">
+      <rect width="250" height="200" rx="12" fill="#222222"/>
+      <rect x="28" y="32" width="28" height="28" rx="7" fill="#31A8FF"/>
+      <text x="28" y="104" font-size="30" font-weight="700" fill="#F2F2F0">Photoshop</text>
+      <text x="28" y="140" font-size="20" fill="#9E9E9E">分层 PSD、</text>
+      <text x="28" y="166" font-size="20" fill="#9E9E9E">文件夹和遮罩</text>
+    </g>
+
+    <g id="export" text-anchor="middle">
+      <text x="600" y="78" font-size="26" font-weight="700" fill="#F2F2F0">导出</text>
+      <path d="M340 100H858" fill="none" stroke="url(#export-line)" stroke-width="3" marker-end="url(#head-blue)"/>
+      <text x="600" y="136" font-size="20" fill="#C4C4C4">每个通道、每个 UDIM 各一个分层 PSD</text>
+    </g>
+
+    <g id="bridge" text-anchor="middle">
+      <text x="600" y="196" font-size="26" font-weight="700" fill="#F2F2F0">Bridge</text>
+      <path d="M342 218H858" fill="none" stroke="#9E9E9E" stroke-width="3" marker-start="url(#head-green)" marker-end="url(#head-blue)"/>
+      <text x="600" y="254" font-size="20" fill="#C4C4C4">两边都能映射图层，按“应用”后生效</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">しくみ</title>
+  <desc id="desc">書き出しは Painter のテクスチャセットを、チャンネルと UDIM タイルごとにレイヤー付き PSD にします。Bridge はマッピングウィンドウを開き、双方向にレイヤーをマッピングして適用します。</desc>
+
+  <defs>
+    <marker id="head-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#31A8FF"/>
+    </marker>
+    <marker id="head-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#9BE942"/>
+    </marker>
+    <linearGradient id="export-line" gradientUnits="userSpaceOnUse" x1="340" y1="0" x2="858" y2="0">
+      <stop offset="0" stop-color="#9BE942"/>
+      <stop offset="1" stop-color="#31A8FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="300" rx="24" fill="#1B1B1B"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', sans-serif">
+    <g id="painter" transform="translate(64 50)">
+      <rect width="250" height="200" rx="12" fill="#222222"/>
+      <rect x="28" y="32" width="28" height="28" rx="7" fill="#9BE942"/>
+      <text x="28" y="104" font-size="30" font-weight="700" fill="#F2F2F0">Painter</text>
+      <text x="28" y="140" font-size="20" fill="#9E9E9E">テクスチャセット、</text>
+      <text x="28" y="166" font-size="20" fill="#9E9E9E">レイヤーとマスク</text>
+    </g>
+
+    <g id="photoshop" transform="translate(886 50)">
+      <rect width="250" height="200" rx="12" fill="#222222"/>
+      <rect x="28" y="32" width="28" height="28" rx="7" fill="#31A8FF"/>
+      <text x="28" y="104" font-size="30" font-weight="700" fill="#F2F2F0">Photoshop</text>
+      <text x="28" y="140" font-size="20" fill="#9E9E9E">レイヤー付き PSD、</text>
+      <text x="28" y="166" font-size="20" fill="#9E9E9E">フォルダーとマスク</text>
+    </g>
+
+    <g id="export" text-anchor="middle">
+      <text x="600" y="78" font-size="26" font-weight="700" fill="#F2F2F0">書き出し</text>
+      <path d="M340 100H858" fill="none" stroke="url(#export-line)" stroke-width="3" marker-end="url(#head-blue)"/>
+      <text x="600" y="136" font-size="20" fill="#C4C4C4">チャンネル・UDIM ごとにレイヤー付き PSD</text>
+    </g>
+
+    <g id="bridge" text-anchor="middle">
+      <text x="600" y="196" font-size="26" font-weight="700" fill="#F2F2F0">Bridge</text>
+      <path d="M342 218H858" fill="none" stroke="#9E9E9E" stroke-width="3" marker-start="url(#head-green)" marker-end="url(#head-blue)"/>
+      <text x="600" y="254" font-size="20" fill="#C4C4C4">双方向にマッピングして「適用」</text>
+    </g>
+  </g>
+</svg>
