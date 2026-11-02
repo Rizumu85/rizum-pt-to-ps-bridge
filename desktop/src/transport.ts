@@ -513,10 +513,9 @@ function painterContexts(snapshot: JsonObject, documents: Map<string, string>): 
       throw new Error(`Painter snapshot context ${index + 1} is missing texture_set or channel`)
     }
 
+    // An empty texture set or channel is a normal project state. Refusing it
+    // here stopped the whole window from opening, for every texture set.
     const nodes = requestNodes(arrayValue(record.layers), "", channel)
-    if (nodes.length === 0) {
-      throw new Error(`Painter snapshot context ${textureSet} / ${channelLabel} has no layers`)
-    }
     return {
       id: painterContextId(textureSet, stack, channel),
       textureSet,

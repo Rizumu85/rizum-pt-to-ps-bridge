@@ -713,6 +713,29 @@ export function BridgeApp({
             nodes={bridge.painter}
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
+            emptyContent={
+              // Read from the context, not the edited tree: removing the last
+              // layer in this session is a pending change, not an empty stack.
+              activePainterContext?.nodes.length === 0 ? (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    padding: 24,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <text style={{
+                    color: colors.secondary,
+                    fontFamily: typography.family,
+                    fontSize: typography.secondarySize,
+                    whiteSpace: "normal",
+                  }}>{t("No layers yet. Add one in Painter, then press Bridge.")}</text>
+                </div>
+              ) : undefined
+            }
             {...tree}
             selectedIds={selectedIds} mappedIds={mappedIds}
             pendingNotes={pendingNotes} replace={replace}

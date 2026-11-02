@@ -104,6 +104,17 @@ describe("desktop file transport", () => {
     expect(selected?.textureSet).toBe("M_clothes")
     expect(session.state.painter).toEqual(selected?.nodes)
   })
+  it("loads a project with an empty texture set and keeps its other texture sets", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-empty-"))
+    const snapshot = JSON.parse(await readFile(path.join(fixtureDir, "painter_snapshot.json"), "utf8"))
+    snapshot.contexts.find((context: { texture_set: string }) => context.texture_set === "M_clothes").layers = []
+    const snapshotPath = path.join(directory, "painter_snapshot.json")
+    await writeFile(snapshotPath, JSON.stringify(snapshot))
+    const session = await loadBridgeSession({ painterSnapshot: snapshotPath })
+    expect(session.painterContexts.map(context => context.nodes.length > 0)).toEqual([true, true, false])
+    expect(session.state.painter.length).toBeGreaterThan(0)
+  })
+
   it("loads every Painter snapshot context into the domain model", async () => {
     const session = await loadBridgeSession({
       photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),

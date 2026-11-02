@@ -39,6 +39,31 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
+  it("says what to do on an empty texture set, and keeps the panel on a removed last layer", async () => {
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtures, "photoshop_document.psd"),
+    })
+    const hint = "No layers yet. Add one in Painter, then press Bridge."
+    const render = async (nodes: typeof session.state.painter) => {
+      const context = session.painterContexts[0]
+      const root = createTestRoot({ width: 700, height: 560 })
+      const app = await connectTest(root.renderer)
+      root.render(<BridgeApp
+        session={{ ...session, painterContexts: [{ ...context, nodes }, ...session.painterContexts.slice(1)], state: { ...session.state, painter: [] } }}
+        onApply={async () => ({ session: null, message: "", failed: false })}
+        onConnectPhotoshop={async () => null}
+      />)
+      root.renderer.flush()
+      const count = await app.getByText(hint).count()
+      root.unmount()
+      await app.close()
+      return count
+    }
+    expect(await render([])).toBe(1)
+    expect(await render(session.painterContexts[0].nodes)).toBe(0)
+  })
+
   it.each([
     ["Paint edit", "Working"],
     ["Retouch group", "Working"],
