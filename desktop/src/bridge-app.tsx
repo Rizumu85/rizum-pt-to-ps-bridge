@@ -23,6 +23,7 @@ import {
   selectLayerIds,
   toggleReplace,
   visibleSourceIds,
+  PAINTER_STACK_TOP,
   type BridgeState,
   type HostId,
   type LayerNode,
@@ -258,6 +259,9 @@ export function BridgeApp({
     if (!belowRows && aimed && layerIndex.get(aimed)?.host === host) return
     const last = (host === "photoshop" ? bridge.photoshop : bridge.painter).at(-1)
     if (last) movePointer(event, last.id, undefined, "after")
+    else if (host === "substance_painter" && treePointer.get().draggingHost === "photoshop") {
+      treePointer.set({ dropTargetId: PAINTER_STACK_TOP, dropPlacement: "inside" })
+    }
   }
 
   const drop = (targetId: string) => {
@@ -284,7 +288,8 @@ export function BridgeApp({
   // got nothing on release; what is shown and what is done must agree.
   const releaseInPanel = (host: HostId) => {
     const aimed = treePointer.get()
-    if (aimed.draggingId && aimed.dropTargetId && layerIndex.get(aimed.dropTargetId)?.host === host) {
+    const aimedHost = aimed.dropTargetId === PAINTER_STACK_TOP ? "substance_painter" : aimed.dropTargetId && layerIndex.get(aimed.dropTargetId)?.host
+    if (aimed.draggingId && aimed.dropTargetId && aimedHost === host) {
       drop(aimed.dropTargetId)
     } else {
       endDrag()
@@ -717,9 +722,8 @@ export function BridgeApp({
             host="substance_painter"
             headerAction={<MappingHelpPopover />}
             emptyContent={
-              // Read from the context, not the edited tree: removing the last
-              // layer in this session is a pending change, not an empty stack.
-              activePainterContext?.nodes.length === 0 ? (
+              // Until a drop stages the first layer of an empty texture set.
+              activePainterContext?.nodes.length === 0 && bridge.painter.length === 0 ? (
                 <div
                   style={{
                     width: "100%",
@@ -735,7 +739,7 @@ export function BridgeApp({
                     fontFamily: typography.family,
                     fontSize: typography.secondarySize,
                     whiteSpace: "normal",
-                  }}>{t("No layers yet. Add one in Painter, then press Bridge.")}</text>
+                  }}>{t("No layers yet. Drag Photoshop layers here.")}</text>
                 </div>
               ) : undefined
             }

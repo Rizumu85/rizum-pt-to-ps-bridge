@@ -592,6 +592,12 @@ because drops that landed elsewhere read as bugs:
   unit: a drop above any part of it lands above its top layer, a drop below
   lands below its base. Inserted between them, the new layer would take over
   the clipped layers.
+- A Painter texture set with no layers has no row to drop beside, so its
+  panel takes Photoshop layers at the **top of its stack**. The manifest
+  target is `{"kind": "stack", "id": ""}` with insertion "inside", and Painter
+  inserts with `InsertPosition.from_textureset_stack`. Rows dropped beside the
+  first one share that anchor. An empty texture set used to stop the whole
+  window from opening; the user asked to drop into one directly.
 
 **Replace.** A layer repainted in the other app otherwise leaves its old
 version behind to delete by hand. A staged row dropped beside a layer or

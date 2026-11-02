@@ -39,29 +39,56 @@ function dropMarks(node: TreeNode | null): number {
 }
 
 describe("layer tree interaction", () => {
-  it("says what to do on an empty texture set, and keeps the panel on a removed last layer", async () => {
+  it("takes Photoshop layers dropped into an empty texture set, in their order", async () => {
     const session = await loadBridgeSession({
       painterSnapshot: path.join(fixtures, "painter_snapshot.json"),
       photoshopDocument: path.join(fixtures, "photoshop_document.psd"),
     })
-    const hint = "No layers yet. Add one in Painter, then press Bridge."
+    const hint = "No layers yet. Drag Photoshop layers here."
     const render = async (nodes: typeof session.state.painter) => {
-      const context = session.painterContexts[0]
       const root = createTestRoot({ width: 700, height: 560 })
       const app = await connectTest(root.renderer)
+      const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))
       root.render(<BridgeApp
-        session={{ ...session, painterContexts: [{ ...context, nodes }, ...session.painterContexts.slice(1)], state: { ...session.state, painter: [] } }}
-        onApply={async () => ({ session: null, message: "", failed: false })}
+        session={{ ...session, painterContexts: [{ ...session.painterContexts[0], nodes }, ...session.painterContexts.slice(1)], state: { ...session.state, painter: nodes } }}
+        onApply={apply}
         onConnectPhotoshop={async () => null}
       />)
       root.renderer.flush()
-      const count = await app.getByText(hint).count()
-      root.unmount()
-      await app.close()
-      return count
+      return { root, app, apply, close: async () => { root.unmount(); await app.close() } }
     }
-    expect(await render([])).toBe(1)
-    expect(await render(session.painterContexts[0].nodes)).toBe(0)
+    const filled = await render(session.painterContexts[0].nodes)
+    try { expect(await filled.app.getByText(hint).count()).toBe(0) } finally { await filled.close() }
+
+    const { root, app, apply, close } = await render([])
+    try {
+      expect(await app.getByText(hint).count()).toBe(1)
+      const panel = await app.getByTestId("layer-panel:painter").bounds()
+      const middle = { x: panel.x + panel.width / 2, y: panel.y + panel.height / 2 }
+      await app.getByText("Paint edit").click()
+      await app.getByText("Mask cleanup").click({ modifiers: "ctrl" })
+      await app.mouse.down(app.getByText("Mask cleanup"))
+      await app.mouse.move(middle, { pressedButton: 0 })
+      root.renderer.flush()
+      expect(await app.getByTestId("drop-indicator:substance_painter:stack-top").count()).toBe(1)
+      await app.mouse.up(middle)
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      expect(await app.getByText(hint).count()).toBe(0)
+      expect(await app.getByText("Pending").count()).toBe(2)
+      const first = await app.getByTestId("layer-panel:painter").getByTestId("layer-row:photoshop:ps:100").bounds()
+      const second = await app.getByTestId("layer-panel:painter").getByTestId("layer-row:photoshop:ps:102").bounds()
+      expect(first.x).toBeGreaterThan(panel.x)
+      expect(first.y).toBeLessThan(second.y)
+      await app.getByTestId("apply-mapping").click()
+      await app.clock.fastForward(400)
+      root.renderer.flush()
+      const mappings = apply.mock.calls[0]?.[0].mappings ?? []
+      expect(mappings.map(mapping => [mapping.sourceId, mapping.target.kind, mapping.placement])).toEqual([
+        ["photoshop:ps:102", "stack", "inside"],
+        ["photoshop:ps:100", "stack", "inside"],
+      ])
+    } finally { await close() }
   })
 
   it.each([

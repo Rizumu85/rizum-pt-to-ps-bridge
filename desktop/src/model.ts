@@ -61,6 +61,14 @@ export type TransferMapping = {
   replace?: boolean
 }
 
+/**
+ * Where a drop lands on a Painter texture set with no layers: the top of its
+ * stack. Every other drop is placed beside a layer, and an empty texture set
+ * has none; the user asked to drop Photoshop layers into one directly.
+ */
+export const PAINTER_STACK_TOP = "substance_painter:stack-top"
+const painterStackTop: HostLayerRef = { host: "substance_painter", externalId: "", nativeId: null, kind: "stack", path: "" }
+
 export type BridgeState = {
   photoshop: LayerNode[]
   painter: LayerNode[]
@@ -160,6 +168,7 @@ export function transferBetweenHosts(
   targetId: string,
   placement?: Placement,
 ): BridgeState {
+  if (targetId === PAINTER_STACK_TOP) return transferToEmptyStack(state, sourceId)
   const source = findNode(state.photoshop, sourceId) ?? findNode(state.painter, sourceId)
   if (!source || source.locked) return state
   const sourceHost = source.ref.host
@@ -207,6 +216,18 @@ export function transferBetweenHosts(
     painter: sourceHost === "substance_painter" ? remainingSource : nextTarget,
     mappings: [...others.slice(0, index), record, ...others.slice(index)],
   }
+}
+
+function transferToEmptyStack(state: BridgeState, sourceId: string): BridgeState {
+  const source = findNode(state.photoshop, sourceId)
+  if (!source || source.locked || source.ref.host !== "photoshop" || state.painter.length > 0) return state
+  const [photoshop, removed] = removeNode(state.photoshop, sourceId)
+  if (!removed) return state
+  const record: TransferMapping = {
+    direction: "photoshop_to_painter", sourceId, targetId: PAINTER_STACK_TOP, placement: "inside",
+    source: removed.ref, target: painterStackTop,
+  }
+  return { photoshop, painter: [removed], mappings: [...state.mappings, record] }
 }
 
 /** The panel a mapping's target lives in. */
@@ -295,6 +316,17 @@ export function transferSelection(
   targetId: string,
   placement?: Placement,
 ): BridgeState {
+  if (targetId === PAINTER_STACK_TOP) {
+    // The first layer opens the stack and the rest go above it, replayed
+    // bottom-up like any drop inside, so they keep their top-to-bottom order.
+    let next = state
+    let anchor = PAINTER_STACK_TOP
+    for (const root of selectionRoots(state, "photoshop", sourceIds).reverse()) {
+      next = transferBetweenHosts(next, root.id, anchor, anchor === PAINTER_STACK_TOP ? "inside" : "before")
+      if (findNode(next.painter, root.id)) anchor = root.id
+    }
+    return next
+  }
   // The panel holding the target decides the direction, not the target's own
   // host: a row staged by an earlier drop sits in the other host's panel.
   const inPainter = findNode(state.painter, targetId)

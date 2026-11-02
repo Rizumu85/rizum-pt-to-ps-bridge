@@ -271,6 +271,49 @@ class DesktopTransferTests(unittest.TestCase):
 
         self.assertEqual(layerstack.fills[0].position, ("above", target))
 
+    def _stack_top_manifest(self, **changes):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0]["insertion"] = "inside"
+        payload["transfers"][0]["target"] = {"host": "substance_painter", "id": "", "kind": "stack", "path": ""}
+        payload["transfers"][0].update(changes)
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_a_texture_set_without_layers_takes_the_layer_at_the_top_of_its_stack(self):
+        self._stack_top_manifest()
+        plan = load_transfer_plan(self.manifest)
+        self.assertIsNone(plan.painter_imports[0].target_uid)
+        channel = _NamedValue("BaseColor")
+        stack = _Stack(channel)
+        layerstack = _LayerStack(_TargetNode(stack))
+        layerstack.InsertPosition.from_textureset_stack = lambda value: ("top", value)
+        asked = []
+        painter = SimpleNamespace(
+            project=SimpleNamespace(
+                is_open=lambda: True,
+                is_in_edition_state=lambda: True,
+                get_uuid=lambda: "project-1",
+            ),
+            textureset=SimpleNamespace(Stack=SimpleNamespace(
+                from_name=lambda texture_set, stack_name="": asked.append((texture_set, stack_name)) or stack,
+            )),
+            layerstack=layerstack,
+            resource=_Resource(),
+        )
+
+        apply_transfer_plan(plan, painter)
+
+        self.assertEqual(asked, [("M_body", "")])
+        self.assertEqual(layerstack.fills[0].position, ("top", stack))
+        self.assertEqual(layerstack.fills[0].active_channels, {channel})
+        self.assertEqual(layerstack.deleted, [])
+
+    def test_the_top_of_a_stack_takes_a_layer_inside_and_from_photoshop_only(self):
+        for changes in ({"insertion": "after"}, {"replace": True}):
+            with self.subTest(changes=changes):
+                self._stack_top_manifest(**changes)
+                with self.assertRaises(DesktopTransferError):
+                    load_transfer_plan(self.manifest)
+
     def test_inside_an_empty_folder_inserts_into_its_substack(self):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))
         payload["transfers"][0]["insertion"] = "inside"

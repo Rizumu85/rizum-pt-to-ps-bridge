@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest"
 import { inflateSync } from "node:zlib"
 import { writePsdBuffer } from "ag-psd"
 
-import { findNode, transferBetweenHosts } from "./model"
+import { findNode, PAINTER_STACK_TOP, transferBetweenHosts, transferSelection } from "./model"
 import { writeFeaturePsd } from "./test-psd"
 import {
   PAINTER_REQUEST_MARKER,
@@ -113,6 +113,21 @@ describe("desktop file transport", () => {
     const session = await loadBridgeSession({ painterSnapshot: snapshotPath })
     expect(session.painterContexts.map(context => context.nodes.length > 0)).toEqual([true, true, false])
     expect(session.state.painter.length).toBeGreaterThan(0)
+  })
+
+  it("writes a drop into an empty texture set as the top of its stack", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-stack-top-"))
+    const output = path.join(directory, "request.json")
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+      output,
+    })
+    const mapped = transferSelection({ ...session.state, painter: [] }, new Set(["photoshop:ps:100"]), PAINTER_STACK_TOP)
+    await writeTransferManifest(session, mapped, session.initialPainterContextId)
+    const [transfer] = JSON.parse(await readFile(output, "utf8")).transfers
+    expect(transfer).toMatchObject({ direction: "photoshop_to_painter", insertion: "inside", replace: false })
+    expect(transfer.target).toMatchObject({ host: "substance_painter", kind: "stack", id: "" })
   })
 
   it("loads every Painter snapshot context into the domain model", async () => {

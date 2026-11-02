@@ -6,7 +6,7 @@ import {
   type EventPayload,
   type PublicInstance,
 } from "@gpuix/react"
-import { findNode, type HostId, type LayerNode, type Placement } from "./model"
+import { findNode, PAINTER_STACK_TOP, type HostId, type LayerNode, type Placement } from "./model"
 import { t } from "./i18n"
 import { colors, metrics, typography } from "./theme"
 import {
@@ -439,6 +439,7 @@ export function HostPanel({
   contentKey: string
 } & TreeInteraction) {
   const dragging = usePointer(interaction.pointer, state => state.draggingId !== null)
+  const aimedAtStackTop = usePointer(interaction.pointer, state => interaction.host === "substance_painter" && state.dropTargetId === PAINTER_STACK_TOP)
   // A different document or target fades its tree in so the swap does not
   // read as a glitch. Reloads, Apply refreshes and the window's first frame
   // keep the key, so they stay instant.
@@ -521,7 +522,15 @@ export function HostPanel({
       </div>
       <InsetSeparator />
       {emptyContent ? (
-        <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0 }}>{emptyContent}</div>
+        <div style={{ flexGrow: 1, flexBasis: 0, minHeight: 0, position: "relative", cursor: aimedAtStackTop ? "grabbing" : undefined }}>
+          {emptyContent}
+          {/* Where the first row will sit, as a line above a first row would show it. */}
+          {aimedAtStackTop ? (
+            <div style={{ position: "absolute", left: 8, right: 8, top: 5, pointerEvents: "none" }}>
+              <DropLine testId={`drop-indicator:${PAINTER_STACK_TOP}`} top={0} />
+            </div>
+          ) : null}
+        </div>
       ) : <motion.div
         key={contentKey}
         initial={shown.current.fade ? { opacity: 0 } : false}

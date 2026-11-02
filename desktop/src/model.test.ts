@@ -5,6 +5,7 @@ import {
   clipStackDrop,
   cloneState,
   findNode,
+  PAINTER_STACK_TOP,
   replacedTargets,
   toggleReplace,
   indexLayerTrees,
@@ -331,5 +332,28 @@ describe("transferBetweenHosts", () => {
       "substance_painter:maskout",
     )
     expect(withoutPainter.mappings).toEqual([])
+  })
+})
+
+describe("an empty Painter texture set", () => {
+  const empty = (): BridgeState => ({ ...fixture(), painter: [], mappings: [] })
+
+  it("takes a drop at the top of its stack, and later drops beside it share that place", () => {
+    const first = transferSelection(empty(), new Set(["photoshop:cleanup"]), PAINTER_STACK_TOP)
+    expect(first.painter.map(node => node.id)).toEqual(["photoshop:cleanup"])
+    expect(first.mappings[0]).toMatchObject({ targetId: PAINTER_STACK_TOP, placement: "inside", target: { kind: "stack" } })
+
+    // Below the first row it goes in first; Painter puts each one on top.
+    const second = transferBetweenHosts(first, "photoshop:group", "photoshop:cleanup", "after")
+    expect(second.painter.map(node => node.id)).toEqual(["photoshop:cleanup", "photoshop:group"])
+    expect(second.mappings.map(mapping => [mapping.sourceId, mapping.targetId])).toEqual([
+      ["photoshop:group", PAINTER_STACK_TOP],
+      ["photoshop:cleanup", PAINTER_STACK_TOP],
+    ])
+  })
+
+  it("is not a target once the texture set has layers", () => {
+    const state = fixture()
+    expect(transferSelection(state, new Set(["photoshop:cleanup"]), PAINTER_STACK_TOP)).toBe(state)
   })
 })

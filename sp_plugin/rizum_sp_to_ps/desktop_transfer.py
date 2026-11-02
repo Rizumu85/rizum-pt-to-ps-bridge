@@ -47,7 +47,9 @@ class PainterImportItem:
 
     order: int
     layer: PhotoshopLayer
-    target_uid: int
+    # None is the top of the texture set's stack: the mapper offers it for a
+    # texture set with no layers, which has no layer to insert beside.
+    target_uid: int | None
     target_kind: str
     insertion: str
     # The user switched this row to replace its target: Apply deletes the
@@ -276,7 +278,7 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
     """Apply only the Photoshop-to-Painter portion as one history entry."""
     _validate_project(plan, painter.project)
     resolved = [
-        _resolve_target(item, plan, painter.layerstack)
+        _resolve_target(item, plan, painter)
         for item in plan.painter_imports
     ]
 
@@ -637,7 +639,12 @@ def _transfer_item(value, fallback_order, manifest_dir):
         raise DesktopTransferError(
             f"Transfer {fallback_order + 1} uses unsupported insertion {insertion!r}."
         )
-    if insertion == "inside" and "group" not in target_kind.casefold():
+    stack_top = target_kind == "stack"
+    if stack_top and (direction != "photoshop_to_painter" or insertion != "inside"):
+        raise DesktopTransferError(
+            f"Transfer {fallback_order + 1} can only go inside a Painter texture set's stack."
+        )
+    if insertion == "inside" and "group" not in target_kind.casefold() and not stack_top:
         raise DesktopTransferError(
             f"Transfer {fallback_order + 1} can only insert inside a group."
         )
@@ -683,7 +690,7 @@ def _transfer_item(value, fallback_order, manifest_dir):
     return direction, PainterImportItem(
         order=_integer(record.get("order"), fallback_order),
         layer=_photoshop_layer(source, manifest_dir, f"transfers[{fallback_order}].source"),
-        target_uid=_uid(target.get("id"), fallback_order),
+        target_uid=None if stack_top else _uid(target.get("id"), fallback_order),
         target_kind=target_kind,
         insertion=insertion,
         replace=replace,
@@ -740,9 +747,20 @@ def _validate_project(plan, project):
             )
 
 
-def _resolve_target(item, plan, layerstack):
+def _resolve_target(item, plan, painter):
+    if item.target_uid is None:
+        try:
+            stack = painter.textureset.Stack.from_name(plan.texture_set, plan.stack or "")
+        except (TypeError, ValueError) as exc:
+            raise DesktopTransferError(
+                f"Painter texture set {plan.texture_set!r} no longer exists. Refresh Bridge and map again."
+            ) from exc
+        channel_type = _matching_channel_type(stack, plan.channel)
+        channel = _call_or_attr(stack, "all_channels", {}).get(channel_type)
+        return item, stack, channel_type, bool(_call_or_attr(channel, "is_color", True))
+
     try:
-        node = layerstack.get_node_by_uid(item.target_uid)
+        node = painter.layerstack.get_node_by_uid(item.target_uid)
     except (TypeError, ValueError) as exc:
         raise DesktopTransferError(
             f"Painter target for {item.name!r} no longer exists. Refresh Bridge and map again."
@@ -779,6 +797,8 @@ def _matching_channel_type(stack, expected):
 
 
 def _insertion_position(item, target_node, layerstack):
+    if item.target_uid is None:
+        return layerstack.InsertPosition.from_textureset_stack(target_node)
     if item.insertion == "before":
         return layerstack.InsertPosition.above_node(target_node)
     if item.insertion == "after":
