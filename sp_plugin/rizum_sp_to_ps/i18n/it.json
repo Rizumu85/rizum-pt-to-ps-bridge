@@ -16,7 +16,7 @@
   "select_all": "Seleziona tutto",
   "select_none": "Deseleziona tutto",
   "size": "Dimensioni",
-  "render": "Rendering",
+  "render": "Render",
   "render_scale_tooltip": "Supersampling: Painter esegue il rendering a questo multiplo delle dimensioni del PSD, arrotonda lì i bordi e poi riduce.",
   "channels_selected": "{selected} di {total} canali selezionati",
   "export_open_project": "Apri un progetto Painter per esportare.",

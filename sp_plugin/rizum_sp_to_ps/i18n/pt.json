@@ -16,7 +16,7 @@
   "select_all": "Selecionar tudo",
   "select_none": "Cancelar a seleção de tudo",
   "size": "Tamanho",
-  "render": "Renderização",
+  "render": "Render",
   "render_scale_tooltip": "Superamostragem: o Painter renderiza neste múltiplo do tamanho do PSD, suaviza as bordas e depois reduz a escala.",
   "channels_selected": "{selected} de {total} canais selecionados",
   "export_open_project": "Abra um projeto do Painter para exportar.",

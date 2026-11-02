@@ -16,7 +16,7 @@
   "select_all": "すべてを選択",
   "select_none": "すべて選択解除",
   "size": "サイズ",
-  "render": "レンダリング",
+  "render": "倍率",
   "render_scale_tooltip": "スーパーサンプリング : Painter が PSD サイズのこの倍率でレンダリングし、エッジを滑らかにしてから縮小します。",
   "channels_selected": "{total} チャンネル中 {selected} 個を選択",
   "export_open_project": "書き出すには Painter プロジェクトを開いてください。",
