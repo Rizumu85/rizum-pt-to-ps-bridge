@@ -345,17 +345,16 @@ export function ContextSelect({
   label,
   value,
   options,
-  shrink = true,
+  shrink = 1,
   busy = false,
   onValueChange,
 }: {
   label: string
   value: string
   options: ContextOption[]
-  /** Lets the select give way in a narrow window, its value ending in an
-   *  ellipsis, so the toolbar never pushes Apply out. Off for a value that
-   *  must always be read whole. */
-  shrink?: boolean
+  /** How readily the select gives way in a narrow window, so the toolbar
+   *  never pushes Apply out. 0 for a value that must always be read whole. */
+  shrink?: number
   busy?: boolean
   onValueChange: (value: string) => void
 }) {
@@ -376,7 +375,7 @@ export function ContextSelect({
       // Sized by its own label and value, not by a width: fixed widths were
       // set for the English labels and cut the longer translations, down to
       // losing the value entirely.
-      style={{ flexShrink: shrink ? 1 : 0, minWidth: shrink ? 0 : undefined }}
+      style={{ flexShrink: shrink, minWidth: shrink ? 0 : undefined }}
     >
       <SelectTrigger
         ref={trigger}
@@ -397,17 +396,18 @@ export function ContextSelect({
           hover: disabled ? undefined : { backgroundColor: colors.fieldHover },
         }}
       >
-        <div style={{ minWidth: 0 }}>
+        {/* A select is there to show what is selected, so the lopsided weight
+            empties the label before the value loses a pixel. It was the other
+            way round and a long translation read "B…" for "Body"; the user
+            asked for the value to be read. Both keep a little: narrower, the
+            ellipsis paints over the chevron or, clipped, reads as a dot.
+            Known limit: the toolbar splits a squeeze between the selects by
+            their widths, so in the narrowest windows one value can be cut
+            while the other select still shows part of its label. */}
+        <div style={{ minWidth: typography.primarySize * 2, flexShrink: 1_000_000 }}>
           <SecondaryText>{label}</SecondaryText>
         </div>
-        {/* The lopsided weight empties the value before the label loses a
-            pixel, and the label gives way only after it rather than run into
-            the next select. The value keeps an em, its ellipsis: narrower,
-            the ellipsis paints over the chevron or, clipped, reads as a dot.
-            Known limit: the toolbar splits a squeeze between the selects by
-            their widths, so in the narrowest windows one label can be cut
-            while the other select still shows part of its value. */}
-        <div style={{ minWidth: typography.primarySize, flexGrow: 1, flexShrink: 1_000_000 }}>
+        <div style={{ minWidth: typography.primarySize, flexGrow: 1 }}>
           <PrimaryText>{selectedLabel}</PrimaryText>
         </div>
         <div style={{ width: 12, height: 12, flexShrink: 0, position: "relative" }}>

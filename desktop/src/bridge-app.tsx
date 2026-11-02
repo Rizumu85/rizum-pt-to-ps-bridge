@@ -605,6 +605,9 @@ export function BridgeApp({
             label={t("Texture Set:")}
             value={activeStackId}
             options={painterStackOptions}
+            // The longest label and the longest values: an even split cut a
+            // short channel name while this label still had room to give.
+            shrink={2}
             busy={busy}
             onValueChange={changePainterStack}
           />
@@ -624,7 +627,7 @@ export function BridgeApp({
             label={t("Render:")}
             value={String(appliedScale)}
             options={scaleOptions}
-            shrink={false}
+            shrink={0}
             busy={busy}
             onValueChange={(value) => setRenderScale(Number(value) as RenderScale)}
           />

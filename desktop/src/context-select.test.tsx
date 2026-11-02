@@ -52,13 +52,13 @@ describe("Painter context selectors", () => {
     }
   })
 
-  it("fits a long translation's labels whole at the default width, cutting only the values", async () => {
+  it("keeps the values whole in a long translation at the default width, cutting only the labels", async () => {
     setLanguage("ja")
     const roomy = await measureToolbar(1000)
     const fitted = await measureToolbar(700)
     for (const select of ["stack", "channel"] as const) {
-      expect(fitted[select].value, select).toBeLessThan(roomy[select].value)
-      expect(fitted[select].label, select).toBeCloseTo(roomy[select].label, 1)
+      expect(fitted[select].value, select).toBeCloseTo(roomy[select].value, 1)
+      expect(fitted[select].label, select).toBeLessThan(roomy[select].label)
     }
   })
 
