@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $lld)) {
 # algorithm ships under a new name instead of silently replacing the old one.
 $libraries = @(
     @{ Source = "edge_smoothing.rs"; Output = "rizum_edge_smoothing_v5.dll"; Edition = "2015" },
-    @{ Source = "painter_look.rs"; Output = "rizum_painter_look_v1.dll"; Edition = "2021" }
+    @{ Source = "painter_look.rs"; Output = "rizum_painter_look_v2.dll"; Edition = "2021" }
 )
 
 foreach ($library in $libraries) {

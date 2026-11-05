@@ -378,7 +378,7 @@ def _read_raw(raw, png, source_format, size):
 
 @lru_cache(maxsize=1)
 def _native_library():
-    path = Path(__file__).with_name("native") / "rizum_painter_look_v1.dll"
+    path = Path(__file__).with_name("native") / "rizum_painter_look_v2.dll"
     if not path.is_file():
         raise RuntimeError(f"Bundled Painter-look library is missing: {path}")
     library = ctypes.CDLL(str(path))

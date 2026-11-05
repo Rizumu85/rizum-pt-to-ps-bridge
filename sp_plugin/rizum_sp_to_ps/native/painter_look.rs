@@ -581,6 +581,12 @@ fn run_strip(program: &Program, files: &[Option<(File, Option<File>, Option<File
                     let (tc, ta) = encoded(target, &transfer);
                     let out = outputs[index].as_mut().unwrap();
                     let (rgb, alpha, new_mask, ps_mode) = match leaf.emit {
+                        // A layer carries pixels only where Painter's layer
+                        // covers. Solving where it covers nothing made it fix
+                        // the layers below at a coverage too small to see:
+                        // its whole UV area went opaque, mostly black, behind
+                        // a black mask, and PSDs grew several times larger.
+                        Emit::Solve if own_cov * ancestors <= EPS => ([0.0; 3], 0.0, mask_value, Mode::Normal),
                         Emit::Solve => {
                             let (bc, ba) = (straight(ps), ps.a);
                             let floor = own_cov * ancestors;

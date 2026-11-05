@@ -175,6 +175,39 @@ class PainterLookTests(unittest.TestCase):
             )
             self.assertLess(worst * 255, 2.5)
 
+    def test_a_layer_stays_transparent_where_painter_gives_it_no_coverage(self):
+        # Correcting the layers below there filled the layer's whole UV area
+        # with opaque pixels behind a black mask, bloating every PSD.
+        with tempfile.TemporaryDirectory() as directory:
+            png = Path(directory)
+            half = QtGui.QImage(SIZE, SIZE, QtGui.QImage.Format.Format_Grayscale8)
+            for y in range(SIZE):
+                for x in range(SIZE):
+                    half.setPixelColor(x, y, QtGui.QColor.fromRgbF(*([1.0 if x >= SIZE // 2 else 0.0] * 3)))
+            self.assertTrue(half.save(str(png / "top_mask.png"), "PNG"))
+            layer = lambda name, mode, opacity, seed: {
+                "name": name, "kind": "FillLayer", "visible": True,
+                "blend_mode": {"BaseColor": mode}, "opacity": {"BaseColor": opacity},
+                "ps_blend_mode": mode.upper(), "blend_decisions": {"BaseColor": {"ps_blend_mode": mode.upper()}},
+                "asset": {"path": self.write_rgb(png / f"{name}.png", seed)},
+            }
+            top = {**layer("top", "Normal", 1.0, 3), "mask_asset": {"path": str(png / "top_mask.png")}}
+            request = {
+                "channel": "BaseColor",
+                "color_management": {"encoding": "srgb"},
+                "export_settings": {"output_resolution": [SIZE, SIZE]},
+                "layers": [top, layer("mul", "Multiply", 0.5, 2), layer("base", "Normal", 1.0, 1)],
+            }
+
+            painter_look.rewrite_request(request, {"blend_modes": painter_look.MATCH_PAINTER})
+
+            pixels = self.read(request["layers"][0]["asset"]["path"])
+            mask = self.gray(request["layers"][0]["mask_asset"]["path"])
+            for y in range(SIZE):
+                for x in range(SIZE // 2):
+                    self.assertEqual(pixels(x, y)[3], 0.0, (x, y))
+                    self.assertEqual(mask(x, y), 0.0, (x, y))
+
     def test_bridge_items_match_painter_over_the_psds_own_backdrop(self):
         with tempfile.TemporaryDirectory() as directory:
             request = self.build(directory)
