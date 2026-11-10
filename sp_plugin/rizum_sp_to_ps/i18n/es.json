@@ -67,6 +67,7 @@
   "blend_keep_modes_hint": "Los colores pueden diferir de Painter",
   "uv_map": "Mapa UV",
   "uv_map_hint": "Añade la malla metálica como capa superior de Photoshop",
+  "apply_layer_masks": "Aplicar máscaras de capa",
   "edge_smoothing": "Suavizado de bordes",
   "edge_smoothing_hint": "Suaviza los bordes dentados · {strength}",
   "edge_smoothing_off": "Suaviza los bordes dentados · Desactivado",

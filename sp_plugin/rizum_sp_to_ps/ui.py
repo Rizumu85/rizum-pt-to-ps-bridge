@@ -436,6 +436,7 @@ class BridgePanel:
             "infinite_padding": to_bool(store.value("infinite_padding", False)),
             "dilation": optional_int(store.value("dilation", 8)) or 8,
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
+            "apply_layer_masks": to_bool(store.value("apply_layer_masks", False)),
             "bit_depth": bit_depth,
             "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
             # On by default: a finished PSD holds the pixels, and 4K PNGs per
@@ -450,6 +451,7 @@ class BridgePanel:
         store.setValue("infinite_padding", bool(values.get("infinite_padding")))
         store.setValue("dilation", int(values.get("dilation") or 8))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
+        store.setValue("apply_layer_masks", bool(values.get("apply_layer_masks")))
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
         if values.get("psd_size"):
             store.setValue("psd_size", int(values["psd_size"]))
@@ -645,6 +647,7 @@ class BridgePanel:
             "dilation": int(self.user_settings.get("dilation") or 8),
             "keep_alpha": True,
             "export_uv_map": bool(self.user_settings.get("export_uv_map")),
+            "apply_layer_masks": bool(self.user_settings.get("apply_layer_masks")),
             # These were read from Settings only by Bridge transfers; exports
             # silently used their defaults.
             "edge_smoothing": self.user_settings.get("edge_smoothing"),
@@ -672,6 +675,7 @@ class BridgePanel:
                 "stacks": settings.get("stacks"),
                 "channels": settings.get("channels"),
                 "export_uv_map": bool(settings.get("export_uv_map")),
+                "apply_layer_masks": bool(settings.get("apply_layer_masks")),
             },
             "build_requests": [
                 {

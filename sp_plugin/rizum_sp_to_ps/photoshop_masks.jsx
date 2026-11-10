@@ -58,6 +58,23 @@
         executeAction(charIDToTypeID("slct"), descriptor, DialogModes.NO);
     }
 
+    // Merges the selected layer's mask into its pixels, as Photoshop's Apply
+    // Layer Mask does. The user prefers PSDs without layer masks; it is a
+    // setting, off by default, because most workflows keep masks editable.
+    // Photoshop applies no mask to a folder, so callers skip folders.
+    function applySelectedLayerMask() {
+        var descriptor = new ActionDescriptor();
+        var reference = new ActionReference();
+        reference.putEnumerated(
+            charIDToTypeID("Chnl"),
+            charIDToTypeID("Chnl"),
+            charIDToTypeID("Msk ")
+        );
+        descriptor.putReference(charIDToTypeID("null"), reference);
+        descriptor.putBoolean(charIDToTypeID("Aply"), true);
+        executeAction(charIDToTypeID("Dlt "), descriptor, DialogModes.NO);
+    }
+
     // Copies a placed grayscale layer into targetLayer's new mask and removes
     // the placed layer; the caller places it where its script places PNGs.
     function pasteLayerAsMask(targetDocument, targetLayer, maskLayer) {

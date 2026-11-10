@@ -100,6 +100,13 @@ The first implemented Painter settings dialog stores machine-level settings via
 Qt `QSettings`: Photoshop executable path, infinite padding, and an optional
 8/16-bit export override. When bit depth is left as **Texture Set**, exports use
 the channel's native bit depth from Painter.
+**Apply layer masks** (off by default) merges each layer's mask into its pixels
+in Photoshop, for Export and for Bridge inserts alike. The user prefers PSDs
+without layer masks, but most workflows keep them editable. Photoshop's own
+Apply All Masks opens every folder, so it is done while each layer is placed;
+folder masks stay, as Photoshop applies none to a folder. Export reads it from
+the export list's `settings.apply_layer_masks`, Bridge from the transfer
+request's `apply_layer_masks`.
 Painter-wide UI scaling belongs in a separate helper plugin, not the PT Bridge
 settings panel. The bridge may coexist with that helper, but should not own
 global Painter UI scale experiments.

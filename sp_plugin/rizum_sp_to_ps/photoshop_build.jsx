@@ -19,6 +19,7 @@
     var previousDialogs = app.displayDialogs;
     var previousRulerUnits = app.preferences.rulerUnits;
     var progress = null;
+    var applyLayerMasks = false;
 
     app.displayDialogs = DialogModes.NO;
     app.preferences.rulerUnits = Units.PIXELS;
@@ -26,6 +27,7 @@
 
     try {
         var exportList = readJson(exportListPath);
+        applyLayerMasks = !!(exportList && exportList.settings && exportList.settings.apply_layer_masks === true);
         var requestPaths = buildRequestPaths(exportList);
         var pendingSaves = [];
         progress = createImportProgress(requestPaths.length);
@@ -251,8 +253,17 @@ __RIZUM_MASK_RUNTIME__
 
         applyNodeProperties(placed, node, channel);
         if (node.mask_asset && node.mask_asset.path) {
+            var pixelLayer = !!(node.asset && node.asset.path);
             try {
+                // Only a pixel layer takes a mask into its pixels, so this one
+                // skips the single rasterize pass that runs at the end.
+                if (applyLayerMasks && pixelLayer) {
+                    placed.rasterize(RasterizeType.ENTIRELAYER);
+                }
                 applyMask(document, placed, node.mask_asset.path);
+                if (applyLayerMasks && pixelLayer) {
+                    applySelectedLayerMask();
+                }
                 advanceImportProgress(
                     progress,
                     progressState,

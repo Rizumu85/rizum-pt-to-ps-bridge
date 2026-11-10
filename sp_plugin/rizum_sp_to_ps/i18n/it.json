@@ -67,6 +67,7 @@
   "blend_keep_modes_hint": "I colori possono differire da Painter",
   "uv_map": "Mappa UV",
   "uv_map_hint": "Aggiunge il wireframe come livello superiore in Photoshop",
+  "apply_layer_masks": "Applica maschere di livello",
   "edge_smoothing": "Arrotondamento dei bordi",
   "edge_smoothing_hint": "Attenua i bordi seghettati · {strength}",
   "edge_smoothing_off": "Attenua i bordi seghettati · Disattivato",

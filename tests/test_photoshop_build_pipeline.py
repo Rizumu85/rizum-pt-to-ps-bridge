@@ -130,6 +130,26 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertNotIn("removeFolderTree(outputFolder)", own)
 
 
+    def test_applied_masks_merge_only_into_rasterized_pixel_layers(self):
+        placer = self.source[
+            self.source.index("function placeNode(") :
+            self.source.index("function countImportUnits")
+        ]
+        self.assertIn("exportList.settings.apply_layer_masks === true", self.source)
+        # A smart object takes no mask into its pixels, and a folder none at all.
+        self.assertIn("var pixelLayer = !!(node.asset && node.asset.path);", placer)
+        rasterize = placer.index("placed.rasterize(RasterizeType.ENTIRELAYER)")
+        mask = placer.index("applyMask(document, placed, node.mask_asset.path)")
+        merge = placer.index("applySelectedLayerMask()")
+        self.assertLess(rasterize, mask)
+        self.assertLess(mask, merge)
+        self.assertEqual(placer.count("if (applyLayerMasks && pixelLayer)"), 2)
+
+    def test_bridge_inserts_merge_masks_only_when_asked_and_never_into_folders(self):
+        transfer = (BUILD_SCRIPT.parent / "photoshop_transfer.jsx").read_text(encoding="utf-8")
+        self.assertEqual(transfer.count("applySelectedLayerMask()"), 2)
+        self.assertEqual(transfer.count("request.apply_layer_masks === true && !isGroup("), 2)
+
     def test_a_psd_is_saved_alone_with_no_file_beside_it(self):
         # The PSD goes into the user's texture folder; nothing else may land there.
         self.assertNotIn(".rizum.json", self.source)

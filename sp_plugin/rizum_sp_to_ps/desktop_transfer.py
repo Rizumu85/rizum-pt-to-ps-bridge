@@ -597,6 +597,7 @@ def _write_transfer_request(prepared):
         "document": plan.photoshop_document,
         "context": plan.photoshop_context,
         "layers": layers,
+        "apply_layer_masks": bool(prepared.settings.get("apply_layer_masks")),
     }
     if "psd_resolution" in prepared.settings:
         request["placement_probe"] = str(

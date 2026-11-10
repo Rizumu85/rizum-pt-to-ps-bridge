@@ -57,6 +57,9 @@ __RIZUM_TARGET_RUNTIME__
                 placeChildren(document, placed, item.children, progress);
                 if (item.mask_png) {
                     step(item, "applying its mask", function () { applyMask(document, placed, item.mask_png); });
+                    if (request.apply_layer_masks === true && !isGroup(item)) {
+                        step(item, "merging its mask into its pixels", function () { applySelectedLayerMask(); });
+                    }
                 }
                 result.inserted.push(placed.name);
             } catch (itemError) {
@@ -323,6 +326,9 @@ __RIZUM_TARGET_RUNTIME__
             placeChildren(targetDocument, layer, child.children, progress);
             if (child.mask_png) {
                 step(child, "applying its mask", function () { applyMask(targetDocument, layer, child.mask_png); });
+                if (request.apply_layer_masks === true && !isGroup(child)) {
+                    step(child, "merging its mask into its pixels", function () { applySelectedLayerMask(); });
+                }
             }
         }
     }

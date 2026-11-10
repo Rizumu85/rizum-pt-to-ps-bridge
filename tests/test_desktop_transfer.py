@@ -271,6 +271,22 @@ class DesktopTransferTests(unittest.TestCase):
 
         self.assertEqual(layerstack.fills[0].position, ("above", target))
 
+    def test_the_photoshop_request_says_whether_to_apply_layer_masks(self):
+        from sp_plugin.rizum_sp_to_ps import desktop_transfer
+
+        for setting in (False, True):
+            prepared = SimpleNamespace(
+                plan=SimpleNamespace(photoshop_exports=(), channel="BaseColor", photoshop_document={}, photoshop_context={}),
+                rendered=(),
+                points=(),
+                settings={"apply_layer_masks": setting},
+                output_dir=self.root,
+            )
+            with mock.patch.object(desktop_transfer.photoshop_automation, "write_photoshop_transfer_launcher"):
+                desktop_transfer._write_transfer_request(prepared)
+            request = json.loads((self.root / "photoshop_transfer.json").read_text(encoding="utf-8"))
+            self.assertIs(request["apply_layer_masks"], setting)
+
     def _stack_top_manifest(self, **changes):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))
         payload["transfers"][0]["insertion"] = "inside"

@@ -630,6 +630,18 @@ class SettingsDialog:
         uv_map_layout.addWidget(self.export_uv_map)
         body_layout.addWidget(uv_map_row)
 
+        self.apply_layer_masks = _make_settings_toggle(self.QtCore, self.QtGui, self.QtWidgets)
+        masks_row, masks_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.detail_row_height.design,
+        )
+        self._settings_rows.append(masks_row)
+        self.masks_texts = self._make_text_block(text("apply_layer_masks"))
+        masks_layout.addWidget(self.masks_texts)
+        masks_layout.addStretch(1)
+        masks_layout.addWidget(self.apply_layer_masks)
+        body_layout.addWidget(masks_row)
+
         # Edge smoothing has one setting on purpose: texture export should not
         # ask for a colour threshold, gamma or extra-smooth. Strength covers
         # off (0) to the full reconstruction (100).
@@ -758,6 +770,8 @@ class SettingsDialog:
         self.blend_modes.currentIndexChanged.connect(self._sync_blend_modes)
         self.blend_modes.currentIndexChanged.connect(self._save_live)
         self.export_uv_map.toggled.connect(self._save_live)
+        self._bind_toggle_row(masks_row, self.apply_layer_masks)
+        self.apply_layer_masks.toggled.connect(self._save_live)
         self.smoothing_slider.valueChanged.connect(self._sync_smoothing)
         # Dragging previews every step; the setting is written once, on release.
         self.smoothing_slider.sliderReleased.connect(self._save_live)
@@ -857,6 +871,12 @@ class SettingsDialog:
             + self.export_uv_map.width()
             + 2 * body_margin
         )
+        masks_need = (
+            self.masks_texts.sizeHint().width()
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.apply_layer_masks.width()
+            + 2 * body_margin
+        )
         # Rows whose subtitle changes are sized for every text they can
         # show, so the dialog keeps one width while a setting changes.
         smoothing_need = (
@@ -897,6 +917,7 @@ class SettingsDialog:
             footer_need,
             bit_depth_need,
             uv_map_need,
+            masks_need,
             smoothing_need,
             padding_need,
             render_need,
@@ -946,6 +967,7 @@ class SettingsDialog:
 
         self.infinite_padding.setCompactHeight(metric(20))
         self.export_uv_map.setCompactHeight(metric(20))
+        self.apply_layer_masks.setCompactHeight(metric(20))
         self.smoothing_slider.setFixedWidth(metric(132, 99))
         self.smoothing_slider.setFixedHeight(metric(20))
         self.smoothing_preview.setFixedHeight(metric(62, 46))
@@ -1157,6 +1179,7 @@ QPushButton[variant="icon"]:pressed {{
                 emit=False,
             )
             self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))
+            self.apply_layer_masks.setChecked(bool(settings.get("apply_layer_masks")))
             strength = settings.get("edge_smoothing")
             self.smoothing_slider.setValue(
                 edge_smoothing.DEFAULT_STRENGTH if strength is None else int(strength)
@@ -1232,6 +1255,7 @@ QPushButton[variant="icon"]:pressed {{
             "infinite_padding": self.infinite_padding.isChecked(),
             "dilation": self.dilation_stepper.value(),
             "export_uv_map": self.export_uv_map.isChecked(),
+            "apply_layer_masks": self.apply_layer_masks.isChecked(),
             "bit_depth": self.bit_depth.currentData(),
             "psd_size": self.psd_size.currentData(),
             "render_scale": self.render_scale.currentData(),

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,18 @@ class ExportSizeTests(unittest.TestCase):
         self.assertEqual(settings["psd_size"], 2048)
         # The Export dialog's choice wins for this export.
         self.assertEqual(settings["render_scale"], 4)
+
+    def test_layer_masks_stay_unless_settings_apply_them(self):
+        from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
+
+        panel = BridgePanel.__new__(BridgePanel)
+        panel.user_settings = {}
+        self.assertFalse(panel._base_export_settings()["apply_layer_masks"])
+        panel.user_settings = {"apply_layer_masks": True}
+        self.assertTrue(panel._base_export_settings()["apply_layer_masks"])
+        with tempfile.TemporaryDirectory() as directory:
+            listing = panel._write_last_export_list("Export", [], Path(directory), panel._base_export_settings())
+            self.assertTrue(json.loads(listing.read_text(encoding="utf-8"))["settings"]["apply_layer_masks"])
 
     def test_scaling_averages_edges_without_bleeding_hidden_colour(self):
         image = QtGui.QImage(8, 8, QtGui.QImage.Format.Format_RGBA8888)

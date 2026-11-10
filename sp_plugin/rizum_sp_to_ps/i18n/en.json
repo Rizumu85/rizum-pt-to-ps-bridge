@@ -67,6 +67,7 @@
   "blend_keep_modes_hint": "Colors can drift from Painter",
   "uv_map": "UV map",
   "uv_map_hint": "Add wireframe as the top Photoshop layer",
+  "apply_layer_masks": "Apply layer masks",
   "edge_smoothing": "Edge smoothing",
   "edge_smoothing_hint": "Softens jagged edges · {strength}",
   "edge_smoothing_off": "Softens jagged edges · Off",
