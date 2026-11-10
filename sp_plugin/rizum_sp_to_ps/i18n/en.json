@@ -120,17 +120,5 @@
   "bridge_progress_updating_stack": "Updating Painter stack...",
   "bridge_busy_request": "Painter is still busy with the last request.",
   "bridge_not_photoshop_document": "{name} is not a Photoshop document.",
-  "bridge_progress_preparing": "Preparing Painter transfer...",
-  "bridge_progress_adding_layers": "Adding layers...",
-  "bridge_progress_reading_photoshop": "Reading the Photoshop document...",
-  "bridge_progress_refreshing": "Refreshing Painter layers...",
-  "bridge_layers_not_refreshed": "Painter layers could not be refreshed: {error}",
-  "bridge_progress_match_not_needed": "Not needed for the {channel} channel",
-  "bridge_progress_matching": "Matching Painter's look...",
-  "bridge_progress_texture": "Texture “{name}”",
-  "bridge_progress_layer": "Layer “{name}”",
-  "bridge_progress_updating_stack": "Updating Painter stack...",
-  "bridge_busy_request": "Painter is still busy with the last request.",
-  "bridge_not_photoshop_document": "{name} is not a Photoshop document.",
   "history_import_layers": "PT Bridge: import Photoshop layers"
 }
