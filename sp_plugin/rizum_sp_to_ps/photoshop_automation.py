@@ -90,6 +90,7 @@ def _embed_target_runtime(template, language=None):
     progress_text = {
         "opening": text("photoshop_opening_document", language=language),
         "reading": text("photoshop_reading_document", language=language, **counts),
+        "matching": text("bridge_progress_matching", language=language),
         "inserting": text("photoshop_inserting_layers", language=language, **counts),
         "saving": text("photoshop_saving_document", language=language),
         "font": _PROGRESS_FONTS.get(

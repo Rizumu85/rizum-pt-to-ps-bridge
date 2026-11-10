@@ -40,7 +40,8 @@ class PhotoshopBackdropTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             host = json.loads(completed.stdout)
             # The mapped PSD is read, never changed, and no duplicate stays open.
-            self.assertEqual(host, {"untouched": True, "open": 1})
+            # The script then follows Painter's matching until Painter is done.
+            self.assertEqual(host, {"untouched": True, "open": 1, "waits": 2})
             result = json.loads(launch.result_path.read_text(encoding="utf-8"))
             self.assertTrue(result["success"], result["errors"])
             return [json.loads(Path(item["png"]).read_text(encoding="utf-8")) for item in result["backdrops"]]

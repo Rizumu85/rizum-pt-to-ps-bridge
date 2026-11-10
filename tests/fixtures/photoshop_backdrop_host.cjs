@@ -123,8 +123,16 @@ function executeAction(id, descriptor) {
   throw new Error("Unexpected action " + id);
 }
 const app = { displayDialogs: "original", documents: [document], activeDocument: document, open() { throw new Error("already open"); } };
+// Stands in for Painter while the script waits after its read: the first
+// wait sees progress, the second sees Painter done.
+const matchProgress = path.join(path.dirname(process.argv[3]), "painter_match_progress.json");
+let waits = 0;
+const $ = { sleep() {
+  waits += 1;
+  fs.writeFileSync(matchProgress, JSON.stringify({ completed: waits, total: 2, done: waits >= 2 }));
+} };
 const context = vm.createContext({
-  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction,
+  JSON: undefined, File, app, ActionDescriptor, ActionReference, executeAction, $,
   charIDToTypeID: (id) => id, stringIDToTypeID: (id) => id,
   DialogModes: { NO: "none" }, SaveOptions: { DONOTSAVECHANGES: "no" }, Extension: { LOWERCASE: "lower" },
   PNGSaveOptions: function PNGSaveOptions() {},
@@ -134,4 +142,5 @@ vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context, { timeout: 50
 process.stdout.write(JSON.stringify({
   untouched: JSON.stringify(snapshot(document.layers)) === original,
   open: app.documents.length,
+  waits,
 }));

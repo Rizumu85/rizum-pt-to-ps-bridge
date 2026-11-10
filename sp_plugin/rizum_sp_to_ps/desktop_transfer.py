@@ -245,6 +245,14 @@ def begin_transfer(manifest_path, settings=None, painter=None, progress_callback
 
 def finish_transfer(prepared, backdrop_result=None, progress_callback=None, cancelled=None):
     """Rewrite against Photoshop's backdrops, edit Painter, and hand off the insert."""
+    try:
+        return _finish_transfer(prepared, backdrop_result, progress_callback, cancelled)
+    finally:
+        if prepared.points:
+            _publish_match_progress(prepared, done=True)
+
+
+def _finish_transfer(prepared, backdrop_result, progress_callback, cancelled):
     plan = prepared.plan
     if prepared.points:
         _rewrite_inserts(prepared, backdrop_result, progress_callback)
@@ -264,6 +272,9 @@ def finish_transfer(prepared, backdrop_result=None, progress_callback=None, canc
         warnings=plan.warnings + result.warnings,
         photoshop_launch=launcher,
     )
+
+
+MATCH_PROGRESS_FILE = "painter_match_progress.json"
 
 
 def _raise_if_cancelled(cancelled):
@@ -497,6 +508,8 @@ def _insertion_points(plan):
 
 def _write_backdrop_request(plan, points, output_dir):
     request_path = output_dir / "photoshop_backdrop.json"
+    # A finished earlier Apply must not end this one's wait at once.
+    (output_dir / MATCH_PROGRESS_FILE).unlink(missing_ok=True)
     exporter.write_json_atomic(request_path, {
         "schema_version": 1,
         "request_type": "photoshop_backdrop_request",
@@ -538,6 +551,7 @@ def _rewrite_inserts(prepared, backdrop_result, progress_callback=None):
     for index, point in enumerate(prepared.points, start=1):
         if point.key not in backdrops:
             raise DesktopTransferError(f"Photoshop did not read the place for {point.target_name}.")
+        _publish_match_progress(prepared, index - 1)
         if progress_callback is not None:
             progress_callback({
                 "stage": "match", "message": text("bridge_progress_matching"),
@@ -553,11 +567,24 @@ def _rewrite_inserts(prepared, backdrop_result, progress_callback=None):
         finally:
             if backdrop:
                 Path(backdrop).unlink(missing_ok=True)
+    _publish_match_progress(prepared, len(prepared.points))
     if progress_callback is not None:
         progress_callback({
             "stage": "match", "message": text("bridge_progress_matching"),
             "completed": len(prepared.points), "total": len(prepared.points),
         })
+
+
+def _publish_match_progress(prepared, completed=0, done=False):
+    # Photoshop's backdrop script stays open after it reads the PSD and shows
+    # this until it says done: Photoshop came to the front for that read and
+    # then showed nothing while Painter matched, which read as a finished Apply.
+    try:
+        exporter.write_json_atomic(prepared.output_dir / MATCH_PROGRESS_FILE, {
+            "completed": completed, "total": len(prepared.points), "done": done,
+        })
+    except OSError:
+        pass
 
 
 def _write_transfer_request(prepared):

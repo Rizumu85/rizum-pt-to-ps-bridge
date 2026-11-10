@@ -52,9 +52,38 @@ __RIZUM_TARGET_RUNTIME__
     } catch (error) {
         result.errors.push({ name: requestPath, message: errorMessage(error) });
     } finally {
+        writeJsonAtomic(resultPath, result);
+        // Painter now matches its look over what was read, while Photoshop,
+        // already in front, would show nothing until the insert opens its own
+        // window: the user took that for a finished Apply. Painter writes its
+        // progress until done; two quiet minutes mean it is gone.
+        if (result.success) {
+            waitForPainter(folder + "/painter_match_progress.json", 120000);
+        }
         closeProgress();
         app.displayDialogs = previousDialogs;
-        writeJsonAtomic(resultPath, result);
+    }
+
+    function waitForPainter(path, quietLimit) {
+        var seen = null;
+        var quietSince = new Date().getTime();
+        showProgress(progressLine("matching"), 0);
+        while (new Date().getTime() - quietSince < quietLimit) {
+            var state = null;
+            try {
+                state = readJson(path);
+            } catch (ignored) {}
+            if (state && state.done === true) {
+                return;
+            }
+            var key = state ? state.completed + "/" + state.total : null;
+            if (key !== seen) {
+                seen = key;
+                quietSince = new Date().getTime();
+                showProgress(progressLine("matching"), state && state.total > 0 ? state.completed / state.total : 0);
+            }
+            $.sleep(250);
+        }
     }
 
     function publishProgress(phase, completed, total) {

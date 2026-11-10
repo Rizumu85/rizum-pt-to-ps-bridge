@@ -287,6 +287,24 @@ class DesktopTransferTests(unittest.TestCase):
             request = json.loads((self.root / "photoshop_transfer.json").read_text(encoding="utf-8"))
             self.assertIs(request["apply_layer_masks"], setting)
 
+    def test_photoshop_follows_the_match_and_hears_when_painter_is_done(self):
+        from sp_plugin.rizum_sp_to_ps import desktop_transfer
+
+        point = SimpleNamespace(key="0", items=(0,), target_name="Base")
+        prepared = SimpleNamespace(
+            plan=SimpleNamespace(channel="BaseColor"), points=(point,), rendered=({"build_request": {}},),
+            settings={}, output_dir=self.root, painter=None,
+        )
+        progress = self.root / desktop_transfer.MATCH_PROGRESS_FILE
+        with mock.patch.object(desktop_transfer.painter_look, "rewrite_insertion"):
+            desktop_transfer._rewrite_inserts(prepared, {"success": True, "backdrops": [{"key": "0", "png": None}]})
+        self.assertEqual(json.loads(progress.read_text(encoding="utf-8")), {"completed": 1, "total": 1, "done": False})
+
+        # A failed Apply still ends the wait, or Photoshop would sit two minutes.
+        with self.assertRaises(DesktopTransferError):
+            desktop_transfer.finish_transfer(prepared, backdrop_result={"success": False, "errors": []})
+        self.assertTrue(json.loads(progress.read_text(encoding="utf-8"))["done"])
+
     def _stack_top_manifest(self, **changes):
         payload = json.loads(self.manifest.read_text(encoding="utf-8"))
         payload["transfers"][0]["insertion"] = "inside"
