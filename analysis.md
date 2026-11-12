@@ -43,15 +43,14 @@ Host findings that still constrain the implementation:
 
 | Area | Included local source | Coverage status |
 |---|---|---|
-| Substance Painter Python API | `pt-python-doc-md/substance_painter/` | Covered for traversal, export, resources, UI, events, layer-stack mutation, color management, and JS bridge |
-| Legacy Painter JS API | `javascript-doc/` | Covered for the required map-export fallbacks: `alg.mapexport.save`, `alg.mapexport.exportPath`, and `alg.mapexport.channelIdentifiers` |
-| Host-recorded Action Manager descriptors | Not included as ready-to-use project files | Must be recorded or validated in Photoshop for layer-mask pixel transfer |
+| Substance Painter Python API | `reference-docs/pt-python-doc-md/substance_painter/` | Covered for traversal, export, resources, UI, events, layer-stack mutation, color management, and JS bridge |
+| Legacy Painter JS API | `reference-docs/pt-javascript-doc-html/` | Covered for the `alg.mapexport` queries the plugin uses (§2) |
 
 ---
 
 ## 1. SP Python API
 
-Source: `pt-python-doc-md/substance_painter/`. All API calls below use the
+Source: `reference-docs/pt-python-doc-md/substance_painter/`. All API calls below use the
 abbreviated module aliases: `sp = substance_painter`, `ls = sp.layerstack`,
 `ts = sp.textureset`.
 
@@ -98,18 +97,20 @@ which also means one PSD per channel (already implied by `design.md §3`).
 ### 1.3 Effects (fill / paint / filter / generator / levels / anchor) — ✅ covered
 
 Effects surface via `content_effects()` / `mask_effects()`. Type check with
-`isinstance(node, ls.FillEffectNode)` etc. All effect node types:
+`isinstance(node, ls.FillEffectNode)` etc. No effect is exported as its own
+Photoshop layer: every one is baked through its parent layer's or mask's
+export (Current Constraints). All effect node types:
 
-| Node type | Purpose for export |
+| Node type | What it holds |
 |---|---|
-| `FillEffectNode` | Exposable as its own PS layer (has source — bitmap/material/color/anchor) |
-| `PaintEffectNode` | Exposable as its own PS layer (strokes rendered to bitmap) |
-| `GeneratorEffectNode` | Bakes to raster (procedural, no PS equivalent) |
-| `FilterEffectNode` | Bakes its output stack into a single PS raster layer |
-| `LevelsEffectNode` | Bakes (PS Levels differs from SP Levels; safer to flatten) |
-| `CompareMaskEffectNode` | Mask-only; bakes |
-| `ColorSelectionEffectNode` | Mask-only; bakes |
-| `AnchorPointEffectNode` | Bakes to static raster (per `design.md §5.4`) |
+| `FillEffectNode` | A source: bitmap, material, color or anchor reference |
+| `PaintEffectNode` | Strokes |
+| `GeneratorEffectNode` | A procedural generator (no PS equivalent) |
+| `FilterEffectNode` | A filter over the stack below it |
+| `LevelsEffectNode` | Levels (PS Levels differs from SP Levels) |
+| `CompareMaskEffectNode` | Mask-only |
+| `ColorSelectionEffectNode` | Mask-only |
+| `AnchorPointEffectNode` | An anchor point (`design.md §5.4`) |
 
 **FillEffect source introspection** (`source/` module):
 - `FillEffectNode.source_mode → SourceMode` (`Material`, `Split`, or `None` for mask)
@@ -121,8 +122,8 @@ Effects surface via `content_effects()` / `mask_effects()`. Type check with
   mask stack. It captures the stack state at that position.
 - Another node can *reference* an anchor via `set_source(channel, anchor_node)`
   — the `AnchorPointEffectNode` instance is passed in as the source param.
-- No direct "resolve to bitmap" API. To bake, we need the JS-side
-  `alg.mapexport.save([anchor_uid, channel], ...)` — see §2.
+- No direct "resolve to bitmap" API: an anchor reference reaches Photoshop
+  baked into the export of the layer that uses it.
 
 ### 1.4 Mask structure — ✅ covered
 
@@ -134,10 +135,6 @@ Effects surface via `content_effects()` / `mask_effects()`. Type check with
 - Mask sub-effect stack: `LayerNode.mask_effects()` (same interface as content)
 - `is_in_mask_stack()` on each effect tells us which stack it's in — needed
   because mask-stack effects are monochannel (blend mode takes `channel=None`)
-- **Hidden-backup pattern** (`design.md §6.3`): iterate the current mask
-  effects, call `effect.set_visible(False)` on each; then
-  `ls.insert_fill(ls.InsertPosition.inside_node(layer, ls.NodeStack.Mask))`
-  at the top, set its source to the synced PNG's resource ID.
 
 ### 1.5 UDIM / UV tile iteration — ✅ covered
 
@@ -154,29 +151,17 @@ Project workflow: `ProjectWorkflow.UVTile` vs `TextureSetPerUVTile`. The
 former is the modern workflow (one TS holding all tiles). Plugin must
 support both but we can prioritize `UVTile`.
 
-### 1.6 Per-layer/per-effect export to PNG — ⚠ gap, JS fallback required
+### 1.6 Per-layer export to PNG — ✅ covered by the stack-node export
 
 **Python `sp.export` only exports full channels** via
 `export_project_textures(json_config)`. The JSON config's `exportList` filters
 by texture set / stack / uvTile / output-map — there is **no filter that
-isolates a single layer or effect node**. No "snapshot at this layer uid"
-equivalent in Python.
+isolates a single layer or effect node**.
 
-**The v1.1.8 plugin relied on JS `alg.mapexport.save([uid, channel], path, config)`**
-which *does* take a layer uid to isolate the contribution. Confirmed present
-in JS via `javascript-doc/alg.mapexport.html`:
-
-```js
-alg.mapexport.save([24, "mask"], "c:/file.png")              // uid
-alg.mapexport.save(["M1", "Group 1", "Layer 1", "mask"], ...) // path
-alg.mapexport.save(["M1", "base color"], "c:/file.jpg",
-                    {padding: "Transparent", dilation: 0,
-                     resolution: [256, 512]})
-```
-
-**Decision**: keep using `alg.mapexport.save` via `substance_painter.js.evaluate`
-for per-layer and per-mask export. This is one of the small map-export JS
-fallbacks in the SP side of the plugin. Logged in §4.2.
+Layer and mask pixels therefore come from Painter 12.1's native stack-node
+texture export (`stack_node_export.py`), one layer or mask at a time and per
+UV tile. The legacy JS `alg.mapexport.save([uid, channel])` that the v1.1.8
+plugin used is no longer called (Current Constraints).
 
 Still useful Python APIs:
 - `sp.export.list_project_textures(config)` — dry run / preview
@@ -194,20 +179,14 @@ Still useful Python APIs:
 Return is a `Resource` object with `.identifier() → ResourceID` which is
 what fill layers / fill effects accept as their source argument.
 
-Historical automatic sync-back used `import_project_resource`. The original
-PNG file can be deleted after import because data is copied into the `.spp`,
-but host validation showed this path is too heavy for the current Phase 1
-workflow. It is deprecated in favor of manual Photoshop PNG export and manual
-Painter import.
+Apply imports each mapped Photoshop layer with `import_project_resource`
+(`desktop_transfer.py`); the data is copied into the `.spp`. Importing in the
+background was too heavy (Current Constraints), so nothing is imported before
+the user presses Apply.
 
-Assigning to a paint layer:
-- **Paint layers don't accept a bitmap source directly** — strokes aren't
-  Python-accessible (`paint.md` explicitly: "Strokes are not accessible from
-  the Python API").
-- Strategy: insert a `FillEffectNode` at the top of the paint layer's
-  content stack with the imported PNG as `set_source(channel, resource_id)`.
-  Old paint strokes remain below as hidden-backup (`set_visible(False)` via
-  §1.4 pattern).
+**Paint layers don't accept a bitmap source** — strokes aren't
+Python-accessible (`paint.md`: "Strokes are not accessible from the Python
+API"), so a Photoshop layer arrives as a new fill layer.
 
 Assigning to a fill layer:
 - `FillLayerNode.set_source(channel, ResourceID)` directly — simpler.
@@ -228,8 +207,8 @@ Assigning to a mask:
 - `ls.InsertPosition.above_node / below_node / inside_node(node, NodeStack) / from_textureset_stack(stack)`
 - `ls.NodeStack.{Substack, Content, Mask}` — picks which stack to insert into
 - `ls.ScopedModification("name")` — context manager that batches edits into
-  one undo entry; also batches expensive recomputation. **Use this around
-  every sync-apply operation.**
+  one undo entry; also batches expensive recomputation. Apply runs inside
+  one.
 
 Insertion rule tables in `edition.md` confirm: fill effect into content or
 mask stack is legal; paint effect into content or mask is legal; anchor into
@@ -248,9 +227,9 @@ content or mask is legal.
 ### 1.10 Events / file watching — ✅ covered
 
 - `sp.event.DISPATCHER.connect(EventClass, callback)` — weak ref
-- `sp.event.DISPATCHER.connect_strong(EventClass, callback)` — strong ref,
-  use for our sync-inbox watcher that must outlive function scope
-- Events we need: `ProjectOpened`, `ProjectEditionEntered`,
+- `sp.event.DISPATCHER.connect_strong(EventClass, callback)` — strong ref
+- The plugin connects to none of them (Current Constraints: no background
+  work). Available: `ProjectOpened`, `ProjectEditionEntered`,
   `ProjectAboutToClose`, `ProjectClosed`, `ExportTexturesEnded`,
   `TextureStateEvent` (fires on texture changes; has
   `tile_indices`, `channel_type`, `cache_key` — enough to detect that a
@@ -259,8 +238,6 @@ content or mask is legal.
   but the docs do not expose a per-layer `last_modified` timestamp. Conflict
   detection must therefore use coarse stack/channel cache keys or re-exported
   hashes, not a nonexistent per-layer timestamp.
-- **QFileSystemWatcher** (Qt) is usable directly since PySide6 is available —
-  that's how we watch `_pt_sync_inbox/` for new manifests
 
 ### 1.11 Logging & errors — ✅ covered
 
@@ -275,62 +252,24 @@ content or mask is legal.
 ## 2. SP JS API (fallback bridge)
 
 Invoked via `sp.js.evaluate(js_source_str) → str` (JSON-serialised return).
-Documented in `pt-python-doc-md/substance_painter/js.md`.
+Documented in `reference-docs/pt-python-doc-md/substance_painter/js.md`.
+`bridge.py` wraps four read-only queries, all under `alg.mapexport`; nothing
+is exported through JS.
 
-### 2.1 Capabilities present in JS but missing in Python
-
-Two:
-
-**`alg.mapexport.save([path_or_uid…], filepath, config?)`** — per-layer export
-- Saves the rendered output of a single layer / effect / mask to disk
-- Path can be `[uid]`, `[uid, channel]`, `[texture_set, channel]`,
-  `[texture_set, stack, channel]`, `[texture_set, "GroupName", "LayerName", "mask"]`
-- Config options: `padding` (`"Infinite" | "Transparent" | …`), `dilation`
-  (int), `resolution` (`[w, h]`), `bitDepth`, `keepAlpha`, `dithering`
-- This is how the v1.1.8 plugin gets per-layer PNGs
-- **We'll wrap it in `bridge.py` as `export_layer_png(uid, channel, config, out_path)`**
-
-**`alg.mapexport.exportPath()`** — project-level export path (dynamic)
-- Returns the current project's texture export directory (the path the user
-  sees and can change in Painter's Export Textures dialog)
-- Updates whenever the user changes the project's export path — our plugin
-  must read it fresh on every export, not cache it
-- The Python-side `sp.export.get_default_export_path()` returns the
-  **application** default, which is NOT the project-specific path — confirmed
-  in `export.md`. So we go through JS.
-
-### 2.2 JS invocation bridge
-
-```python
-import substance_painter.js
-import json
-
-def export_layer_png(uid: int, channel: str, out_path: str,
-                     padding="Infinite", dilation=0,
-                     resolution=None, bit_depth=8) -> None:
-    opts = {"padding": padding, "dilation": dilation,
-            "bitDepth": bit_depth, "keepAlpha": False}
-    if resolution:
-        opts["resolution"] = list(resolution)
-    js = (f'alg.mapexport.save([{uid}, "{channel}"], '
-          f'{json.dumps(out_path)}, {json.dumps(opts)})')
-    sp.js.evaluate(js)   # returns "" on success, raises RuntimeError on failure
-```
+| Call | Why it goes through JS |
+|---|---|
+| `exportPath()` | The project's texture export directory, the one the user sees and can change in Painter's Export Textures dialog. `sp.export.get_default_export_path()` returns the **application** default instead (`export.md`). Read fresh on every export, never cached. |
+| `getProjectExportPreset()` | Python can list export presets but cannot read the one stored on the project. |
+| `channelIdentifiers(stackPath)` | Stack-level used channel identifiers, including resolved user-channel labels where the host reports them. |
+| `documentStructure()` | `materials[].stacks[].channels`, a second source for the same identifiers. |
 
 Side effects / concerns:
-- `sp.js.evaluate` returns a **JSON-formatted string** — successful save
-  returns `""` / `null`. Parse accordingly.
+- `sp.js.evaluate` returns a **JSON-formatted string**; parse accordingly.
 - Errors surface as Python `RuntimeError` with JS stack trace as message
 - Path escaping: use `json.dumps()` on every path to handle backslashes and
   quotes safely
 - JS engine is single-threaded and blocking — each `evaluate` call yields
   synchronously
-
-### 2.3 Also needed from JS (blend-mode + document structure)
-
-`design.md` lets us get blend modes from Python now (`Node.get_blending_mode`),
-so we **don't** need `alg.mapexport.layerBlendingModes`. Document structure
-traversal is fully Python. Only `alg.mapexport.save` is a JS-only dependency.
 
 ---
 
@@ -341,21 +280,14 @@ traversal is fully Python. Only `alg.mapexport.save` is a JS-only dependency.
 | Gap | Resolution |
 |---|---|
 | SP Python cannot export a single layer/mask to PNG | Painter 12.1 native stack-node texture export (`stack_node_export.py`) |
-| SP Python cannot read project-level export path | Use `alg.mapexport.exportPath()` via `sp.js.evaluate` (see §2.1) |
+| SP Python cannot read project-level export path | Use `alg.mapexport.exportPath()` via `sp.js.evaluate` (see §2) |
 | SP Python has no per-layer `last_modified` timestamp | Use channel/tile cache-key comparison or re-exported hashes for conservative conflict warnings |
 
 ### 4.2 JS fallback scope (SP side)
 
-Exactly three JS calls are wrapped by `bridge.py`:
-
-- `alg.mapexport.save(path, filepath, opts)` — per-layer PNG export
-- `alg.mapexport.exportPath()` — project texture export path
-- `alg.mapexport.channelIdentifiers(stackPath)` — stack-level used channel
-  identifiers, including resolved user-channel labels where the host reports
-  them
-
-Nothing else. All traversal, blend modes, effects, masks, layer-stack
-mutation, UI, events, and logging are Python-native.
+The four `alg.mapexport` queries in §2, and nothing else. All traversal,
+blend modes, effects, masks, layer-stack mutation, UI, events, and logging
+are Python-native.
 
 ---
 
@@ -371,7 +303,7 @@ mutation, UI, events, and logging are Python-native.
 
 ## 6. Color management deep dive (SP side)
 
-Source: `pt-python-doc-md/substance_painter/colormanagement.md` +
+Source: `reference-docs/pt-python-doc-md/substance_painter/colormanagement.md` +
 `source/bitmap.md`.
 
 ### 6.1 Color space model in SP
@@ -383,10 +315,10 @@ Source: `pt-python-doc-md/substance_painter/colormanagement.md` +
 | Raw | Data channels (Roughness, Metallic, Height, Displacement, AO, Opacity, Glossiness, Anisotropy, IoR, Specularlevel, user channels) | `GenericColorSpace.Raw` / `DataColorSpace.Data` |
 | Normal | Normal channel, depends on project OpenGL/DirectX | `NormalColorSpace.NormalXYZRight` / `...Left` |
 
-When `alg.mapexport.save` writes a PNG:
-- Color-managed channel → PNG is **sRGB-encoded** (gamma ~2.2)
-- Data channel → PNG is **raw** (no conversion)
-- Normal channel → PNG is raw in the project's normal orientation
+An exported layer PNG is:
+- Color-managed channel → **sRGB-encoded** (gamma ~2.2)
+- Data channel → **raw** (no conversion)
+- Normal channel → raw in the project's normal orientation
 
 ### 6.2 Measured blend behavior (2026-09-30)
 
@@ -487,7 +419,7 @@ opacity); `C` layer color; `lin` / `enc` the sRGB transfer functions.
 Painter's bundled Python has no numpy, so the compositor and rewrite belong in
 the native library that already hosts edge smoothing (`native/`).
 
-### 6.4 Sync-back color space handling
+### 6.4 Color space of an imported PNG
 
 When a Photoshop layer PNG is imported into SP, it is sRGB-encoded (PS document is
 sRGB). SP's `import_project_resource(path, Usage.TEXTURE)` defaults the
@@ -505,7 +437,7 @@ if is_data_channel(channel):
 elif channel == ChannelType.Normal:
     # match the project's normal map format. The local project docs expose
     # NormalMapFormat at project creation time, but no direct getter was found;
-    # store it in our export manifest or ask the user if it cannot be inferred.
+    # store it with the export or ask the user if it cannot be inferred.
     fmt = manifest["normal_map_format"]
     cs = (sp.colormanagement.NormalColorSpace.NormalXYZRight
           if fmt == sp.project.NormalMapFormat.OpenGL
@@ -513,8 +445,8 @@ elif channel == ChannelType.Normal:
     source_bitmap.set_color_space(cs)
 ```
 
-`sync_inbox.py` must know the channel for each incoming PNG (already in the
-manifest) and apply the appropriate color-space override.
+The transfer manifest names the target channel, so the importer knows which
+case applies.
 
 ### 6.5 OCIO / ACE projects
 
@@ -528,57 +460,12 @@ project uses OCIO/ACE. Full OCIO support can come in Phase 2.
 
 ---
 
-## 7. Effect-type bake-or-keep matrix
-
-For completeness. Each `NodeType` seen in `content_effects()` or
-`mask_effects()` decides a handler:
-
-| NodeType | In content stack | In mask stack | Handler |
-|---|---|---|---|
-| `FillEffect` | PS raster layer (clipping group) | Flattened into mask | Use `get_source()` to classify; if source is bitmap, export direct; if procedural/anchor, bake via `alg.mapexport.save(uid, channel)` |
-| `PaintEffect` | PS raster layer (clipping group) | Flattened into mask | Bake (strokes not Python-readable anyway) |
-| `FilterEffect` | Bake everything up to this effect | Bake into mask | Always bake |
-| `GeneratorEffect` | Bake | Bake | Always bake |
-| `LevelsEffect` | Bake | Bake | PS Levels differs from SP Levels |
-| `CompareMaskEffect` | (invalid per `edition.md` table) | Bake | Mask only |
-| `ColorSelectionEffect` | (invalid) | Bake | Mask only |
-| `AnchorPointEffect` | Bake in place | Bake in place | Per `design.md §5.4` |
-
-"Bake" means: call `alg.mapexport.save([effect_uid, channel], ...)` to get
-the effective contribution up to and including that effect, then emit a
-single PS raster layer with that PNG.
-
-"Instance layer" (`InstanceLayerNode`) is a top-level type — treat as a
-paint layer, bake its fully-resolved content to one raster.
-
-No further per-effect introspection needed at the `design.md` level; the
-exporter only needs the type enum + uid to dispatch.
-
----
-
 ## 8. Old plugin findings (v1.1.8) — reusable patterns
 
-Source: `ps-export_Rizum v1.1.8/ps-export-Rizum/`. The old plugin is
-JS/QML on the SP side and ExtendScript (.jsx) on the PS side. Several
-patterns translate cleanly to our new architecture.
+Source: `reference-docs/ps-export_Rizum v1.1.8/ps-export-Rizum/`. The old
+plugin is JS/QML on the SP side and ExtendScript (.jsx) on the PS side.
 
-### 8.1 SP-side patterns worth porting
-
-From `photoshop.js` and `main.qml`:
-
-| Pattern | v1.1.8 source | Where it lives in v2 |
-|---|---|---|
-| Settings persisted in SP preferences (last checked material/stack/channel list, dilation, bit depth, padding, launch-PS) | `alg.settings.setValue(...)` | `sp_plugin/rizum_sp_to_ps/settings.py` using `QSettings` or project metadata (`sp.project.Metadata("Rizum")`) |
-| Material/stack/channel tree picker with "All"/"None" buttons + hierarchical check propagation | `ExportDialog.qml` | `ui.py` — PySide6 `QTreeWidget` with tri-state checkboxes |
-| Recursive layer-tree traversal (DFS) with per-leaf PNG export and per-folder group creation | `layersDFS()` in `photoshop.js` | `exporter.py` — use `GroupLayerNode.sub_layers()` + type switch |
-| Export path = `alg.mapexport.exportPath() + "/" + projectName + "_photoshop_export/"` | `photoshop.js:54` | Same, via JS bridge (§2.1). Preserved for compatibility with existing user workflows. |
-| Default normal-channel background = RGB(128, 128, 255) fill layer at the bottom | `photoshop.js:189-192` | `exporter.py` — emit a `fill` entry in `build_request.json` for the `normal` channel |
-| Bottom "snapshot" layer (full flattened channel export, hidden, at top of PSD) as visual reference | `photoshop.js:194-197` | Optional debug feature in v2; off by default. Useful for verifying the live stack matches the ground-truth composite |
-| Folder visibility set **after** children are added (gotcha: PS overrides to `true` otherwise) | `photoshop.js:242` comment | Note in `ps_plugin/src/build-psd.js` — set `group.visible` at the end of group processing, not at creation |
-| Rasterize-all at end of PSD build | `photoshop.js:185` | `ps_plugin/src/build-psd.js` — optional; off by default in v2 since we want editable layers |
-| Bit-depth dropdown: "TextureSet value" (−1) / "8 bits" / "16 bits" | `ConfigurePanel.qml:193-197` | `ui.py` — same three options. Value −1 means "use `Channel.bit_depth()`" |
-
-### 8.2 PS-side ExtendScript recipes
+### 8.1 PS-side ExtendScript recipes
 
 `footer.jsx` contains action-descriptor sequences the current JSX scripts
 reuse for placing PNGs and building masks:
@@ -592,37 +479,24 @@ reuse for placing PNGs and building masks:
 | `Overlay_Normal()` | Hack: sets blend=linearLight @ 50% fill + linearBurn fill-effect layer at (255,255,128) to fake SP's NormalMapCombine |
 | `del_bg()` / `rasterize_All()` / `send_backward()` / `center_layer()` / `new_layer()` | Small ExtendScript helpers |
 
-### 8.3 Settings UI discrepancies vs. README
-
-- `ConfigurePanel.qml:156` declares `maxValue: 256` for the dilation
-  slider. The README claims 0–10. Neither is right for v2 (we use 0–64
-  per `design.md §3.4`), but worth noting: the v1.1.8 **behavior** was
-  0–256, only the README said 0–10.
-- The "Launch Photoshop after export" feature stores a path to
-  `photoshop.exe` and calls `alg.subprocess.startDetached([photoshopPath,
-  photoshopScript.jsx])`. That is why old exports can enter Photoshop without a
-  Photoshop-side button click. This was an ExtendScript execution path, not a
-  Photoshop plugin invocation.
-
-### 8.4 Documented bugs to avoid regressing
+### 8.2 Documented bugs to avoid regressing
 
 - Old plugin's blend-mode `switch` drops **`Darken`, `Lighten`, `Inverse
   divide`, `Inverse Subtract`, `Tint`, `Value`, `Signed addition`** as
   `blendingMode = ""` — i.e. silently omits the entire `blendMode` set
-  line, leaving PS at its default `NORMAL`. v2 handles all of these per
-  the mapping table in §3.6.
+  line, leaving PS at its default `NORMAL`. `blend_map.py` covers all of
+  these (`design.md §4.1`).
 - Old plugin mutates `app.preferences.rulerUnits`, `typeUnits`,
   `displayDialogs` globally. The current JSX scripts save and restore
   `displayDialogs` around their work.
 
 ---
 
-## 9. M1 request-preview contract
+## 9. Build request contract
 
-The first M1 implementation slice is intentionally read-only. It traverses the
-open Painter project and emits request-preview JSON with the same shape that
-later PNG-producing requests will use, but it does **not** call
-`alg.mapexport.save` yet.
+Painter first traverses the open project into request-preview JSON
+(`request_type: "preview"`). It has the shape of the build request (§9.2)
+but names no PNG files.
 
 Minimum top-level fields for each preview request:
 
@@ -661,7 +535,7 @@ applicable. `normal_map_format` and `baseline_cache_key` may be null in the
 preview slice because the local API docs did not expose a direct normal-format
 getter or a current cache-key query outside events.
 
-### 9.1 M1 bake decision fields
+### 9.1 Bake decision fields
 
 Each layer/effect record also carries pure metadata decisions:
 
@@ -672,26 +546,12 @@ Each layer/effect record also carries pure metadata decisions:
 | `ps_blend_mode` | Photoshop blend mode for the relevant channel/mask, if any |
 | `warnings` | Human-readable limitations, e.g. approximate mapping or unsupported blend mode |
 
-Default "Bake unsupported modes" behavior:
+Which modes stay editable, are converted or are baked follows the Blend modes
+setting (`design.md §4.1`); `blend_map.py` makes the decision.
 
-- PS-representable modes stay `keep_editable` and `sync_direction: "both"`.
-- `Disable` becomes `hidden` and `sync_direction: "none"`.
-- `Tint`, `Value`, `SignedAddition`, `InverseDivide`, `InverseSubtract`,
-  `NormalMapCombine`, `NormalMapDetail`, and `NormalMapInverseDetail` become
-  `bake` and `sync_direction: "sp_to_ps_only"`.
-- `Replace` is treated as unsupported for editable compositing in default
-  mode and is baked, matching `design.md §4.1`.
+### 9.2 Build bundle contract
 
-Preserve-all-layers mode:
-
-- Approximate modes (`Tint`, `Value`, `SignedAddition`, `InverseDivide`,
-  `InverseSubtract`, `Replace`) are kept editable with warnings.
-- Normal-map blend modes remain baked because Photoshop has no equivalent.
-
-### 9.2 M1 build bundle contract
-
-After preview traversal is stable, Painter writes one bundle per
-texture-set/stack/channel/UDIM request:
+Painter writes one bundle per texture-set/stack/channel/UDIM request:
 
 ```text
 <bundle>/
@@ -699,7 +559,7 @@ texture-set/stack/channel/UDIM request:
   png/
     uid_<uid>.png
     uid_<uid>_mask.png
-    baked_<uid>.png
+    uid_<uid>_geometry_mask.png
 ```
 
 `build_request.json` is the preview request promoted to
@@ -707,21 +567,20 @@ texture-set/stack/channel/UDIM request:
 
 - `build_request_file`: absolute path to the JSON file.
 - `asset_dir`: absolute path to the `png/` directory.
-- `psd_file`: absolute output PSD path for M2.
+- `psd_file`: absolute output PSD path.
 - `export_settings`: resolved padding, dilation, bit depth, keep-alpha, and
-  per-UDIM resolution values passed to `alg.mapexport.save`.
+  per-UDIM resolution values for the stack-node export.
 - Per-node `asset` entries for editable or baked pixel payloads.
 - Per-node `mask_asset` entries when a layer has an enabled mask.
 
-Painter-side PNG writing is implemented behind the JS bridge wrapper and can be
-disabled with `export_pngs=False` for local/static validation. When enabled in
-Painter, PNG payloads are written with `alg.mapexport.save`; target discovery
-may also use `alg.mapexport.channelIdentifiers` to hide unused stack channels.
+PNG payloads are written by the stack-node export (`stack_node_export.py`);
+target discovery also uses `alg.mapexport.channelIdentifiers` to hide unused
+stack channels.
 
 `build_request.json` keeps the Python-facing channel name (for example
-`BaseColor`) and also stores `channel_identifier` (for example `basecolor`) for
-the legacy JS `alg.mapexport.save` call. The JS docs define export channels as
-channel identifiers, not Python enum names.
+`BaseColor`) and also stores `channel_identifier` (for example `basecolor`),
+the identifier Painter's map export reports, which for a user channel can be
+its label rather than the Python enum name.
 
 ## 10. Desktop runtime direction
 
@@ -730,22 +589,29 @@ React 19, and an exact-pinned `@gpuix/react`. GPUiX supplies the GPUI native
 renderer; direct GPUI, Electron, Tauri, WinUI, and webview implementations are
 not parallel fallbacks.
 
-`mockups/pt-bridge-ui-v4.html`, the vendored `rizum_ui` design decisions, and
-the shared icon snapshot remain the product's visual authority. The Rizum Glass
-repository is used only for its GPUiX migration discipline: freeze the approved
-reference, record visible states and motion in a reference contract, keep all
-text colors explicit, and isolate frame-bound renderer queries from domain
-state and transport work.
+### 10.1 Desktop file contracts
 
-### 10.1 Explicit desktop transfer contracts
+Per Bridge session Painter writes, in the system temp folder
+(`rizum-pt-bridge/<project>/`):
 
-Photoshop selected-layer export now writes `photoshop_selection.json` beside
-its PNG files. The manifest records the source document, stable Photoshop layer
-IDs, blend metadata, and relative layer/mask PNG paths. The desktop app reads
-that manifest together with either the PSD's persistent `.rizum.json` sidecar
-or an explicit Painter `build_request.json` snapshot.
+- `painter_snapshot.json` (`request_type: "painter_snapshot"`,
+  `schema_version: 1`): the project, Painter's active context, the Photoshop
+  blend modes Painter imports as they are, and one context per texture set /
+  stack / channel with its layer tree. Opacities are percentages.
+- `photoshop_documents.json` (`schema_version: 1`): which PSD each context
+  uses.
 
-Apply writes `desktop_transfer.json` atomically. Each transfer contains the
-source asset reference, destination Painter UID/path, and an explicit `inside`
-or `after` insertion relation. This is a user-confirmed file contract, not a
-revival of the deprecated `_pt_sync_inbox`, daemon, or background polling path.
+The mapper reads the connected PSD itself. On Apply it writes
+`desktop_transfer.json` (`request_type: "desktop_transfer"`,
+`schema_version: 3`) there and names it in its Apply request
+(`desktop/README.md`); nothing watches the folder. Each transfer holds:
+
+- `direction`, and an `insertion` of `before`, `after` or `inside`;
+- `source` and `target` with `host`, `id`, `kind`, `name` and `path`, plus
+  `index_path` for Photoshop layers. `path` joins the names from the root
+  with "/"; a name may contain "/" itself ("Hue/Saturation 1"), so `name`
+  carries the layer's own name;
+- for a Photoshop source, the PNG files the mapper rendered into
+  `photoshop_assets/`, or a `color` for a solid fill, and `children` for a
+  folder;
+- `replace`, when Apply deletes the target once the row is in place.

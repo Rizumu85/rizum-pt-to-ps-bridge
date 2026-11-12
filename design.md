@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Build a two-plugin bridge between Substance 3D Painter and Photoshop that turns
+Build a bridge between Substance 3D Painter and Photoshop that turns
 Painter texture stacks into editable PSDs while preserving as much layer
 structure, blend behavior, channel context, UDIM layout, and color fidelity as
 the two hosts allow. Returning work between the hosts is explicit: the native
@@ -17,10 +17,9 @@ This document owns user-facing behavior, workflow shape, UI expectations, and
 design tradeoffs. Low-level API findings belong in `analysis.md`; implementation
 directions and concrete steps belong in `plan.md`.
 
-API-doc status: revised against the local SP Python docs, legacy SP JS docs,
-and Photoshop docs listed in `analysis.md §0`. The remaining uncertainties
-are host-recorded `batchPlay` descriptors and live host validation, not missing
-documentation in the repo.
+API-doc status: revised against the local SP Python and legacy SP JS docs
+listed in `analysis.md §0`. What remains open is live host validation
+(`plan.md`), not missing documentation in the repo.
 
 Local development note: this repository is placed directly in Painter's Python
 plugin directory as `rizum-pt-to-ps-bridge`. The root therefore contains
@@ -59,8 +58,7 @@ explicit **All** and **None** actions,
 and footer buttons with large rounded proportions matching Photoshop-style
 inner panels. **All** means "click to select all"; **None** means "click to
 deselect all". Do not include extra eye/filter icons until those actions have
-real behavior. Mask Probe remains a developer utility and does not appear
-beside the normal Cancel/Export actions.
+real behavior.
 
 Export dialog groups should not auto-expand on hover; expansion is an explicit
 row/arrow action. Bridge app layer rows are visually quiet by default. Hover
@@ -83,9 +81,9 @@ may be much taller. The insertion target should be a clear horizontal drop line
 inside the Painter card. Photoshop and Painter may therefore use different card
 heights in the same transfer view: the Photoshop source side can shrink after
 layers are moved, while the Painter target side can remain tall enough for a
-larger layer tree. Each host card header should use a compact logo plus two
-text lines: host name first, then the active PSD or texture-set/channel context.
-Mapped rows use a quiet raised surface with a 2px white leading edge. This keeps
+larger layer tree. Each host card header has two text lines: host name first,
+then the active PSD or texture-set/channel context.
+Mapped rows use a quiet raised surface. This keeps
 the established white/gray accent system while making mapped state visible;
 blue is not introduced as a second global accent. A short faint drop hint may
 follow the current Target content, but it should not become a boxed empty state.
@@ -111,10 +109,10 @@ Painter-wide UI scaling belongs in a separate helper plugin, not the PT Bridge
 settings panel. The bridge may coexist with that helper, but should not own
 global Painter UI scale experiments.
 
-The visual mockup should prefer MiSans when it is available on the user's
-machine. Most UI text should use 13px/600, Painter dock action labels should
-use 10px/500, secondary metadata should use 11px/400, and the mockup may expose
-a small live font-size control while the final type scale is being tuned.
+The desktop mapper bundles MiSans and registers it for its own process, so
+its text does not depend on the user's installed fonts: 13px primary and
+11px secondary text, both at weight 400 (`desktop/src/theme.ts`). MiSans has
+no Hangul, so Korean uses the system's Malgun Gothic.
 
 Painter writes build bundles to the working folder
 `<exportPath>/<project>_photoshop_export/`, resolving Painter's project export
@@ -129,9 +127,7 @@ started.
 
 Painter build requests should include channel semantics in addition to the raw
 channel enum: a display label, a role (`color`, `data`, `opacity`, `normal`, or
-`user`), format, bit depth, and color/data flag. Photoshop should show those
-fields in its sidecar before any channel-specific pixel behavior is
-introduced.
+`user`), format, bit depth, and color/data flag.
 
 The Painter target picker should show user channel labels when Painter exposes
 them, while keeping the raw enum channel as the internal export key. Layer PNGs
@@ -140,8 +136,8 @@ channel with no remaining layer PNGs should not write a build bundle. The
 target picker and request generator should first ask Painter's legacy JS
 `alg.mapexport.channelIdentifiers(stackPath)` for stack-level used channels so
 entire unused channels can be hidden/skipped before per-layer PNG export.
-The same resolved identifier should be written into `build_request.json` and
-passed to `alg.mapexport.save`; for user channels this may be the Painter label
+The same resolved identifier should be written into `build_request.json`;
+for user channels this may be the Painter label
 (`SCol`, `TNrm`, `SDF`) rather than the Python enum name (`User0`, `User1`).
 For user-channel exports, Painter may try several known identifier spellings
 and keep the first non-transparent result. Python `active_channels` should be
@@ -165,9 +161,11 @@ making the exporter depend on one user-channel spelling.
 The desktop mapper (`desktop/`) is the transfer queue between the hosts. It
 shows Photoshop and Painter layer trees side by side and lets the user drag
 selected layers onto a target group or insertion position: a framed folder row
-means "inside", a thin insertion line means "after". Staged transfers are
-selectable, retargetable, and undoable. **Apply** is a labelled primary button
-with the pending count. The mapper stays open after Apply: Painter applies the
+means "inside", a thin insertion line means above or below (§6.2). Staged
+transfers are selectable, retargetable, and undoable. **Apply** is a labelled
+primary button; the pending count is in the status line, because in the label
+it made the button's width jump with every drop. The mapper stays open after
+Apply: Painter applies the
 manifest, runs any Photoshop insert, and returns a fresh snapshot, so both
 trees refresh in place and the outcome appears in the status line.
 
@@ -254,20 +252,19 @@ mapper in `desktop/dist/`.
 ## 3. UDIM handling & file naming
 
 **One PSD per UDIM tile.** Each tile's PSD has an identical layer structure
-(same `rizum_sp_uid` on corresponding layers across tiles). Export progress
-UI reports per tile.
+across tiles. Export progress UI reports per tile.
 
 ### 3.1 Filename pattern — follow user's SP export preset
 
 The plugin does **not** invent its own `MatName_Channel.psd` naming scheme.
-Instead it reads the user's selected SP export preset (from
+Instead it reads the export preset stored on the project
+(`alg.mapexport.getProjectExportPreset()`, matched against
 `sp.export.list_resource_export_presets()`) and reuses the preset map's
 `fileName` pattern, replacing only the file extension with `.psd`.
 
-UI: a "Naming preset" dropdown in the export dialog, defaulting to the
-preset remembered from the user's last run (or SP's default if first run).
-Tokens SP resolves automatically: `$project`, `$mesh`, `$textureSet`,
-`$sceneMaterial`, `$udim`.
+The export dialog has no naming choice of its own: PSD names follow the
+preset the user's texture export uses. Tokens resolved: `$project`, `$mesh`,
+`$textureSet`, `$sceneMaterial`, `$udim`.
 
 ### 3.2 UDIM token insertion
 
@@ -293,7 +290,7 @@ that flag to omit the tile suffix.
 
 The plugin uses SP's **project-level** export path, fetched fresh at the
 moment of each export via `alg.mapexport.exportPath()` (JS bridge, see
-`analysis.md §2.1`). This path tracks whatever the user has configured in
+`analysis.md §2`). This path tracks whatever the user has configured in
 Painter's Export Textures dialog and updates dynamically if they change it.
 PSDs are written straight into `<exportPath>`, beside the textures Painter
 exports there: the PSD is the deliverable, and the user asked that an export
@@ -318,7 +315,7 @@ destination they change it in Painter's normal export dialog.
 
 UI exposes two knobs (same semantics as v1.1.8 but expanded range):
 
-| Knob | UI | Passed to `alg.mapexport.save` |
+| Knob | UI | Export setting |
 |---|---|---|
 | **Padding** | Checkbox "Infinite padding" (default off for PSD layer payloads) | `padding: "Infinite"` when on, `padding: "Transparent"` when off |
 | **Dilation** | Slider 0-64 px, enabled only when padding is off | `dilation: <n>` |
@@ -453,7 +450,9 @@ Painter layer opacity is stored in the request as the normalized host value
 (`1.0` is fully opaque, `0.55` is 55%). Photoshop layer opacity is a
 percentage, so the Photoshop builder normalizes `0..1` values to `0..100`
 right before assigning layer opacity. Values greater than `1` are preserved as
-already-percent values for compatibility.
+already-percent values for compatibility. This holds for build requests only:
+Painter's snapshot for the mapper and Bridge transfers carry percentages
+throughout and are never rescaled (`analysis.md §10.1`).
 
 Blend mode mapping must stay per-channel. A Painter layer can have different
 blend settings for BaseColor, Normal, Roughness, and other channels, so a
@@ -479,36 +478,16 @@ objects during assembly and are rasterized in one pass at the end. The new
 document's initial layer is renamed to a unique placeholder and removed once
 real content exists, so a Painter layer named `Layer 1` is never deleted.
 
-The current mask slice attaches `mask_asset` PNGs to placed raster layers
-through Photoshop's Imaging API: open mask PNG, read it as grayscale image
-data, then call `imaging.putLayerMask()` on the target Photoshop layer. Mask
-failures are reported separately and do not remove the successfully placed
-pixel layer.
-
-SP 12.1.0+ invalidates the old plugin's JS true-mask export path:
-`alg.mapexport.save([uid, "mask"], ...)` now routes through the stack
-`blendingmask` channel and does not return ordinary layer/folder mask pixels.
-For Phase 1 compatibility, Painter mask PNGs are therefore derived from the
-exported layer PNG alpha and marked as approximate. This preserves a useful
-Photoshop visual mask while avoiding the host error, but it is not a lossless
-Painter mask representation and cannot cover folder masks without a direct
-layer PNG alpha source. A later Python layerstack mask exporter is required
-before the design can claim original-mask fidelity again.
-
-The Painter Export dialog may expose a temporary **Probe** action while this
-mask exporter is being designed. Probe is read-only and writes `_mask_probe.json`
-beside the normal export bundles. It is not a user workflow feature; it is a
-host-diagnostic aid for deciding which mask structures can be reconstructed
-from Python metadata and which require a rendered workaround.
+Layer and folder masks are exported as their own PNGs (§5.3) and attached
+in Photoshop as layer masks through the Action Manager steps in
+`photoshop_masks.jsx`, which the PSD build and Bridge inserts share.
 
 ### 5.2 Sub-effects inside a layer's channel
 
 For non-group raster nodes with direct `content_effects`, the desired PSD shape
 is still one clipped Photoshop layer per editable SP fill/paint effect above a
-base silhouette layer. Host validation showed that the current Painter JS
-export call cannot target effect UIDs directly, so this shape requires a future
-export strategy instead of the existing `alg.mapexport.save([uid, channel])`
-path.
+base silhouette layer. Host validation showed that effect UIDs cannot be
+exported on their own, so this shape requires a future export strategy.
 
 ```
 PS group "<sp_layer_name>"     (group mask = SP layer's combined mask)
@@ -522,7 +501,7 @@ Filter/generator/level sub-effects (non-fill/paint) → baked into a static
 raster sibling.
 
 Implementation scope for Phase 1: do not export effect UIDs as standalone PNG
-assets. Keep effect records in `build_request.json` and the Photoshop sidecar
+assets. Keep effect records in `build_request.json`
 as provenance/unplaced nodes, while parent layer pixels and masks continue to
 use layer UID exports. Editable clipping reconstruction for Painter content
 effects is intentionally abandoned for Phase 1; dedicated wrapper groups,
@@ -538,8 +517,8 @@ has no concept of.
 ### 5.4 Anchor point references
 
 Each anchor reference is **baked in place** as a regular Normal-mode raster
-layer. No special locking, no hidden metadata beyond the standard
-`rizum_sp_uid`. For return transfers it is simply another Photoshop layer.
+layer. No special locking and no hidden metadata. For return transfers it is
+simply another Photoshop layer.
 
 ---
 
@@ -652,22 +631,14 @@ without a manual connect. A texture set's PSDs are remembered under the mesh's
 material name (`TextureSet.original_name`), not its current name, so renaming
 a texture set in Painter keeps them.
 
-### 7.3 Build request preview
+### 7.3 Build request
 
-M1 starts with a read-only `request_type: "preview"` JSON contract. Preview
-requests share the final `build_request.json` metadata shape but omit PNG
-payload paths until the `alg.mapexport.save` bridge is implemented. This keeps
-Painter traversal testable before Photoshop PSD construction depends on it.
-
-Preview node records include `bake_policy`, `sync_direction`, `ps_blend_mode`,
-and `warnings`. These are metadata decisions only in M1; actual raster baking
-is still deferred to the PNG export slice.
-
-The executable M1 bundle promotes the preview to `request_type: "build"`,
-writes `build_request.json`, creates a sibling `png/` payload directory, and
-annotates each PS-consumable node with either `asset` or `mask_asset` records.
-The actual PNG writes use the SP JS bridge around `alg.mapexport.save`; local
-static checks may generate the JSON without host PNG export.
+Painter traverses a stack into a `request_type: "preview"` record, which
+names no PNG files, and promotes it to `request_type: "build"` when it writes
+the bundle: `build_request.json` beside a `png/` payload directory, with an
+`asset` or `mask_asset` record on each node Photoshop consumes
+(`analysis.md §9`). Node records include `bake_policy`, `sync_direction`,
+`ps_blend_mode`, and `warnings`.
 
 The build request carries both `channel` (Python enum-style display name) and
 `channel_identifier` (legacy JS mapexport identifier such as `basecolor`) so
@@ -680,10 +651,6 @@ Painter traversal and PNG export do not silently depend on the same spelling.
 These are no longer blocked on missing local API docs. They require live host
 validation during implementation:
 
-- Record or port the exact `batchPlay` sequence for converting a temporary
-  grayscale layer into a target layer mask. The old ExtendScript descriptor
-  sequence in `ps-export_Rizum v1.1.8/ps-export-Rizum/footer.jsx` is the
-  starting point.
 - Decide how the exporter records `normal_map_format`: no direct getter for
   an already-open Painter project's normal orientation was found in the local
   API docs. Prefer storing it when known or asking once in the export UI.
