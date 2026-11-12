@@ -42,5 +42,6 @@
     "icons/undo.svg",
     "icons/wrench.svg",
     "icons/x.svg"
-  ]
+  ],
+  "pinned": "Holds plugin-side edits (the ProgressTrack class) on an older snapshot; sync it deliberately with --target."
 }
