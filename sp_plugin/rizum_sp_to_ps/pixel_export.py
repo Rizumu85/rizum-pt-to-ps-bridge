@@ -52,4 +52,5 @@ def png_is_fully_transparent(path):
     else:
         data.setsize(rgba.sizeInBytes())
         raw = bytes(data)
-    return not any(raw[index] for index in range(3, len(raw), 4))
+    # A slice scan in C: the per-byte generator took over a second for a 4K layer.
+    return not raw[3::4].strip(b"\x00")
