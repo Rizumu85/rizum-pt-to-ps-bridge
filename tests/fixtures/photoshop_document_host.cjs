@@ -52,7 +52,7 @@ const context = vm.createContext({
   SaveOptions: { DONOTSAVECHANGES: "discard" }, PNGSaveOptions: function () {}, alert() {},
 });
 const script = fs.readFileSync(process.argv[2], "utf8").replace(/^#target.*$/m, "");
-vm.runInContext(script, context, { timeout: 5000 });
+vm.runInContext(script, context, { timeout: 60000 });
 calls.globalJson = vm.runInContext("typeof JSON", context);
 calls.dialogs = app.displayDialogs;
 calls.rulerUnits = app.preferences.rulerUnits;

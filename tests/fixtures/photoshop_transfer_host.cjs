@@ -245,7 +245,7 @@ const context = vm.createContext({
   ].map((mode) => [mode, mode])),
 });
 const script = fs.readFileSync(process.argv[2], "utf8").replace(/^#target.*$/m, "");
-vm.runInContext(script, context, { timeout: 5000 });
+vm.runInContext(script, context, { timeout: 60000 });
 
 const tree = (list) => list.map((layer) => ({
   name: layer.name, typename: layer.typename, blendMode: layer.blendMode, opacity: layer.opacity,

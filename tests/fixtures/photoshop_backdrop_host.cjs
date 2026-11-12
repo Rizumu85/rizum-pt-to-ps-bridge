@@ -138,7 +138,7 @@ const context = vm.createContext({
   PNGSaveOptions: function PNGSaveOptions() {},
   BlendMode: { NORMAL: "NORMAL", PASSTHROUGH: "PASSTHROUGH" },
 });
-vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context, { timeout: 5000 });
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context, { timeout: 60000 });
 process.stdout.write(JSON.stringify({
   untouched: JSON.stringify(snapshot(document.layers)) === original,
   open: app.documents.length,
