@@ -1435,6 +1435,15 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         self.setShortcut(text)
         self.captureStateChanged.emit(False)
 
+    def event(self, event) -> bool:
+        # While capturing, the key belongs to the field: without this an
+        # application shortcut (Painter's M, C, F, or the plugin's own key)
+        # fires instead of being recorded.
+        if self._capturing and event.type() == QtCore.QEvent.Type.ShortcutOverride:
+            event.accept()
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event) -> None:
         if self._capturing:
             key = event.key()
@@ -1459,7 +1468,9 @@ class ShortcutCaptureField(QtWidgets.QFrame):
                 self.cancelCapture()
                 event.ignore()
                 return
-            sequence = QtGui.QKeySequence(int(event.modifiers()) | key)
+            # keyCombination, not int(modifiers) | key: Painter's PySide
+            # (6.8) refuses int() on KeyboardModifier.
+            sequence = QtGui.QKeySequence(event.keyCombination())
             text = sequence.toString(QtGui.QKeySequence.SequenceFormat.PortableText)
             if text:
                 self.finishCapture(text)
