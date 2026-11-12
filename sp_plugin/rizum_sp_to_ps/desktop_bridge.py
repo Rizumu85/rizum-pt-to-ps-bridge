@@ -470,9 +470,9 @@ class DesktopBridgeController:
             elif line:
                 self._trace("desktop", line)
 
-    def _desktop_request(self, text):
+    def _desktop_request(self, payload):
         try:
-            request = json.loads(text)
+            request = json.loads(payload)
             request_type = request.get("type")
         except (ValueError, AttributeError):
             request, request_type = {}, None
