@@ -431,6 +431,9 @@ class BridgePanel:
     def _load_user_settings(self):
         store = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         bit_depth = optional_int(store.value("bit_depth", None))
+        blend_modes = store.value("blend_modes", painter_look.DEFAULT_BLEND_MODES)
+        if blend_modes not in (painter_look.MATCH_PAINTER, painter_look.KEEP_BLEND_MODES):
+            blend_modes = painter_look.DEFAULT_BLEND_MODES
         return {
             "photoshop_path": store.value("photoshop_path", "", str) or "",
             "infinite_padding": to_bool(store.value("infinite_padding", False)),
@@ -443,6 +446,7 @@ class BridgePanel:
             # layer filled the export folder with copies nobody opens.
             "psd_size": optional_int(store.value("psd_size", None)),
             "render_scale": _render_scale(store.value("render_scale", 1)),
+            "blend_modes": blend_modes,
         }
 
     def save_user_settings(self, values):
@@ -458,6 +462,9 @@ class BridgePanel:
         else:
             store.remove("psd_size")
         store.setValue("render_scale", _render_scale(values.get("render_scale")))
+        # Was neither stored nor loaded: the Settings choice had no effect
+        # and showed the default again on the next open.
+        store.setValue("blend_modes", values.get("blend_modes") or painter_look.DEFAULT_BLEND_MODES)
         bit_depth = values.get("bit_depth")
         if bit_depth:
             store.setValue("bit_depth", int(bit_depth))
