@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import localization, ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps import localization, ui, ui_kit
 from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog
 from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 

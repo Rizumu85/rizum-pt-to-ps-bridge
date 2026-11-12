@@ -797,7 +797,6 @@ __RIZUM_MASK_RUNTIME__
             removedFolders[bundleKey] = true;
         }
         removeFileIfPresent(File(exportListPath));
-        removeFileIfPresent(File(outputFolder.fsName + "/painter_snapshot.json"));
         if ($.fileName) {
             removeFileIfPresent(File($.fileName));
         }

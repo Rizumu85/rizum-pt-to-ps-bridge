@@ -138,6 +138,41 @@ class PhotoshopBuildJobTests(unittest.TestCase):
         self.assertEqual(self.start((False, "Photoshop was not found.")), (False, "Photoshop was not found."))
         self.assertIsNone(self.panel._build_job)
 
+    def test_replacing_psds_is_asked_before_anything_renders(self):
+        # Asked after the render, declining threw the render away and left
+        # its working folder of PNGs in the user's export folder.
+        existing = self.root / "Tex_M_body_BaseColor.psd"
+        existing.write_bytes(b"psd")
+        self.panel._project_is_open = self.panel._project_is_ready = lambda: True
+        self.panel._set_action_buttons_enabled = lambda _enabled: None
+        selections =[({"texture_set": "M_body", "stack": ""}, ["BaseColor", "Roughness"])]
+        asked = []
+
+        def run(answer):
+            with mock.patch.object(ui, "default_output_dir", return_value=self.root / "work"), mock.patch.object(
+                ui, "export_root", return_value=self.root
+            ), mock.patch.object(
+                ui, "planned_psd_files", return_value=[existing, self.root / "Tex_M_body_Roughness.psd"]
+            ) as planned, mock.patch.object(
+                ui, "write_build_bundles", side_effect=lambda output_dir, **_kwargs: output_dir.mkdir() or [],
+            ) as render:
+                result = self.panel._run_export_selections(
+                    "Export", selections, confirm_replace=lambda names: asked.append(names) or answer,
+                )
+            return result, planned, render
+
+        result, planned, render = run(False)
+        self.assertEqual(asked, [["Tex_M_body_BaseColor.psd"]])
+        self.assertEqual(planned.call_args.args[1]["channels"], ["BaseColor", "Roughness"])
+        self.assertEqual(planned.call_args.args[1]["psd_dir"], str(self.root))
+        self.assertTrue(result["declined"])
+        render.assert_not_called()
+        self.assertFalse((self.root / "work").exists())
+
+        result, _planned, render = run(True)
+        self.assertTrue(result["ok"])
+        render.assert_called_once()
+
     def test_export_is_refused_before_writing_pngs_without_photoshop(self):
         panel = SimpleNamespace(
             QtCore=QtCore, QtGui=QtGui, QtWidgets=QtWidgets, widget=QtWidgets.QWidget(),

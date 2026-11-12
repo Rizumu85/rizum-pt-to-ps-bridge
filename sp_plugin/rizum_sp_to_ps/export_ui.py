@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from .exporter import list_export_targets
 from .export_selection_memory import (
     ExportSelectionMemory,
@@ -33,7 +31,7 @@ from .ui_kit import (
     make_mock_checkbox,
     update_export_tree_item,
 )
-from .ui_dialogs import ask_modal_question, show_modal_message
+from .ui_dialogs import ask_modal_question, run_modal, show_modal_message
 from .settings_ui import RENDER_SCALE_OPTIONS, psd_size_options
 
 
@@ -284,7 +282,7 @@ class ExportDialog:
             0,
             self._position_for_default_expansion,
         )
-        return self.dialog.exec()
+        return run_modal(self.dialog)
 
     def _load_size_defaults(self):
         settings = self.panel.user_settings
@@ -1222,6 +1220,18 @@ QLabel#RizumSvgLabel:hover {{
                 selections.append((group["target"], channels))
         return selections
 
+    def _confirm_replace(self, existing):
+        # PSDs are saved straight into Painter's export path, where the user
+        # also keeps the PSDs they work in. Photoshop replaces a file of the
+        # same name without asking, so Painter asks first.
+        return ask_modal_question(
+            self.QtWidgets,
+            self.dialog,
+            text("export_replace_title"),
+            text("export_replace_message", files="\n".join(existing)),
+            text("export_replace_confirm"),
+        )
+
     def export_checked(self):
         selections = self.selected_exports()
         if not selections:
@@ -1245,7 +1255,10 @@ QLabel#RizumSvgLabel:hover {{
             text("export_selection_label"),
             selections,
             self.size_overrides(),
+            confirm_replace=self._confirm_replace,
         )
+        if result.get("declined"):
+            return
         if not result["ok"]:
             show_modal_message(
                 self.QtWidgets,
@@ -1253,19 +1266,6 @@ QLabel#RizumSvgLabel:hover {{
                 text("export_failed"),
                 result["message"],
             )
-            return
-
-        # PSDs are saved straight into Painter's export path, where the user
-        # also keeps the PSDs they work in. Photoshop replaces a file of the
-        # same name without asking, so Painter asks first.
-        existing = [Path(path).name for path in result.get("psd_files", []) if Path(path).is_file()]
-        if existing and not ask_modal_question(
-            self.QtWidgets,
-            self.dialog,
-            text("export_replace_title"),
-            text("export_replace_message", files="\n".join(existing)),
-            text("export_replace_confirm"),
-        ):
             return
 
         # The plugin is an automation bridge: every export continues straight

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -131,6 +132,30 @@ class FeedbackDialogTests(unittest.TestCase):
         self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Rejected)
         dialog._rizum_confirm_button.click()
         self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Accepted)
+
+    def test_no_dialog_outlives_its_use(self):
+        # Every dialog is a child of the dock widget; left undeleted, each one
+        # ever opened stayed there hidden for as long as the plugin ran.
+        from sp_plugin.rizum_sp_to_ps.export_ui import ExportDialog
+        from sp_plugin.rizum_sp_to_ps.settings_ui import SettingsDialog
+
+        panel = self.panel
+        panel._project_is_open = lambda: False
+        panel.photoshop_executable = lambda: None
+        with mock.patch.object(ui_kit.PainterSettingsDialog, "exec", return_value=0):
+            for _round in range(2):
+                ui_dialogs.show_modal_message(QtWidgets, panel.widget, "Export failed", "Message")
+                ui_dialogs.ask_modal_question(QtWidgets, panel.widget, "Replace?", "a.psd", "Replace")
+                ExportDialog(panel).open()
+                SettingsDialog(panel).open()
+                progress = ui_dialogs.CompactProgressDialog(panel, "Export", "Rendering")
+                progress.show()
+                progress.close()
+        self.assertEqual(len(panel.widget.findChildren(QtWidgets.QDialog)), 10)
+        # What the dialogs queued for their first show runs while they exist.
+        self.app.processEvents()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+        self.assertEqual(panel.widget.findChildren(QtWidgets.QDialog), [])
 
     def test_long_message_is_not_clipped(self):
         message = (

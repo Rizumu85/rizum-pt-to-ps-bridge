@@ -392,15 +392,9 @@ class DesktopBridgeController:
             key = "bridge_imported_and_inserted"
         elif imported_count:
             key = "bridge_imported"
-        elif exported_count:
-            key = "bridge_inserted"
         else:
-            key = None
-        message = "." if key is None else text(
-            key,
-            imported=imported_count,
-            exported=exported_count,
-        )
+            key = "bridge_inserted"
+        message = text(key, imported=imported_count, exported=exported_count)
         if warnings:
             message += "\n\n" + "\n".join(warnings)
         self._finish_apply("applied", message)
@@ -409,7 +403,11 @@ class DesktopBridgeController:
         job = self._photoshop_job
         self._photoshop_job = None
         self._pending_transfer_result = None
+        prepared = self._pending_prepared
         self._pending_prepared = None
+        if prepared is not None:
+            # Only a close finds a backdrop read still pending here.
+            desktop_transfer.release_backdrop_script(prepared)
         self._photoshop_phase = None
         dialog = self._photoshop_progress_dialog
         self._photoshop_progress_dialog = None
@@ -603,13 +601,19 @@ class DesktopBridgeController:
         if prepared is not None and not self._closing:
             self._continue_apply(prepared, payload)
 
+    def _abandon_backdrop_job(self):
+        """End a backdrop read whose Apply does not go on to match."""
+        prepared = self._take_backdrop_job()
+        if prepared is not None:
+            desktop_transfer.release_backdrop_script(prepared)
+
     def _backdrop_failed(self, message):
-        self._take_backdrop_job()
+        self._abandon_backdrop_job()
         if not self._closing:
             self._finish_apply("apply_failed", message)
 
     def _backdrop_cancelled(self):
-        self._take_backdrop_job()
+        self._abandon_backdrop_job()
         if not self._closing:
             self._report_apply_cancelled()
 

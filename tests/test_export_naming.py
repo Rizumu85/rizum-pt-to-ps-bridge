@@ -98,6 +98,31 @@ class ExportNamingTests(unittest.TestCase):
         )
         self.assertEqual(_psd_path(request, bundle, {}), bundle.parent / "Tex_Hero_M_body.psd")
 
+    def test_an_exports_psds_are_known_before_it_renders(self):
+        from sp_plugin.rizum_sp_to_ps import exporter
+
+        requests = [
+            {**_request(), "output_naming": {"stem": stem}}
+            for stem in ("Tex_Hero_M_body", "Tex_Hero_M_body_Roughness")
+        ]
+        settings = {"psd_dir": str(Path("textures"))}
+        with mock.patch.object(exporter, "_load_painter_modules", return_value={}), mock.patch.object(
+            exporter, "_iter_stack_records", return_value=[]
+        ), mock.patch.object(exporter, "_build_export_requests", return_value=requests):
+            planned = exporter.planned_psd_files(Path("work"), settings)
+            # The same files the build requests name once the export has run.
+            built = [
+                exporter.build_request_from_preview(
+                    {**request, "uv_tile": {"resolution": {"width": 4, "height": 4}}, "layers": [], "bit_depth": 8},
+                    Path("work") / f"{index:04d}_{request['output_naming']['stem']}",
+                    settings,
+                )["psd_file"]
+                for index, request in enumerate(requests, start=1)
+            ]
+
+        self.assertEqual(planned, [Path("textures") / "Tex_Hero_M_body.psd", Path("textures") / "Tex_Hero_M_body_Roughness.psd"])
+        self.assertEqual([str(path) for path in planned], built)
+
     def test_prefers_a_single_channel_map_over_a_packed_map(self):
         maps = [
             {

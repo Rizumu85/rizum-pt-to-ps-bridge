@@ -150,7 +150,6 @@ class DesktopTransferTests(unittest.TestCase):
                             "name": "example.psd",
                             "path": "C:/projects/example.psd",
                         },
-                        "context": {},
                     },
                     "painter": {
                         "document": {
@@ -276,7 +275,7 @@ class DesktopTransferTests(unittest.TestCase):
 
         for setting in (False, True):
             prepared = SimpleNamespace(
-                plan=SimpleNamespace(photoshop_exports=(), channel="BaseColor", photoshop_document={}, photoshop_context={}),
+                plan=SimpleNamespace(photoshop_exports=(), channel="BaseColor", photoshop_document={}),
                 rendered=(),
                 points=(),
                 settings={"apply_layer_masks": setting},
@@ -515,6 +514,30 @@ class DesktopTransferTests(unittest.TestCase):
         self.assertIsNone(item.target_layer_id)
         self.assertEqual(item.target_index_path, (0, 1))
         self.assertEqual(item.target_name, "Base")
+
+    def test_a_layer_name_holding_a_slash_arrives_whole(self):
+        # "Hue/Saturation 1" is Photoshop's default name for that layer; the
+        # last segment of its path is only "Saturation 1".
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0]["source"].update({"name": "Hue/Saturation 1", "path": "Retouch/Hue/Saturation 1"})
+        payload["transfers"].append({
+            "order": 1, "direction": "painter_to_photoshop", "insertion": "before",
+            "source": {
+                "host": "substance_painter", "id": "2b", "kind": "FillLayer",
+                "name": "Light/Dark", "path": "Folder/Light/Dark",
+            },
+            "target": {
+                "host": "photoshop", "id": None, "kind": "layer",
+                "name": "Hue/Saturation 1", "path": "Paint/Hue/Saturation 1", "index_path": [0, 1],
+            },
+        })
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        plan = load_transfer_plan(self.manifest)
+
+        self.assertEqual(plan.painter_imports[0].layer.name, "Hue/Saturation 1")
+        self.assertEqual(plan.photoshop_exports[0].name, "Light/Dark")
+        self.assertEqual(plan.photoshop_exports[0].target_name, "Hue/Saturation 1")
 
     def painter(self, layerstack):
         return SimpleNamespace(

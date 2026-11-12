@@ -168,7 +168,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         request = Path(self.directory.name) / "photoshop_transfer.json"
         request.write_text("{}", encoding="utf-8")
         launch = write_photoshop_transfer_launcher(request)
-        transfer = TransferResult(2, 3, (), (), launch)
+        transfer = TransferResult(2, 3, (), launch)
         self.controller._start_photoshop_job(launch, transfer)
         return launch
 
@@ -285,7 +285,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         return snapshot
 
     def test_apply_replies_to_the_open_mapper_with_a_fresh_snapshot(self):
-        snapshot = self.apply_request(TransferResult(2, 0, (), ("Tint: Normal was kept.",), None))
+        snapshot = self.apply_request(TransferResult(2, 0, ("Tint: Normal was kept.",), None))
         reply = self.replies()[-1]
         self.assertEqual(reply["type"], "applied")
         self.assertIn("Imported 2 Photoshop layer(s)", reply["message"])
@@ -297,7 +297,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
 
     def test_outcome_is_in_painters_language_in_the_mapper_and_in_its_own_dialog(self):
         with patch.object(localization, "CURRENT_LANGUAGE", "zh"):
-            self.apply_request(TransferResult(2, 0, (), (), None))
+            self.apply_request(TransferResult(2, 0, (), None))
             self.assertEqual(
                 self.replies()[-1]["message"], localization.text("bridge_imported", language="zh", imported=2),
             )
@@ -305,7 +305,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
 
             # The mapper was closed: Painter is the only place left to report.
             self.controller._process = None
-            self.apply_request(TransferResult(2, 0, (), (), None))
+            self.apply_request(TransferResult(2, 0, (), None))
         args = self.controller._show_message_callback.call_args.args
         self.assertEqual(args[-2], localization.text("bridge_complete", language="zh"))
         self.assertEqual(
@@ -323,10 +323,10 @@ class DesktopConnectDialogTests(unittest.TestCase):
         request_path = Path(self.directory.name) / "photoshop_transfer.json"
         request_path.write_text("{}", encoding="utf-8")
         launch = write_photoshop_transfer_launcher(request_path)
-        self.apply_request(TransferResult(0, 1, (), (), launch))
+        self.apply_request(TransferResult(0, 1, (), launch))
         reply = self.replies()[-1]
         self.assertEqual(reply["type"], "applied")
-        self.assertIn("inserted 1 Painter layer(s) into Photoshop", reply["message"])
+        self.assertEqual(reply["message"], "Inserted 1 Painter layer(s) into Photoshop.")
         self.assertIsNone(self.controller._photoshop_job)
 
     def start_backdrop_apply(self):
@@ -337,8 +337,8 @@ class DesktopConnectDialogTests(unittest.TestCase):
         request.parent.mkdir()
         request.write_text("{}", encoding="utf-8")
         launch = write_photoshop_backdrop_launcher(request)
-        prepared = SimpleNamespace(backdrop_launch=launch)
-        finish = Mock(return_value=TransferResult(0, 0, (), (), None))
+        prepared = SimpleNamespace(backdrop_launch=launch, output_dir=request.parent, points=())
+        finish = Mock(return_value=TransferResult(1, 0, (), None))
         self.patches = [
             patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.begin_transfer", return_value=prepared),
             patch("sp_plugin.rizum_sp_to_ps.desktop_bridge.desktop_transfer.finish_transfer", finish),
@@ -367,7 +367,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         self.assertIsNone(self.controller._photoshop_job)
 
     def test_cancel_while_photoshop_reads_changes_nothing(self):
-        _launch, finish = self.start_backdrop_apply()
+        launch, finish = self.start_backdrop_apply()
 
         self.process.interrupted.set()
         self.poll()
@@ -375,6 +375,27 @@ class DesktopConnectDialogTests(unittest.TestCase):
         finish.assert_not_called()
         self.assertEqual(self.replies()[-1]["type"], "apply_cancelled")
         self.assertIsNone(self.controller._photoshop_job)
+        self.assertTrue(self.painter_is_done_matching(launch))
+
+    def painter_is_done_matching(self, launch):
+        """Whether Photoshop's backdrop script was told to stop waiting for Painter."""
+        progress = launch.request_path.parent / "painter_match_progress.json"
+        return progress.is_file() and json.loads(progress.read_text(encoding="utf-8"))["done"] is True
+
+    def test_a_failed_backdrop_read_releases_photoshops_script(self):
+        # The script waits two minutes for Painter's matching after its read;
+        # an Apply that will not match has to say so.
+        launch, _finish = self.start_backdrop_apply()
+        self.assertFalse(self.painter_is_done_matching(launch))
+        launch.result_path.write_text("not json", encoding="utf-8")
+        self.poll()
+        self.assertEqual(self.replies()[-1]["type"], "apply_failed")
+        self.assertTrue(self.painter_is_done_matching(launch))
+
+    def test_closing_during_the_backdrop_read_releases_photoshops_script(self):
+        launch, _finish = self.start_backdrop_apply()
+        self.controller.close()
+        self.assertTrue(self.painter_is_done_matching(launch))
 
     def test_failed_apply_still_refreshes_the_mapper(self):
         self.apply_request(error=RuntimeError("Painter target moved"))

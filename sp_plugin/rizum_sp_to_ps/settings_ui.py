@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from . import edge_smoothing, painter_look
 from .localization import text
+from .ui_dialogs import run_modal
 from .ui_kit import (
     PLUGIN_VERSION,
     PAINTER_DIALOG_STYLE,
@@ -16,6 +17,7 @@ from .ui_kit import (
     make_compact_stepper,
     make_icon_button,
     make_inset_separator,
+    optional_int,
 )
 
 
@@ -24,6 +26,13 @@ BLEND_MODES_HINT_KEYS = {
     painter_look.MATCH_PAINTER: "blend_match_painter_hint",
     painter_look.KEEP_BLEND_MODES: "blend_keep_modes_hint",
 }
+DEFAULT_DILATION = 8
+
+
+def dilation_value(value):
+    # 0 is a dilation the stepper offers; only a missing value is the default.
+    dilation = optional_int(value)
+    return DEFAULT_DILATION if dilation is None else dilation
 
 
 # Captions are looked up when a dialog is built, so option lists with text
@@ -40,37 +49,6 @@ def blend_modes_options():
         (text("blend_match_painter"), painter_look.MATCH_PAINTER),
         (text("blend_keep_modes"), painter_look.KEEP_BLEND_MODES),
     ]
-
-
-def _section_label(QtWidgets, text):
-    label = QtWidgets.QLabel(text)
-    label.setObjectName("RizumSettingsSection")
-    label.setFixedHeight(22)
-    return label
-
-
-def _settings_row(QtWidgets, label_text, meta_text, control):
-    row = QtWidgets.QWidget()
-    row.setObjectName("RizumSettingsRow")
-    row.setFixedHeight(42 if meta_text else 36)
-    layout = QtWidgets.QHBoxLayout(row)
-    layout.setContentsMargins(8, 0, 8, 0)
-    layout.setSpacing(12)
-
-    text_block = QtWidgets.QWidget()
-    text_layout = QtWidgets.QVBoxLayout(text_block)
-    text_layout.setContentsMargins(0, 0, 0, 0)
-    text_layout.setSpacing(1)
-    label = QtWidgets.QLabel(label_text)
-    label.setObjectName("RizumDialogTitle")
-    text_layout.addWidget(label)
-    if meta_text:
-        meta = QtWidgets.QLabel(meta_text)
-        meta.setObjectName("RizumSettingsMeta")
-        text_layout.addWidget(meta)
-    layout.addWidget(text_block, 1)
-    layout.addWidget(control, 0)
-    return row
 
 
 def _settings_label(QtWidgets, text, object_name):
@@ -534,7 +512,7 @@ class SettingsDialog:
         self._settings_rows.append(dilation_row)
         dilation_layout.addWidget(self._make_text_block(text("dilation"), "px"))
         dilation_layout.addStretch(1)
-        self.dilation_stepper = make_compact_stepper(8, minimum=0, maximum=999, step=1)
+        self.dilation_stepper = make_compact_stepper(DEFAULT_DILATION, minimum=0, maximum=999, step=1)
         dilation_layout.addWidget(self.dilation_stepper)
         self.dilation_reveal = _make_settings_reveal_row(
             self.QtCore,
@@ -786,7 +764,7 @@ class SettingsDialog:
 
     def open(self):
         self.load_values()
-        return self.dialog.exec()
+        return run_modal(self.dialog)
 
     def _make_text_block(self, name, meta=""):
         block = _settings_text_block(self.QtWidgets, name, meta)
@@ -1175,7 +1153,7 @@ QPushButton[variant="icon"]:pressed {{
             self._sync_photoshop_hint()
             self.infinite_padding.setChecked(bool(settings.get("infinite_padding")))
             self.dilation_stepper.setValue(
-                int(settings.get("dilation") or 8),
+                dilation_value(settings.get("dilation")),
                 emit=False,
             )
             self.export_uv_map.setChecked(bool(settings.get("export_uv_map")))

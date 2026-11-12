@@ -105,7 +105,7 @@
   "bridge_already_imported": "Already imported {count} layer(s) into Painter.\n\n{message}",
   "bridge_partial_insert": "Inserted {count} of {total} layer(s) into Photoshop.\n{errors}\n\nCheck both documents before retrying; completed inserts were not undone.",
   "bridge_imported": "Imported {imported} Photoshop layer(s) into Painter.",
-  "bridge_inserted": "inserted {exported} Painter layer(s) into Photoshop.",
+  "bridge_inserted": "Inserted {exported} Painter layer(s) into Photoshop.",
   "bridge_imported_and_inserted": "Imported {imported} Photoshop layer(s) into Painter; inserted {exported} Painter layer(s) into Photoshop.",
   "bridge_apply_cancelled": "Apply cancelled. Nothing was changed in Painter or Photoshop.",
   "bridge_progress_preparing": "Preparing Painter transfer...",

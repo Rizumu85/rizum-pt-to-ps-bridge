@@ -48,11 +48,6 @@ shared_localization = importlib.import_module(
 )
 exit_guard = importlib.import_module(f"{_vendored_ui.__name__}.exit_guard")
 
-_components = importlib.reload(_components)
-_settings_controls = importlib.reload(_settings_controls)
-_settings_dialog = importlib.reload(_settings_dialog)
-_settings_layout = importlib.reload(_settings_layout)
-shared_localization = importlib.reload(shared_localization)
 apply_theme = _vendored_ui.apply_theme
 build_compact_dock_stylesheet = _components.build_compact_dock_stylesheet
 compact_action_bar_width = _components.compact_action_bar_width
@@ -71,7 +66,6 @@ PainterSettingsDialog = _settings_dialog.PainterSettingsDialog
 PAINTER_DIALOG_STYLE = _settings_controls.PAINTER_DIALOG_STYLE
 AnimatedSaveButton = _settings_controls.AnimatedSaveButton
 IconActionButton = _settings_controls.IconActionButton
-ProgressTrack = _settings_controls.ProgressTrack
 SecondaryActionButton = _settings_controls.SecondaryActionButton
 PAINTER_SETTINGS_LAYOUT = _settings_layout.PAINTER_SETTINGS_LAYOUT
 default_theme = _vendored_ui.default_theme

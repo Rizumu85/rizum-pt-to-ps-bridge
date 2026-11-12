@@ -29,7 +29,7 @@ class ExportProgressTests(unittest.TestCase):
             exporter, "_load_painter_modules", return_value={}
         ), mock.patch.object(exporter, "_iter_stack_records", return_value=[]), mock.patch.object(
             exporter, "_build_export_requests", return_value=deepcopy(requests)
-        ), mock.patch.object(exporter, "_build_painter_snapshot", return_value={}), mock.patch.object(
+        ), mock.patch.object(
             exporter, "validate_request_preview"
         ), mock.patch.object(exporter, "build_request_from_preview", side_effect=build_request), mock.patch.object(
             exporter, "_plan_asset_work", return_value=([], [], [], 0, 3)

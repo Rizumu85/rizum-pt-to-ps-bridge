@@ -134,7 +134,7 @@ FALLBACK_TEXT = {
         "Check both documents before retrying; completed inserts were not undone."
     ),
     "bridge_imported": "Imported {imported} Photoshop layer(s) into Painter.",
-    "bridge_inserted": "inserted {exported} Painter layer(s) into Photoshop.",
+    "bridge_inserted": "Inserted {exported} Painter layer(s) into Photoshop.",
     "bridge_imported_and_inserted": (
         "Imported {imported} Photoshop layer(s) into Painter; "
         "inserted {exported} Painter layer(s) into Photoshop."

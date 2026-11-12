@@ -1,6 +1,5 @@
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 from sp_plugin.rizum_sp_to_ps import ui

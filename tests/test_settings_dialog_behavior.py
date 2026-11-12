@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
-from sp_plugin.rizum_sp_to_ps import ui, ui_dialogs, ui_kit
+from sp_plugin.rizum_sp_to_ps import ui_kit
 from sp_plugin.rizum_sp_to_ps.settings_ui import SettingsDialog
 from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
@@ -41,6 +41,9 @@ class _SettingsStore:
     def __init__(self):
         self.values = {}
         self.synced = False
+
+    def value(self, key, default=None, _type=None):
+        return self.values.get(key, default)
 
     def setValue(self, key, value):
         self.values[key] = value
@@ -129,6 +132,22 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         modal.assert_not_called()
         self.assertTrue(store.synced)
 
+    def test_settings_come_back_as_the_user_set_them(self):
+        # Dilation 0 came back as 8, and Blend modes was never stored.
+        panel = BridgePanel.__new__(BridgePanel)
+        panel.QtCore = QtCore
+        with mock.patch.object(QtCore, "QSettings", return_value=_SettingsStore()):
+            self.assertEqual(panel._load_user_settings()["dilation"], 8)
+            panel.save_user_settings({"dilation": 0, "blend_modes": "keep_blend_modes"})
+
+        self.assertEqual(panel.user_settings["dilation"], 0)
+        self.assertEqual(panel.user_settings["blend_modes"], "keep_blend_modes")
+        self.assertEqual(panel._base_export_settings()["dilation"], 0)
+        self.assertEqual(panel._base_export_settings()["blend_modes"], "keep_blend_modes")
+
+        self.panel.user_settings["dilation"] = 0
+        self.settings.load_values()
+        self.assertEqual(self.settings.dilation_stepper.value(), 0)
 
     def test_empty_photoshop_path_shows_the_auto_detected_install(self):
         self.assertIn("Auto-detected", self.settings.photoshop_path.placeholderText())

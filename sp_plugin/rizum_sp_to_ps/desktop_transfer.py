@@ -92,7 +92,6 @@ class TransferPlan:
     stack: str
     channel: str
     photoshop_document: dict
-    photoshop_context: dict
     painter_imports: tuple[PainterImportItem, ...]
     photoshop_exports: tuple[PhotoshopExportItem, ...]
     warnings: tuple[str, ...] = ()
@@ -140,7 +139,6 @@ class TransferResult:
 
     imported_count: int
     exported_count: int
-    names: tuple[str, ...]
     warnings: tuple[str, ...]
     photoshop_launch: photoshop_automation.PhotoshopScriptLaunch | None = None
 
@@ -173,10 +171,6 @@ def load_transfer_plan(manifest_path):
         photoshop_record.get("document", {}),
         "photoshop.document",
     )
-    photoshop_context = _mapping(
-        photoshop_record.get("context", {}),
-        "photoshop.context",
-    )
     texture_set = _required_text(context, "texture_set", "painter.context")
     channel = _required_text(context, "channel", "painter.context")
     stack = _optional_text(context.get("stack"))
@@ -201,7 +195,6 @@ def load_transfer_plan(manifest_path):
         stack=stack,
         channel=channel,
         photoshop_document=dict(photoshop_document),
-        photoshop_context=dict(photoshop_context),
         painter_imports=tuple(painter_imports),
         photoshop_exports=tuple(photoshop_exports),
         warnings=tuple(str(value) for value in root.get("warnings") or ()),
@@ -249,7 +242,18 @@ def finish_transfer(prepared, backdrop_result=None, progress_callback=None, canc
         return _finish_transfer(prepared, backdrop_result, progress_callback, cancelled)
     finally:
         if prepared.points:
-            _publish_match_progress(prepared, done=True)
+            release_backdrop_script(prepared)
+
+
+def release_backdrop_script(prepared):
+    """End the wait of Photoshop's backdrop script for Painter's matching.
+
+    The script stays open after its read until Painter says it is done. An
+    Apply that ends without matching (cancelled, a failed read, the plugin
+    closed) must say so too, or Photoshop sits two minutes on a progress
+    window for work nobody is doing.
+    """
+    _publish_match_progress(prepared, done=True)
 
 
 def _finish_transfer(prepared, backdrop_result, progress_callback, cancelled):
@@ -265,10 +269,6 @@ def _finish_transfer(prepared, backdrop_result, progress_callback, cancelled):
     return TransferResult(
         imported_count=result.imported_count,
         exported_count=len(plan.photoshop_exports),
-        names=tuple(
-            [item.name for item in plan.painter_imports]
-            + [item.name for item in plan.photoshop_exports]
-        ),
         warnings=plan.warnings + result.warnings,
         photoshop_launch=launcher,
     )
@@ -335,7 +335,6 @@ def apply_transfer_plan(plan, painter, progress_callback=None):
     return TransferResult(
         imported_count=len(plan.painter_imports),
         exported_count=0,
-        names=tuple(item.name for item in plan.painter_imports),
         warnings=tuple(warnings),
     )
 
@@ -452,9 +451,6 @@ def _render_photoshop_items(plan, settings, progress_callback=None):
         "stack": plan.stack,
         "channel": plan.channel,
     }
-    target_udim = plan.photoshop_context.get("udim")
-    if target_udim is not None:
-        context["udim"] = target_udim
 
     output_dir = plan.manifest_path.parent / "painter_to_photoshop"
     # Each Apply renders its own sources; a previous Apply's PNGs are never
@@ -622,7 +618,6 @@ def _write_transfer_request(prepared):
         "schema_version": 1,
         "request_type": "painter_to_photoshop_transfer",
         "document": plan.photoshop_document,
-        "context": plan.photoshop_context,
         "layers": layers,
         "apply_layer_masks": bool(prepared.settings.get("apply_layer_masks")),
     }
@@ -693,11 +688,9 @@ def _transfer_item(value, fallback_order, manifest_dir):
             raise DesktopTransferError(
                 f"Transfer {fallback_order + 1} has no Photoshop layer id or position."
             )
-        logical_path = _optional_text(source.get("path")).replace("\\", "/")
-        name = logical_path.rsplit("/", 1)[-1] if logical_path else "Painter Layer"
         return direction, PhotoshopExportItem(
             order=_integer(record.get("order"), fallback_order),
-            name=name,
+            name=_layer_name(source, "Painter Layer"),
             source_uid=_uid(source.get("id"), fallback_order),
             source_kind=_required_text(
                 source,
@@ -706,7 +699,7 @@ def _transfer_item(value, fallback_order, manifest_dir):
             ),
             target_layer_id=target_layer_id,
             target_index_path=target_index_path,
-            target_name=_optional_text(target.get("path")).replace("\\", "/").rsplit("/", 1)[-1],
+            target_name=_layer_name(target, ""),
             target_kind=target_kind,
             insertion=insertion,
             blend_mode=_optional_text(source.get("blend_mode")) or "normal",
@@ -727,13 +720,12 @@ def _transfer_item(value, fallback_order, manifest_dir):
 
 def _photoshop_layer(source, manifest_dir, label):
     kind = "group" if _optional_text(source.get("kind")) == "group" else "layer"
-    logical_path = _optional_text(source.get("path")).replace("\\", "/")
     children = source.get("children") or []
     if not isinstance(children, list):
         raise DesktopTransferError(f"Transfer {label}.children must be a list.")
     color = _color(source.get("color"), label)
     return PhotoshopLayer(
-        name=logical_path.rsplit("/", 1)[-1] if logical_path else "Photoshop Layer",
+        name=_layer_name(source, "Photoshop Layer"),
         kind=kind,
         color=color,
         png=None if kind == "group" or color is not None
@@ -747,6 +739,18 @@ def _photoshop_layer(source, manifest_dir, label):
             for index, child in enumerate(children)
         ),
     )
+
+
+def _layer_name(record, default):
+    # The mapper sends a layer's name beside its path: a name can hold "/"
+    # itself ("Hue/Saturation 1" is Photoshop's default), and the path's last
+    # segment was then only "Saturation 1". A mapper built before the field
+    # sends the path alone.
+    name = record.get("name")
+    if isinstance(name, str) and name:
+        return name
+    logical_path = _optional_text(record.get("path")).replace("\\", "/")
+    return logical_path.rsplit("/", 1)[-1] if logical_path else default
 
 
 def _validate_project(plan, project):

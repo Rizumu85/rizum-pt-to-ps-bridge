@@ -27,7 +27,6 @@ from .udim import uv_to_udim
 
 SCHEMA_VERSION = 1
 BUILD_REQUEST_FILENAME = "build_request.json"
-PAINTER_SNAPSHOT_FILENAME = "painter_snapshot.json"
 EFFECT_NODE_KINDS = {
     "AnchorPointEffect",
     "ColorSelectionEffect",
@@ -42,18 +41,6 @@ EFFECT_NODE_KINDS = {
 
 class ExportCancelled(RuntimeError):
     """Raised when the user cancels an in-progress Painter export."""
-
-
-def build_export_requests(settings=None):
-    """Build read-only Photoshop request previews from the active project.
-
-    Request generation remains read-only; node rendering happens after the
-    complete bundle plan is known.
-    """
-    settings = settings or {}
-    modules = _load_painter_modules()
-    stack_records = list(_iter_stack_records(modules, settings))
-    return _build_export_requests(modules, settings, stack_records)
 
 
 def list_export_targets(settings=None):
@@ -182,20 +169,17 @@ def export_root():
     return export_root
 
 
-def write_request_previews(output_dir, settings=None):
-    """Write one preview JSON file per generated request and return paths."""
-    requests = build_export_requests(settings)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    written = []
-    for index, request in enumerate(requests, start=1):
-        validate_request_preview(request)
-        filename = _preview_filename(request, index)
-        path = output_path / filename
-        path.write_text(json.dumps(request, indent=2, sort_keys=True), encoding="utf-8")
-        written.append(path)
-    return written
+def planned_psd_files(output_dir, settings=None):
+    """The PSDs an export with these settings saves, known before it renders."""
+    settings = settings or {}
+    modules = _load_painter_modules()
+    stack_records = list(_iter_stack_records(modules, settings))
+    return [
+        _psd_path(request, Path(output_dir) / _bundle_name(request, index), settings)
+        for index, request in enumerate(
+            _build_export_requests(modules, settings, stack_records), start=1
+        )
+    ]
 
 
 def write_build_bundles(
@@ -221,11 +205,8 @@ def write_build_bundles(
     modules = _load_painter_modules()
     stack_records = list(_iter_stack_records(modules, settings))
     requests = _build_export_requests(modules, settings, stack_records)
-    snapshot = _build_painter_snapshot(modules, settings, stack_records)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    snapshot_path = output_path / PAINTER_SNAPSHOT_FILENAME
-    _write_json_atomic(snapshot_path, snapshot)
 
     # The user asked that Export's progress read as the mapper's Apply does.
     # So every request is planned before anything renders, and all render
@@ -233,7 +214,6 @@ def write_build_bundles(
     # starting over for every PSD.
     planned = []
     for index, request in enumerate(requests, start=1):
-        request["painter_snapshot_file"] = str(snapshot_path)
         validate_request_preview(request)
         bundle_path = output_path / _bundle_name(request, index)
         (bundle_path / "png").mkdir(parents=True, exist_ok=True)
@@ -351,13 +331,6 @@ def export_desktop_nodes(output_dir, context, source_uids, settings=None, progre
         and str(request.get("stack") or "") == str(context.get("stack") or "")
         and request.get("channel") == context.get("channel")
     ]
-    requested_udim = context.get("udim")
-    if requested_udim is not None:
-        matching = [
-            request
-            for request in matching
-            if int(request.get("udim") or 0) == int(requested_udim)
-        ]
     if not matching:
         raise ValueError(
             "Painter no longer has the mapped texture set / stack / channel context."
@@ -1461,10 +1434,6 @@ def _matches_filter(value, accepted_values):
     return str(value) in {str(item) for item in accepted_values}
 
 
-def _preview_filename(request, index):
-    return f"{_bundle_name(request, index)}.build_request.preview.json"
-
-
 def _bundle_name(request, index):
     output_stem = (request.get("output_naming") or {}).get("stem")
     if output_stem:
@@ -1846,12 +1815,7 @@ def _find_node_by_uid(nodes, source_uid):
 
 
 def _remove_file_if_exists(path):
-    try:
-        Path(path).unlink(missing_ok=True)
-    except TypeError:
-        file_path = Path(path)
-        if file_path.exists():
-            file_path.unlink()
+    Path(path).unlink(missing_ok=True)
 
 
 def _safe_filename(value):

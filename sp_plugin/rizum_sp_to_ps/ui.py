@@ -10,6 +10,7 @@ from .exporter import (
     ExportCancelled,
     default_output_dir,
     export_root,
+    planned_psd_files,
     session_dir,
     write_build_bundles,
 )
@@ -38,6 +39,7 @@ from .ui_dialogs import (
 )
 from .settings_ui import (
     SettingsDialog,
+    dilation_value,
 )
 from .export_ui import (
     ExportDialog,
@@ -46,7 +48,6 @@ from .export_ui import (
 
 LAST_EXPORT_FILENAME = "_last_export.json"
 _ACTIVE_PANEL = None
-_ACTIVE_DOCK = None
 
 BRIDGE_DOCK_BG = "#2b2b2b"
 BRIDGE_DOCK_MIN_WIDTH = 210
@@ -58,32 +59,13 @@ QDialog {
     background: #1b1b1b;
     color: #e0e0e0;
 }
-QWidget#RizumDialogBody,
-QWidget#RizumDialogToolbar,
-QWidget#RizumDialogFooter,
 QWidget#RizumSettingsBody,
 QWidget#RizumSettingsRow,
-QWidget#RizumPathField {
-    background: transparent;
-    border: 0;
-}
-QWidget#RizumSettingsBody,
 QWidget#RizumSettingsFooter,
 QWidget#RizumSettingsFooterRow,
 QWidget#RizumSettingsTexts {
     background: transparent;
     border: 0;
-}
-QLabel#RizumDialogTitle {
-    color: #e0e0e0;
-    font-size: 13px;
-    font-weight: 600;
-}
-QLabel#RizumDimLabel,
-QLabel#RizumSettingsMeta {
-    color: #9e9e9e;
-    font-size: 12px;
-    font-weight: 400;
 }
 QFrame#RizumSettingsRow {
     background: transparent;
@@ -112,60 +94,6 @@ QLineEdit#RizumSettingsPathInput:focus {
     color: #e0e0e0;
     background: transparent;
     border: 0;
-}
-QTreeWidget {
-    background: #1b1b1b;
-    border: 0;
-    color: #e0e0e0;
-    outline: 0;
-    padding: 4px 0;
-}
-QTreeWidget::item {
-    min-height: 28px;
-    padding: 4px 8px;
-    border-radius: 6px;
-}
-QTreeWidget::item:hover {
-    background: rgba(255, 255, 255, 18);
-}
-QPlainTextEdit {
-    background: #222222;
-    border: 0;
-    border-radius: 6px;
-    color: #e0e0e0;
-    padding: 8px;
-}
-QLineEdit#RizumPathInput {
-    background: transparent;
-    border: 0;
-    color: #e0e0e0;
-    padding: 0;
-}
-QWidget#RizumPathField {
-    background: #222222;
-    border-radius: 6px;
-}
-QCheckBox {
-    color: #e0e0e0;
-    spacing: 8px;
-}
-QCheckBox::indicator {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    border: 1px solid #ffffff;
-    background: transparent;
-}
-QCheckBox::indicator:checked {
-    background: #ffffff;
-}
-QComboBox {
-    min-height: 28px;
-    padding: 2px 8px;
-    border: 0;
-    border-radius: 6px;
-    background: #222222;
-    color: #e0e0e0;
 }
 """
 
@@ -328,6 +256,7 @@ class BridgePanel:
         self.QtWidgets = QtWidgets
         self._closing = False
         self._build_job = None
+        self._dock = None
         self.user_settings = self._load_user_settings()
         self.widget = QtWidgets.QWidget()
         self.widget.setObjectName("RizumPtToPsBridgePanel")
@@ -366,12 +295,32 @@ class BridgePanel:
 
         self._dock_scale_filter = _DockScaleFilter(self.widget)
         self.widget.installEventFilter(self._dock_scale_filter)
+        # Owned, and stopped in close(): a closure queued with singleShot held
+        # Painter's dock past the plugin's close, which crashes Painter's exit
+        # (UI kit, docs/integration.md, "Painter's Widgets And Painter's Exit").
+        self._floating_size = None
+        self._floating_resize_timer = QtCore.QTimer(self.widget)
+        self._floating_resize_timer.setSingleShot(True)
+        self._floating_resize_timer.setInterval(0)
+        self._floating_resize_timer.timeout.connect(self._resize_dock_again)
         self._apply_dock_ui_scale()
+
+    def attach_dock(self, dock):
+        """Follow the dock Painter made for the panel until close()."""
+        self._dock = dock
+        dock.topLevelChanged.connect(self._dock_floating_changed)
+        self._resize_floating_dock()
 
     def close(self):
         """Stop owned Qt helpers before Painter removes the dock."""
         self._closing = True
         self.widget.removeEventFilter(self._dock_scale_filter)
+        self._floating_resize_timer.stop()
+        if self._dock is not None:
+            # The dock is Painter's: nothing of the panel may stay connected
+            # to it or hold it once the plugin is closed.
+            self._dock.topLevelChanged.disconnect(self._dock_floating_changed)
+            self._dock = None
         if self._build_job is not None:
             self._build_job.stop()
             self._build_job = None
@@ -395,8 +344,31 @@ class BridgePanel:
         )
         self.widget.setMinimumSize(minimum_width, self._dock_toolbar.height())
         self.widget.updateGeometry()
-        if _ACTIVE_PANEL is self and _ACTIVE_DOCK is not None:
-            _resize_floating_dock(_ACTIVE_DOCK, self)
+        self._resize_floating_dock()
+
+    def _dock_floating_changed(self, floating):
+        if floating:
+            self._resize_floating_dock()
+
+    def _resize_floating_dock(self):
+        dock = self._dock
+        if dock is None:
+            return
+        minimum_width = self.widget.minimumWidth()
+        dock.setMinimumWidth(minimum_width)
+        if not dock.isFloating():
+            return
+        default_width = max(
+            minimum_width,
+            int(round(BRIDGE_DOCK_DEFAULT_WIDTH * self._current_ui_scale())),
+        )
+        self._floating_size = (default_width, dock.sizeHint().height())
+        dock.resize(*self._floating_size)
+        self.widget.resize(default_width, self._dock_toolbar.height())
+        self._floating_resize_timer.start()
+
+    def _resize_dock_again(self):
+        self._dock.resize(*self._floating_size)
 
     def _project_is_open(self):
         try:
@@ -437,13 +409,11 @@ class BridgePanel:
         return {
             "photoshop_path": store.value("photoshop_path", "", str) or "",
             "infinite_padding": to_bool(store.value("infinite_padding", False)),
-            "dilation": optional_int(store.value("dilation", 8)) or 8,
+            "dilation": dilation_value(store.value("dilation", None)),
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
             "apply_layer_masks": to_bool(store.value("apply_layer_masks", False)),
             "bit_depth": bit_depth,
             "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
-            # On by default: a finished PSD holds the pixels, and 4K PNGs per
-            # layer filled the export folder with copies nobody opens.
             "psd_size": optional_int(store.value("psd_size", None)),
             "render_scale": _render_scale(store.value("render_scale", 1)),
             "blend_modes": blend_modes,
@@ -453,7 +423,7 @@ class BridgePanel:
         store = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         store.setValue("photoshop_path", values.get("photoshop_path") or "")
         store.setValue("infinite_padding", bool(values.get("infinite_padding")))
-        store.setValue("dilation", int(values.get("dilation") or 8))
+        store.setValue("dilation", dilation_value(values.get("dilation")))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         store.setValue("apply_layer_masks", bool(values.get("apply_layer_masks")))
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
@@ -477,7 +447,7 @@ class BridgePanel:
         dialog = ExportDialog(self)
         dialog.open()
 
-    def _run_export_selections(self, label, selections, overrides=None):
+    def _run_export_selections(self, label, selections, overrides=None, confirm_replace=None):
         if not self._project_is_open():
             return {"ok": False, "message": text("export_needs_project")}
         if not self._project_is_ready():
@@ -490,6 +460,31 @@ class BridgePanel:
         # The PSDs are the deliverable and go where Painter exports textures;
         # everything else stays in the working folder beside them.
         base_settings.setdefault("psd_dir", str(export_root()))
+        selection_settings = [
+            {
+                **base_settings,
+                "texture_sets": [target["texture_set"]],
+                "stacks": [target["stack"]],
+                "channels": list(selected_channels),
+            }
+            for target, selected_channels in selections
+        ]
+        if confirm_replace is not None:
+            # Asked before anything renders, from the names the request
+            # previews already give. Asked after the render, declining threw
+            # the render away and left its working folder of PNGs in the
+            # user's export folder, which only a finished build removes.
+            try:
+                existing = [
+                    path.name
+                    for settings in selection_settings
+                    for path in planned_psd_files(output_dir, settings)
+                    if path.is_file()
+                ]
+            except Exception as exc:  # noqa: BLE001 - show host errors to the user.
+                return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+            if existing and not confirm_replace(existing):
+                return {"ok": False, "declined": True}
         all_paths = []
         texture_sets = []
         stacks = []
@@ -501,18 +496,11 @@ class BridgePanel:
         steps_each = 2 if painter_look.matches_painter(base_settings) else 1
 
         try:
-            for order, (target, selected_channels) in enumerate(selections):
-                texture_set = target["texture_set"]
-                stack = target["stack"]
-                settings = {
-                    **base_settings,
-                    "texture_sets": [texture_set],
-                    "stacks": [stack],
-                    "channels": list(selected_channels),
-                }
+            for order, settings in enumerate(selection_settings):
+                texture_set = settings["texture_sets"][0]
                 texture_sets.append(texture_set)
-                stacks.append(stack)
-                channels.extend(selected_channels)
+                stacks.extend(settings["stacks"])
+                channels.extend(settings["channels"])
                 all_paths.extend(
                     write_build_bundles(
                         output_dir,
@@ -554,9 +542,6 @@ class BridgePanel:
             "output_dir": output_dir,
             "export_list": export_list,
             "paths": list(all_paths),
-            "psd_files": [
-                json.loads(Path(path).read_text(encoding="utf-8"))["psd_file"] for path in all_paths
-            ],
         }
 
     def photoshop_executable(self):
@@ -651,7 +636,7 @@ class BridgePanel:
         settings = {
             "normal_map_format": "OpenGL",
             "infinite_padding": bool(self.user_settings.get("infinite_padding")),
-            "dilation": int(self.user_settings.get("dilation") or 8),
+            "dilation": dilation_value(self.user_settings.get("dilation")),
             "keep_alpha": True,
             "export_uv_map": bool(self.user_settings.get("export_uv_map")),
             "apply_layer_masks": bool(self.user_settings.get("apply_layer_masks")),
@@ -688,7 +673,7 @@ class BridgePanel:
                 {
                     "path": str(path),
                     "relative_path": str(path.relative_to(output_dir))
-                    if _is_relative_to(path, output_dir)
+                    if path.is_relative_to(output_dir)
                     else str(path),
                 }
                 for path in paths
@@ -750,14 +735,6 @@ def _smoothing_strength(value):
     return DEFAULT_STRENGTH if strength is None else max(0, min(100, strength))
 
 
-def _is_relative_to(path, parent):
-    try:
-        Path(path).relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
 def _unique_preserving_order(values):
     seen = set()
     unique = []
@@ -775,14 +752,12 @@ def register():
     import substance_painter as sp
     from PySide6 import QtWidgets
 
-    global _ACTIVE_DOCK, _ACTIVE_PANEL
+    global _ACTIVE_PANEL
     panel = BridgePanel()
     _ACTIVE_PANEL = panel
     dock = sp.ui.add_dock_widget(panel.widget)
-    _ACTIVE_DOCK = dock
     dock.setObjectName("RizumPtToPsBridgeDock")
     dock.setWindowTitle(text("dock_title"))
-    _connect_floating_resize(dock, panel)
     # Qt shares each change of the Painter window's height among the docks
     # that may grow, so a dock dragged to its smallest came back a little
     # taller after a restart. The strip has nothing to show in extra height:
@@ -793,7 +768,7 @@ def register():
     dock.setSizePolicy(policy)
     dock.show()
     dock.raise_()
-    _resize_floating_dock(dock, panel)
+    panel.attach_dock(dock)
     sp.logging.info("Rizum PT-to-PS Painter plugin loaded")
     return [dock]
 
@@ -802,56 +777,12 @@ def unregister(handles):
     """Remove Painter UI elements registered by this plugin."""
     import substance_painter as sp
 
-    global _ACTIVE_DOCK, _ACTIVE_PANEL
+    global _ACTIVE_PANEL
     if _ACTIVE_PANEL is not None:
         _ACTIVE_PANEL.close()
         _ACTIVE_PANEL = None
-    _ACTIVE_DOCK = None
 
     for handle in handles:
         sp.ui.delete_ui_element(handle)
     handles.clear()
     sp.logging.info("Rizum PT-to-PS Painter plugin unloaded")
-
-
-def _connect_floating_resize(dock, panel):
-    try:
-        dock.topLevelChanged.connect(lambda floating: _resize_floating_dock(dock, panel) if floating else None)
-    except Exception:
-        pass
-
-
-def _resize_floating_dock(dock, panel):
-    if dock is None or panel is None:
-        return
-    scale = panel._current_ui_scale()
-    minimum_width = panel.widget.minimumWidth()
-    minimum_height = dock.sizeHint().height()
-    default_width = max(
-        minimum_width,
-        int(round(BRIDGE_DOCK_DEFAULT_WIDTH * scale)),
-    )
-    try:
-        dock.setMinimumWidth(minimum_width)
-    except Exception:
-        pass
-    try:
-        if hasattr(dock, "isFloating") and not dock.isFloating():
-            return
-    except Exception:
-        pass
-    try:
-        dock.resize(default_width, minimum_height)
-    except Exception:
-        pass
-    try:
-        panel.widget.resize(default_width, panel._dock_toolbar.height())
-    except Exception:
-        pass
-    try:
-        panel.QtCore.QTimer.singleShot(
-            0,
-            lambda: dock.resize(default_width, minimum_height),
-        )
-    except Exception:
-        pass
