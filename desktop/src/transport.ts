@@ -355,14 +355,21 @@ export async function applyTransfer(
   const failed = reply.type === "apply_failed"
   if (!reply.snapshot) return { session: null, message: reply.message, failed }
   onProgress?.({ message: t("Refreshing layer lists...") })
-  const next = await loadBridgeSession({
-    // Photoshop inserts are saved into the same file, so it is read again too.
-    photoshopDocument: session.photoshop?.path ?? null,
-    painterSnapshot: reply.snapshot,
-    documents: session.documentsPath,
-    output: session.outputPath,
-  })
-  return { session: next, message: reply.message, failed }
+  try {
+    const next = await loadBridgeSession({
+      // Photoshop inserts are saved into the same file, so it is read again too.
+      photoshopDocument: session.photoshop?.path ?? null,
+      painterSnapshot: reply.snapshot,
+      documents: session.documentsPath,
+      output: session.outputPath,
+    })
+    return { session: next, message: reply.message, failed }
+  } catch {
+    // Painter has answered: the layers are written. A refresh that cannot
+    // be read must not throw past that answer, or the mappings would stay
+    // staged and a second Apply would insert the same layers again.
+    return { session: null, message: reply.message, failed }
+  }
 }
 
 /** Resolves the reconnected session, or null when the user cancelled Painter's picker. */

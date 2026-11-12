@@ -46,6 +46,22 @@ describe("desktop file transport", () => {
     input.destroy()
   })
 
+  it("ends an Apply that Painter finished although the refreshed lists cannot be read", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-refresh-"))
+    const session = await loadBridgeSession({
+      painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      photoshopDocument: path.join(fixtureDir, "photoshop_document.psd"),
+      output: path.join(directory, "request.json"),
+    })
+    const mapped = transferBetweenHosts(session.state, "substance_painter:sp-lighten", "photoshop:ps:103")
+    const link = {
+      request: async () => ({ type: "applied", message: "Inserted", snapshot: path.join(directory, "gone.json") }),
+      cancelApply: () => {},
+    } as unknown as Parameters<typeof applyTransfer>[3]
+    const outcome = await applyTransfer(session, mapped, session.initialPainterContextId, link)
+    expect(outcome).toMatchObject({ session: null, message: "Inserted", failed: false })
+  })
+
   it("writes apply when mkdir reports EEXIST for a verified directory", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-existing-"))
     const output = path.join(directory, "request.json")
