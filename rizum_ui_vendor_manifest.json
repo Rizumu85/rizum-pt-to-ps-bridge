@@ -43,5 +43,5 @@
     "icons/wrench.svg",
     "icons/x.svg"
   ],
-  "pinned": "Holds plugin-side edits (the ProgressTrack class) on an older snapshot; sync it deliberately with --target."
+  "pinned": "An older kit snapshot (c0bca2d) carrying one hand-ported fix (shortcut capture, kit ff9557f); the dialogs were built against it. Sync it deliberately with --target and check the dialogs."
 }
