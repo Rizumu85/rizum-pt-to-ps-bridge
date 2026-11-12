@@ -19,8 +19,9 @@ export function createTestRoot(size: { width: number; height: number }, synchron
     root,
     renderer,
     unmount: root.unmount,
-    // GPUiX 0.9's Windows test window can report monitor work-area dimensions
-    // despite the requested size. Constrain content so hit tests exercise the
+    // GPUiX's Windows test window reported monitor work-area dimensions
+    // despite the requested size (seen on 0.9, not rechecked on the pinned
+    // 0.10). Constrain content so hit tests exercise the
     // same viewport as the live mapper, not off-window synthetic coordinates.
     render: (node: ReactNode) => {
       flushSync(() => root.render(<div style={size}>{node}</div>))

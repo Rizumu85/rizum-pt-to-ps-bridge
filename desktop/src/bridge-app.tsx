@@ -414,8 +414,12 @@ export function BridgeApp({
     try {
       const outcome = await onApply(bridge, activePainterContextId, session, (next) =>
         setApplyProgress(current => ({ ...next, stage: next.stage ?? current.stage })), appliedScale, abort.signal)
-      if (outcome.session) adoptSession(outcome.session, outcome.message)
-      else setStatus(outcome.message)
+      // Painter's final answer ends the staged mappings even when it could
+      // not report its layers: it may have written them, and a second Apply
+      // would insert the same layers again. Only a cancelled Apply, which
+      // wrote nothing, keeps them.
+      if (outcome.cancelled) setStatus(outcome.message)
+      else adoptSession(outcome.session ?? session, outcome.message)
       setFailed(outcome.failed)
     } catch (error) {
       setFailed(true)

@@ -24,8 +24,7 @@ function layer(host: HostId, id: string, kind: "group" | "layer", children?: Lay
     id: `${host}:${id}`,
     kind,
     name: id,
-    detail: kind === "group" ? "Group" : "Normal · 100%",
-    ref: { host, externalId: id, kind, path: id },
+    ref: { host, externalId: id, kind, name: id, path: id },
     children,
   }
 }

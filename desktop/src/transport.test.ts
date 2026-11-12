@@ -200,12 +200,10 @@ describe("desktop file transport", () => {
     expect(folder.name).toBe("Paint")
     const [clipped, base] = folder.children ?? []
     expect(clipped.locked).toBe("Clipped · merges into Base")
-    expect(base.detail).toBe("Normal · 100% · merges 1 clipped · styles not transferred")
     expect(base.note).toBe("Merges 1 clipped · Styles not transferred")
     expect(levels.locked).toBe("Adjustment layer · not supported")
     const [, , tint, , ramp] = session.state.photoshop
     expect(tint.locked).toBeUndefined()
-    expect(tint.detail).toBe("Multiply · 100% · colour fill")
     expect(tint.note).toBe("Colour fill")
     expect(ramp.locked).toBe("Gradient or pattern fill · not supported")
     expect(transferBetweenHosts(session.state, clipped.id, "substance_painter:sp-working")).toBe(session.state)
@@ -303,6 +301,36 @@ describe("desktop file transport", () => {
         index_path: [3],
       },
     })
+  })
+
+  it("sends each layer's own name, since a name may hold the path separator", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-names-"))
+    const pixels = { width: 2, height: 2, data: new Uint8ClampedArray(16).fill(255) }
+    const psd = path.join(directory, "names.psd")
+    // No layer ids, as in production PSDs: Photoshop then checks the target by name.
+    await writeFile(psd, writePsdBuffer({
+      width: 2, height: 2, children: [
+        { name: "Dirt/Scratches", top: 0, left: 0, imageData: pixels },
+        { name: "Hue/Saturation 1", adjustment: { type: "levels" } },
+      ],
+    }, { generateThumbnail: false, noBackground: true }))
+    const snapshot = JSON.parse(await readFile(path.join(fixtureDir, "painter_snapshot.json"), "utf8"))
+    snapshot.contexts[0].layers[0].name = "Edge/Wear"
+    const snapshotPath = path.join(directory, "painter_snapshot.json")
+    await writeFile(snapshotPath, JSON.stringify(snapshot))
+    const session = await loadBridgeSession({
+      photoshopDocument: psd, painterSnapshot: snapshotPath, output: path.join(directory, "desktop_transfer.json"),
+    })
+    const [adjustment, scratches] = session.state.photoshop
+    let mapped = transferBetweenHosts(session.state, "substance_painter:sp-locator", adjustment.id, "after")
+    mapped = transferBetweenHosts(mapped, scratches.id, "substance_painter:sp-working")
+    const { transfers } = JSON.parse(await readFile(
+      await writeTransferManifest(session, mapped, session.initialPainterContextId), "utf8",
+    ))
+    expect(transfers[0].source).toMatchObject({ name: "Edge/Wear", path: "Edge/Wear" })
+    expect(transfers[0].target).toMatchObject({ id: null, name: "Hue/Saturation 1", path: "Hue/Saturation 1", index_path: [0] })
+    expect(transfers[1].source).toMatchObject({ name: "Dirt/Scratches", path: "Dirt/Scratches" })
+    expect(transfers[1].target).toMatchObject({ name: "Working", path: "Working" })
   })
 
   it("writes the Apply's render scale and the PSD's size, for Painter to render the PSD's pixels", async () => {

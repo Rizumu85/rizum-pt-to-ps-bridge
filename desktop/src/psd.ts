@@ -47,6 +47,7 @@ export type PhotoshopTransferSource = {
   host: "photoshop"
   id: string
   kind: "group" | "layer"
+  name: string
   path: string
   png: string | null
   /** Solid fill colour (sRGB 0..1); Painter keeps it as an editable colour fill. */
@@ -113,6 +114,7 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
       externalId: id,
       nativeId: layer.id !== undefined ? String(layer.id) : null,
       kind: layer.children ? "group" : "layer",
+      name,
       path: layerPath,
       blendMode: layer.blendMode ?? "normal",
       opacity: Math.round((layer.opacity ?? 1) * 100),
@@ -124,13 +126,11 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
       id: `photoshop:${id}`,
       kind: layer.children ? "group" : "layer",
       name,
-      detail: "",
       masked: hasMask(layer),
       ref,
     }
     document.layers.set(node.id, layer)
     if (layer.children) {
-      node.detail = t("Group")
       node.children = layerNodes(document, layer.children, layerPath, indexPath)
       node.open = layer.opened !== false
     }
@@ -177,19 +177,9 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
       else if (layer.vectorFill) node.locked = t("Gradient or pattern fill · not supported")
       else node.locked = t("Empty layer")
     }
-    node.detail = node.locked
-      ?? layerDetail(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
     node.note = transferNote(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
   }
   return nodes.map(({ node }) => node)
-}
-
-function layerDetail(layer: Layer, clippedCount: number, colorFill: boolean): string {
-  const parts = [`${humanize(layer.blendMode ?? "normal")} · ${Math.round((layer.opacity ?? 1) * 100)}%`]
-  if (colorFill) parts.push(t("colour fill"))
-  if (clippedCount) parts.push(t("merges {count} clipped", { count: clippedCount }))
-  if (layer.effects && !layer.effects.disabled) parts.push(t("styles not transferred"))
-  return parts.join(" · ")
 }
 
 function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): string | undefined {
@@ -198,10 +188,6 @@ function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): s
   if (clippedCount) parts.push(t("Merges {count} clipped", { count: clippedCount }))
   if (layer.effects && !layer.effects.disabled) parts.push(t("Styles not transferred"))
   return parts.length ? parts.join(" · ") : undefined
-}
-
-function humanize(value: string): string {
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function hasMask(layer: Layer): boolean {
@@ -290,6 +276,7 @@ export async function renderPhotoshopTransfer(
     host: "photoshop",
     id: node.ref.nativeId ?? node.ref.externalId,
     kind: node.kind,
+    name: node.name,
     path: node.ref.path,
     png: null,
     mask_png: hasMask(layer) ? await writeRaster(`${stem}_mask.png`, maskCanvas(document, layer)) : null,

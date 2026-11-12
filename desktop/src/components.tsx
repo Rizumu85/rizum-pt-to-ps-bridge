@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ForwardRefExoticComponent } from "react"
+import { useLayoutEffect, useRef, useState, type ComponentProps, type ForwardRefExoticComponent } from "react"
 import {
   AnimatePresence,
   motion,
@@ -19,7 +19,6 @@ import { colors, metrics, typography } from "./theme"
 import { createPointerFollower } from "./drag-feedback"
 import type { ApplyProgress, ApplyStage } from "./transport"
 
-import iconCheck from "../../icons/checkmark.svg" with { type: "text" }
 import iconChevronDown from "../../icons/chevron-down.svg" with { type: "text" }
 import iconChevronRight from "../../icons/chevron-right.svg" with { type: "text" }
 import iconChevronUp from "../../icons/chevron-up.svg" with { type: "text" }
@@ -37,7 +36,6 @@ const iconPaintLayer = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 
 const iconFillLayer = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"><rect x="3.25" y="3.25" width="9.5" height="9.5" rx="2" stroke="#9E9E9E" stroke-width="1.5"/><path d="M3.5 12.5 12.5 3.5v7a2 2 0 0 1-2 2Z" fill="#9E9E9E"/></svg>`
 
 const icons = {
-  check: iconCheck,
   chevronDown: iconChevronDown,
   chevronRight: iconChevronRight,
   chevronUp: iconChevronUp,

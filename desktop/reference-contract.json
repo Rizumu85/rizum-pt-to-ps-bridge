@@ -1,6 +1,5 @@
 {
   "name": "PT Bridge desktop",
-  "visualAuthority": "../mockups/pt-bridge-ui-v4.html",
   "runtime": {
     "framework": "@gpuix/react",
     "nativeRenderer": "GPUI",

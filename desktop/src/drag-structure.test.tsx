@@ -5,7 +5,7 @@ import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { BridgeApp } from "./bridge-app"
 import { LayerScroll } from "./layer-scroll"
-import { failedBridgeSession, type BridgeSession } from "./transport"
+import { failedBridgeSession, type ApplyOutcome, type BridgeSession } from "./transport"
 import { findNode, type BridgeState, type HostId, type LayerNode } from "./model"
 
 // This host records real reconciler work without opening a GPUI window. It
@@ -47,8 +47,8 @@ function memoryRoot() {
 }
 
 function layer(host: HostId, id: string, children?: LayerNode[]): LayerNode {
-  return { id, name: id, kind: children ? "group" : "layer", children, detail: "",
-    ref: { host, externalId: id, path: id, kind: children ? "group" : "layer" } }
+  return { id, name: id, kind: children ? "group" : "layer", children,
+    ref: { host, externalId: id, name: id, path: id, kind: children ? "group" : "layer" } }
 }
 
 function setup(extra: Partial<ComponentProps<typeof BridgeApp>> = {}) {
@@ -62,7 +62,7 @@ function setup(extra: Partial<ComponentProps<typeof BridgeApp>> = {}) {
   session.painterContexts = [{ id: "body", textureSet: "body", stack: "", channel: "basecolor", channelLabel: "Base Color", subtitle: "body", nodes: session.state.painter, photoshopDocument: null }]
   session.initialPainterContextId = "body"
   const root = memoryRoot()
-  const apply = vi.fn(async (_state: BridgeState) => ({ session: null, message: "Applied", failed: false }))
+  const apply = vi.fn(async (_state: BridgeState): Promise<ApplyOutcome> => ({ session: null, message: "Applied", failed: false }))
   root.render(<BridgeApp session={session} onApply={apply} onConnectPhotoshop={async () => null} {...extra} />)
   const press = (id: string, modifiers?: EventPayload["modifiers"]) => root.event(`layer-drag:${id}`, "mouseDown", { button: 0, x: 20, y: 110, modifiers })
   const move = (id: string, y = 120) => root.event(`layer-row:${id}`, "mouseMove", { pressedButton: 0, x: 200, y })
@@ -193,6 +193,26 @@ describe("drag structure without native windows", () => {
       root.event("replace-confirm-apply", "click")
       await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce())
       expect(apply.mock.calls[0][0].mappings[0]).toMatchObject({ sourceId: "ps-1", targetId: "pt-0", replace: true })
+    } finally { root.unmount() }
+  })
+
+  it("keeps the mappings after a cancelled Apply, and ends them when Painter answers without its layers", async () => {
+    const { root, apply, press, move, release } = setup()
+    const settled = async () => { await new Promise(resolve => setTimeout(resolve, 20)); root.frame() }
+    try {
+      flushSync(() => { press("ps-1"); move("pt-0", 131); release("pt-0", 131) })
+      apply.mockResolvedValueOnce({ session: null, message: "Stopped", failed: false, cancelled: true })
+      root.event("apply-mapping", "click")
+      await settled()
+      root.event("apply-mapping", "click")
+      expect(apply).toHaveBeenCalledTimes(2)
+      expect(apply.mock.calls[1][0].mappings).toHaveLength(1)
+      // The second answer is final but carries no snapshot.
+      await settled()
+      root.event("apply-mapping", "click")
+      flushSync(() => root.event("bridge-root", "keyDown", { key: "z", modifiers: { ctrl: true, shift: false, alt: false, cmd: false } }))
+      root.event("apply-mapping", "click")
+      expect(apply).toHaveBeenCalledTimes(2)
     } finally { root.unmount() }
   })
 

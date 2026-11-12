@@ -27,6 +27,8 @@ $ids = $ps.DoJavaScript($setup.Replace('__ROOT__', $rootJson)).Split('|')
 $fixtureId = $ids[0]
 $requestPath = Join-Path $root 'photoshop_transfer.json'
 $fixturePath = Join-Path $root 'fixture.psd'
+# python imports sp_plugin from the repository root, wherever the script is run from.
+Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     $layers = @(
         @{name='After A'; target_layer_id=[int]$ids[1]; insertion='after'; opacity=65},
@@ -82,6 +84,7 @@ try {
     if ($ps.DoJavaScript($inspect.Replace('__ID__', $fixtureId)) -ne $actual) { throw 'Preflight failure mutated the fixture' }
     Write-Output "PASS: path identity, insertion order, 0.5% opacity, save receipt, stale-target preflight. Artifacts: $root"
 } finally {
+    Pop-Location
     $cleanup = @'
 (function (id, previous) {
     for (var i = app.documents.length - 1; i >= 0; i--) {

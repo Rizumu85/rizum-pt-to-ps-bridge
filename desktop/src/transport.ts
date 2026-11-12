@@ -1,6 +1,6 @@
 import { t } from "./i18n"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { Readable } from "node:stream"
 
@@ -469,10 +469,9 @@ async function writeAtomicJson(filePath: string, payload: unknown): Promise<void
   }
   const temporaryPath = `${filePath}.tmp-${process.pid}`
   await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8")
-  await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "ENOENT") throw error
-  })
-  // Painter watches this contract after the desktop exits, so replacement must be atomic.
+  // Painter reads this file when the Apply request names it. The rename
+  // replaces the last Apply's manifest in one step (also on Windows), so a
+  // failed write never leaves a half-written one under that name.
   await rename(temporaryPath, filePath)
 }
 
@@ -551,7 +550,6 @@ function requestNodes(values: unknown[], parentPath: string, channel: string): L
       id: `substance_painter:${uid}`,
       kind: isGroup ? "group" : "layer",
       name,
-      detail: isGroup ? t("{count} Layers", { count: childValues.length }) : layerDetail(node),
       masked: Boolean(node.mask_asset) || node.has_mask === true,
       thumbnailPath: availableThumbnail(resolvedAsset),
       ref: {
@@ -559,6 +557,7 @@ function requestNodes(values: unknown[], parentPath: string, channel: string): L
         externalId: uid,
         nativeId: uid,
         kind: kindText,
+        name,
         path: nodePath,
         assetPath: resolvedAsset,
         maskPath: assetPath(node.mask_asset),
@@ -586,27 +585,13 @@ function painterContextKey(textureSet: string, stack: string, channel: string): 
   return JSON.stringify([textureSet, stack, channel])
 }
 
-function layerDetail(record: JsonObject): string {
-  const blend = textValue(record.blend_mode) || textValue(record.ps_blend_mode) || "Normal"
-  const opacity = numberValue(record.opacity, 100)
-  return `${humanize(blend)} · ${Math.round(opacity)}%`
-}
-
-function humanize(value: string): string {
-  return value
-    .toLowerCase()
-    .split(/[_\s]+/)
-    .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ")
-}
-
 function manifestRef(ref: HostLayerRef) {
   return {
     host: ref.host,
     // A Photoshop layer without a persistent id is addressed by index_path.
     id: ref.host === "photoshop" ? ref.nativeId ?? null : ref.nativeId ?? ref.externalId,
     kind: ref.kind,
+    name: ref.name,
     path: ref.path,
     png: ref.assetPath ?? null,
     mask_png: ref.maskPath ?? null,
@@ -630,10 +615,6 @@ function availableThumbnail(value: string | null): string | null {
   // Snapshot-only nodes often have no rendered asset; checking once at the
   // transport boundary prevents the native image host from painting a broken-file glyph.
   return value && existsSync(value) ? value : null
-}
-
-function resolveAsset(base: string, value: string): string {
-  return path.isAbsolute(value) ? value : path.resolve(base, value)
 }
 
 async function readJsonObject(filePath: string): Promise<JsonObject> {

@@ -13,6 +13,12 @@ export type HostLayerRef = {
   externalId: string
   nativeId?: string | null
   kind: string
+  /**
+   * The layer's own name. It travels beside `path` because a name may hold
+   * "/" itself ("Hue/Saturation 1" is Photoshop's default), so the last path
+   * segment is not the name.
+   */
+  name: string
   path: string
   assetPath?: string | null
   maskPath?: string | null
@@ -28,7 +34,6 @@ export type LayerNode = {
   id: string
   kind: LayerKind
   name: string
-  detail: string
   masked?: boolean
   thumbnailPath?: string | null
   /** Why this node cannot be transferred; locked rows stay visible but inert. */
@@ -67,7 +72,7 @@ export type TransferMapping = {
  * has none; the user asked to drop Photoshop layers into one directly.
  */
 export const PAINTER_STACK_TOP = "substance_painter:stack-top"
-const painterStackTop: HostLayerRef = { host: "substance_painter", externalId: "", nativeId: null, kind: "stack", path: "" }
+const painterStackTop: HostLayerRef = { host: "substance_painter", externalId: "", nativeId: null, kind: "stack", name: "", path: "" }
 
 export type BridgeState = {
   photoshop: LayerNode[]

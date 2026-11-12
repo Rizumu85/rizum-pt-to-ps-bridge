@@ -37,7 +37,7 @@ const painterLink = createPainterLink(
 )
 
 // Painter releases the dock action on process exit, not window disappearance.
-// Keep GPUiX's native last-window-close shutdown (requires 0.9.0 on Windows).
+// Keep GPUiX's native last-window-close shutdown (on Windows since GPUiX 0.9.0).
 render(
   <BridgeApp
     session={session}
