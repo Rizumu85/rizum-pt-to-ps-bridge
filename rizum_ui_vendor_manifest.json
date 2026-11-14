@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-11-14T01:27:26.920384+00:00",
+  "generated_at": "2026-11-14T04:57:19.951267+00:00",
   "source_root": "rizum-pt-ui-prettier",
-  "source_git_head": "178836f",
+  "source_git_head": "49c8b97",
   "source_git_status": "",
   "managed_roots": [
     "rizum_ui",
@@ -20,6 +20,7 @@
     "rizum_ui/settings_layout.py",
     "rizum_ui/stylesheet.py",
     "rizum_ui/theme.py",
+    "rizum_ui/window_input.py",
     "icons/action-bridge.svg",
     "icons/action-export.svg",
     "icons/action-sun.svg",
