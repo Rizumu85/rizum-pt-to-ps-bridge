@@ -60,6 +60,18 @@ conflict.
    it is in the UI kit's `docs/integration.md`, "Painter's Widgets And
    Painter's Exit".
 
+8. **Run the performance check before a release that touches a timer, an
+   event filter, or a search of Painter's widgets.**
+   `python ../rizum-pt-ui-prettier/tools/painter_perf_check.py`, from
+   PowerShell or a normal terminal. It starts a temporary Painter, plays
+   idle, pointer, key, camera, stroke and tool-switch scenarios and fails if
+   a plugin takes more of Painter's main thread than the budget. The user's
+   rule (2026-11-13): a plugin has to be fast. What a plugin costs the
+   thread that paints does not show in its own panel or in a unit test; it
+   showed as View Roll's rotation hitching, caused by other plugins' timers
+   and event filters. The rules and the budget are in the UI kit's
+   `docs/integration.md`, "Performance On Painter's Main Thread".
+
 ---
 
 # Rizum Guidelines
