@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-08-31T19:59:34.840298+00:00",
+  "generated_at": "2026-11-14T01:27:26.920384+00:00",
   "source_root": "rizum-pt-ui-prettier",
-  "source_git_head": "c0bca2d",
+  "source_git_head": "178836f",
   "source_git_status": "",
   "managed_roots": [
     "rizum_ui",
@@ -14,6 +14,7 @@
     "rizum_ui/exit_guard.py",
     "rizum_ui/host_style.py",
     "rizum_ui/localization.py",
+    "rizum_ui/painter_shortcuts.py",
     "rizum_ui/settings_controls.py",
     "rizum_ui/settings_dialog.py",
     "rizum_ui/settings_layout.py",
@@ -42,6 +43,5 @@
     "icons/undo.svg",
     "icons/wrench.svg",
     "icons/x.svg"
-  ],
-  "pinned": "An older kit snapshot (c0bca2d) carrying one hand-ported fix (shortcut capture, kit ff9557f); the dialogs were built against it. Sync it deliberately with --target and check the dialogs."
+  ]
 }

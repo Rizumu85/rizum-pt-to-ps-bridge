@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
@@ -168,7 +169,7 @@ class SettingsToggle(QtWidgets.QAbstractButton):
 
 
 class StatusBanner(QtWidgets.QFrame):
-    """Compact dock status surface with an optional in-place action."""
+    """Flat compact status row with an optional in-place action."""
 
     actionTriggered = QtCore.Signal()
 
@@ -223,8 +224,8 @@ QFrame#RizumStatusBanner QLabel#RizumStatusBannerSubtitle {
         self._tone_start_color = QtGui.QColor(self._tone_color)
         self._tone_target_color = QtGui.QColor(self._tone_color)
         self._tone_progress = 1.0
-        self._accent_width = 3
-        self._radius = float(default_theme.radius_small)
+        self._indicator_diameter = 6
+        self._indicator_center_x = 5.0
         self._status_animation = None
 
         self._layout = QtWidgets.QHBoxLayout(self)
@@ -232,7 +233,10 @@ QFrame#RizumStatusBanner QLabel#RizumStatusBannerSubtitle {
         self._layout.setSpacing(8)
 
         text_host = QtWidgets.QWidget(self)
-        text_host.setObjectName("RizumTransparent")
+        text_host.setObjectName("RizumStatusTextHost")
+        text_host.setStyleSheet(
+            "QWidget#RizumStatusTextHost { background: transparent; border: 0; }"
+        )
         self._text_host = text_host
         self._text_opacity = QtWidgets.QGraphicsOpacityEffect(text_host)
         self._text_opacity.setOpacity(1.0)
@@ -393,12 +397,12 @@ QFrame#RizumStatusBanner QLabel#RizumStatusBannerSubtitle {
         self._compact_height = max(self.MIN_HEIGHT, int(round(height)))
         scale = self._compact_height / float(self.BASE_HEIGHT)
         self.setFixedHeight(self._compact_height)
-        self._accent_width = max(2, int(round(3 * scale)))
-        self._radius = max(4.5, default_theme.radius_small * scale)
+        self._indicator_diameter = max(4, int(round(6 * scale)))
+        self._indicator_center_x = max(4.0, 5.0 * scale)
         self._layout.setContentsMargins(
-            max(9, int(round(12 * scale))),
+            max(12, int(round(16 * scale))),
             max(5, int(round(7 * scale))),
-            max(8, int(round(10 * scale))),
+            0,
             max(5, int(round(7 * scale))),
         )
         self._layout.setSpacing(max(6, int(round(8 * scale))))
@@ -421,21 +425,17 @@ QFrame#RizumStatusBanner QLabel#RizumStatusBannerSubtitle {
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QColor("#252525"))
-        frame = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        painter.drawRoundedRect(frame, self._radius, self._radius)
         painter.setBrush(self._tone_color)
-        accent = QtCore.QRectF(
-            frame.left(),
-            frame.top() + self._radius,
-            self._accent_width,
-            max(1.0, frame.height() - self._radius * 2),
+        title_origin = self._text_host.mapTo(self, self._title.pos())
+        center_y = title_origin.y() + self._title.height() / 2.0
+        diameter = float(self._indicator_diameter)
+        indicator = QtCore.QRectF(
+            self._indicator_center_x - diameter / 2.0,
+            center_y - diameter / 2.0,
+            diameter,
+            diameter,
         )
-        painter.drawRoundedRect(
-            accent,
-            self._accent_width / 2.0,
-            self._accent_width / 2.0,
-        )
+        painter.drawEllipse(indicator)
         painter.end()
 
 
@@ -1271,6 +1271,32 @@ class AnimatedSaveButton(QtWidgets.QAbstractButton):
         painter.end()
 
 
+def _device_outline(
+    painter: QtGui.QPainter, rect: QtCore.QRectF, width: float = 1.0
+) -> tuple[QtCore.QRectF, float]:
+    """`rect` and an outline's width on whole device pixels.
+
+    Both in the painter's coordinates. At a fractional display scale (Windows
+    at 112.5 % or 125 %) a 1 px outline on half-pixel coordinates covers one
+    device pixel on some sides and parts of two on others, so its weight and
+    colour change around the control (user report, 2026-11-13).
+    """
+    transform = painter.deviceTransform()
+    scale = transform.m11()
+    plain = transform.isAffine() and transform.m12() == 0 and transform.m21() == 0
+    if not plain or scale <= 0 or abs(transform.m22() - scale) > 1e-6:
+        return QtCore.QRectF(rect), width
+    # Half a pixel goes down: at 150 % the line stays a hairline.
+    line = max(1.0, float(math.floor(width * scale + 0.49)))
+    device = transform.mapRect(QtCore.QRectF(rect))
+    outer = QtCore.QRectF(
+        QtCore.QPointF(math.ceil(device.left() - 0.01), math.ceil(device.top() - 0.01)),
+        QtCore.QPointF(math.floor(device.right() + 0.01), math.floor(device.bottom() + 0.01)),
+    )
+    inverse, _invertible = transform.inverted()
+    return inverse.mapRect(outer), line / scale
+
+
 class ShortcutCaptureField(QtWidgets.QFrame):
     """Painted shortcut field with stable capture, clear, and conflict states."""
 
@@ -1357,6 +1383,11 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         self.update()
 
     def refreshMetrics(self) -> None:
+        # The field keeps the width of its own content (settings-proportions:
+        # a control is not stretched to fill a column), and takes it again on
+        # every capture and change. A caller's setFixedWidth lasts only until
+        # the next key, which made a stretched field shrink after one (user
+        # report, 2026-11-13).
         self.setFixedWidth(self.sizeHint().width())
         self.updateGeometry()
 
@@ -1544,6 +1575,7 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         theme = default_theme
         radius = float(self._scaled(self._visual_style.get("field_radius", 6)))
         rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        outer, line = _device_outline(painter, QtCore.QRectF(self.rect()))
 
         background = QtGui.QColor(
             self._visual_style.get("control", theme.surface_control)
@@ -1553,7 +1585,7 @@ class ShortcutCaptureField(QtWidgets.QFrame):
             background = QtGui.QColor(hover) if hover else background.lighter(112)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(background)
-        painter.drawRoundedRect(rect, radius, radius)
+        painter.drawRoundedRect(outer, radius, radius)
 
         border_color = None
         if self._capturing:
@@ -1565,9 +1597,20 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         elif self._visual_style.get("border"):
             border_color = QtGui.QColor(self._visual_style["border"])
         if border_color is not None:
-            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.setPen(QtGui.QPen(border_color, 1))
-            painter.drawRoundedRect(rect, radius, radius)
+            # A ring instead of a pen, with half the line's width taken off
+            # the inner radius instead of all of it: a one-pixel arc is spread
+            # over two pixels and reads fainter than the straight sides, so
+            # the corners are a fifth fuller.
+            ring = QtGui.QPainterPath()
+            ring.addRoundedRect(outer, radius, radius)
+            hole = QtGui.QPainterPath()
+            inner_radius = max(0.0, radius - line / 2)
+            hole.addRoundedRect(
+                outer.adjusted(line, line, -line, -line), inner_radius, inner_radius
+            )
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(border_color)
+            painter.drawPath(ring.subtracted(hole))
 
         text = self._display_text()
         if self._conflicted and not self._capturing:

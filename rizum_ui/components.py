@@ -6,6 +6,8 @@ import weakref
 from html import escape
 from pathlib import Path
 
+from PySide6 import QtCore
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,6 +16,10 @@ COMPACT_DOCK_DEFAULT_WIDTH = COMPACT_DOCK_MIN_WIDTH
 COMPACT_DOCK_DEFAULT_HEIGHT = 184
 COMPACT_DOCK_OUTER_MARGINS = (3, 0, 3, 3)
 COMPACT_DOCK_PANEL_BG = "#2b2b2b"
+# Measured in Painter 12.1: a floating or standalone dock's title bar is
+# #2b2b2b, but docks tabbed together show their selected tab in #333333, so
+# the surface follows the dock state to stay seamless with its header.
+COMPACT_DOCK_TABBED_PANEL_BG = "#333333"
 COMPACT_DOCK_CARD_BG = "#1b1b1b"
 COMPACT_DOCK_CARD_RADIUS = 10
 FOOTER_BUTTON_HEIGHT = 26
@@ -1334,8 +1340,11 @@ def make_action_row(*buttons, parent=None):
 def build_compact_dock_stylesheet():
     """Return styles learned from live Painter dock panels."""
     return f"""
-QWidget#RizumCompactDockSurface {{
+QWidget[rizumCompactDockSurface="true"] {{
     background: {COMPACT_DOCK_PANEL_BG};
+}}
+QWidget[rizumCompactDockSurface="true"][rizumDockTabbed="true"] {{
+    background: {COMPACT_DOCK_TABBED_PANEL_BG};
 }}
 QFrame#RizumCompactDockCard,
 QFrame#RizumCompactDockCard QWidget#RizumTransparent {{
@@ -1351,18 +1360,129 @@ QFrame#RizumCompactDockCard QPushButton[compactFooter="true"] {{
 """
 
 
-def apply_compact_dock_surface(widget):
-    """Apply Painter-like dock surface palette and local styles."""
+def _enclosing_dock(widget):
+    from PySide6 import QtWidgets
+
+    parent = widget
+    while parent is not None:
+        if isinstance(parent, QtWidgets.QDockWidget):
+            return parent
+        parent = parent.parentWidget()
+    return None
+
+
+def compact_dock_is_tabbed(widget):
+    """Whether the dock holding ``widget`` is docked in a tab group."""
+    from PySide6 import QtWidgets
+
+    dock = _enclosing_dock(widget)
+    if dock is None or dock.isFloating():
+        return False
+    host = dock.parentWidget()
+    return isinstance(host, QtWidgets.QMainWindow) and bool(host.tabifiedDockWidgets(dock))
+
+
+def compact_dock_surface_color(widget):
+    """Surface color that meets the dock header seamlessly in its current state."""
+    if compact_dock_is_tabbed(widget):
+        return COMPACT_DOCK_TABBED_PANEL_BG
+    return COMPACT_DOCK_PANEL_BG
+
+
+def _apply_compact_dock_state(widget):
     from PySide6 import QtGui
 
-    widget.setObjectName("RizumCompactDockSurface")
-    widget.setStyleSheet(widget.styleSheet() + build_compact_dock_stylesheet())
+    tabbed = compact_dock_is_tabbed(widget)
+    color = QtGui.QColor(COMPACT_DOCK_TABBED_PANEL_BG if tabbed else COMPACT_DOCK_PANEL_BG)
     palette = widget.palette()
-    panel_color = QtGui.QColor(COMPACT_DOCK_PANEL_BG)
-    palette.setColor(QtGui.QPalette.ColorRole.Window, panel_color)
-    palette.setColor(QtGui.QPalette.ColorRole.Base, panel_color)
+    palette.setColor(QtGui.QPalette.ColorRole.Window, color)
+    palette.setColor(QtGui.QPalette.ColorRole.Base, color)
     widget.setPalette(palette)
+    if bool(widget.property("rizumDockTabbed")) != tabbed:
+        widget.setProperty("rizumDockTabbed", tabbed)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+    widget.update()
+
+
+def _install_compact_dock_tracker(widget):
+    import shiboken6
+    from PySide6 import QtCore
+
+    class _DockStateTracker(QtCore.QObject):
+        """Re-checks the dock state when Painter re-docks, floats or tabs it.
+
+        It connects to nothing of Painter's main window and keeps no wrapper
+        of the surface or the dock. It used to follow the main window's
+        ``tabifiedDockWidgetActivated``: a connection made from Python keeps
+        the sender's wrapper alive for good, and with it everything any
+        plugin found through that wrapper. Painter destroys those widgets
+        after it has closed the plugins, and the leftover wrappers crashed it
+        on most exits (access violation in shiboken's ``~BindingManager``;
+        measured with real exits, see docs/integration.md). The wrappers it
+        held of the surface and the dock kept a closed plugin's whole panel
+        alive the same way, behind the collector's back.
+
+        The dock's own signals and the two event filters tell about a tab
+        change too: the dock is shown, hidden or resized by it.
+        """
+
+        def __init__(self, surface):
+            super().__init__(surface)
+            self._dock_address = 0
+            # The refresh waits in a timer that dies with the tracker, not
+            # in QTimer.singleShot(0, self, ...): Painter removes a plugin's
+            # dock while a refresh is waiting, and PySide never releases the
+            # callable of a zero-delay call it drops, which kept the tracker
+            # alive after the close.
+            self._refresh_timer = QtCore.QTimer(self)
+            self._refresh_timer.setSingleShot(True)
+            self._refresh_timer.setInterval(0)
+            self._refresh_timer.timeout.connect(self._refresh)
+
+        def eventFilter(self, watched, event):
+            if event.type() in (
+                QtCore.QEvent.Type.ParentChange,
+                QtCore.QEvent.Type.Show,
+                QtCore.QEvent.Type.Resize,
+            ):
+                self.schedule()
+            return False
+
+        @QtCore.Slot()
+        def schedule(self):
+            if not self._refresh_timer.isActive():
+                self._refresh_timer.start()
+
+        def _refresh(self):
+            surface = self.parent()
+            if not _is_qt_object_alive(surface):
+                return
+            dock = _enclosing_dock(surface)
+            address = shiboken6.getCppPointer(dock)[0] if dock is not None else 0
+            if address and address != self._dock_address:
+                self._dock_address = address
+                dock.topLevelChanged.connect(self.schedule)
+                dock.dockLocationChanged.connect(self.schedule)
+                dock.visibilityChanged.connect(self.schedule)
+                dock.installEventFilter(self)
+            _apply_compact_dock_state(surface)
+
+    tracker = _DockStateTracker(widget)
+    widget.installEventFilter(tracker)
+    widget._rizum_compact_dock_tracker = tracker
+    return tracker
+
+
+def apply_compact_dock_surface(widget):
+    """Apply Painter-like dock surface palette and local styles."""
+    # Painter persists dock layout by objectName, so visual roles use a property.
+    widget.setProperty("rizumCompactDockSurface", True)
+    widget.setStyleSheet(widget.styleSheet() + build_compact_dock_stylesheet())
     widget.setAutoFillBackground(True)
+    _apply_compact_dock_state(widget)
+    if getattr(widget, "_rizum_compact_dock_tracker", None) is None:
+        _install_compact_dock_tracker(widget)
 
 
 def make_compact_dock_layout(widget):
@@ -1681,76 +1801,99 @@ def compact_top_controls_width(
     )
 
 
+class _RowHoverFilter(QtCore.QObject):
+    """Keeps a row's hover property while the pointer crosses its children.
+
+    One class for every row, and no wrapper of the widgets it watches. It
+    used to be a class made per call whose methods closed over the row and
+    the host it was stored on; the collector does not follow an instance to
+    such a class, so every row built stayed alive after its panel was
+    destroyed (measured: 20 of 20 export rows after delete and collection).
+    """
+
+    def __init__(self, host, row, watched, property_name):
+        super().__init__(host)
+        self._row = weakref.ref(row)
+        self._watched = [weakref.ref(widget) for widget in watched]
+        self._property_name = property_name
+        # A timer that dies with the filter, not QTimer.singleShot(0, ...):
+        # a row destroyed in the turn of its Leave left that call behind,
+        # and it raised on the deleted widgets.
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(0)
+        self._refresh_timer.timeout.connect(self.refresh_hovered)
+
+    def set_row_property(self, name, value):
+        row = self._row()
+        if row is None or row.property(name) == value:
+            return
+        row.setProperty(name, value)
+        row.style().unpolish(row)
+        row.style().polish(row)
+        row.update()
+
+    def set_hovered(self, is_hovered):
+        global _ACTIVE_HOVER_FILTER_REF
+        active_filter = (
+            _ACTIVE_HOVER_FILTER_REF()
+            if _ACTIVE_HOVER_FILTER_REF is not None
+            else None
+        )
+        if is_hovered:
+            if active_filter is not None and active_filter is not self:
+                try:
+                    active_filter.set_row_property(
+                        active_filter._property_name,
+                        False,
+                    )
+                except RuntimeError:
+                    pass
+            _ACTIVE_HOVER_FILTER_REF = weakref.ref(self)
+        elif active_filter is self:
+            _ACTIVE_HOVER_FILTER_REF = None
+        self.set_row_property(self._property_name, is_hovered)
+
+    def refresh_hovered(self):
+        widgets = [reference() for reference in self._watched]
+        self.set_hovered(
+            any(
+                _is_qt_object_alive(widget) and widget.underMouse()
+                for widget in widgets
+            )
+        )
+
+    def eventFilter(self, obj, event):
+        event_type = event.type()
+        if event_type in (
+            QtCore.QEvent.Type.Enter,
+            QtCore.QEvent.Type.HoverEnter,
+            QtCore.QEvent.Type.HoverMove,
+        ):
+            self.set_hovered(True)
+        elif event_type in (
+            QtCore.QEvent.Type.Leave,
+            QtCore.QEvent.Type.HoverLeave,
+        ):
+            self._refresh_timer.start()
+        elif event_type in (
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QEvent.Type.MouseButtonRelease,
+        ) and event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.set_row_property(
+                "pressed",
+                event_type == QtCore.QEvent.Type.MouseButtonPress,
+            )
+        return False
+
+
 def bind_hover_state(host, row, *widgets, property_name="hovered"):
     """Keep a row hover property stable while moving across child widgets."""
-    from PySide6 import QtCore
-
     watched = [widget for widget in (host, row, *widgets) if widget is not None]
-
-    class _TreeHoverFilter(QtCore.QObject):
-        def __init__(self):
-            super().__init__(host)
-            self._property_name = property_name
-
-        def set_row_property(self, name, value):
-            if row.property(name) == value:
-                return
-            row.setProperty(name, value)
-            row.style().unpolish(row)
-            row.style().polish(row)
-            row.update()
-
-        def set_hovered(self, is_hovered):
-            global _ACTIVE_HOVER_FILTER_REF
-            active_filter = (
-                _ACTIVE_HOVER_FILTER_REF()
-                if _ACTIVE_HOVER_FILTER_REF is not None
-                else None
-            )
-            if is_hovered:
-                if active_filter is not None and active_filter is not self:
-                    try:
-                        active_filter.set_row_property(
-                            active_filter._property_name,
-                            False,
-                        )
-                    except RuntimeError:
-                        pass
-                _ACTIVE_HOVER_FILTER_REF = weakref.ref(self)
-            elif active_filter is self:
-                _ACTIVE_HOVER_FILTER_REF = None
-            self.set_row_property(property_name, is_hovered)
-
-        def refresh_hovered(self):
-            self.set_hovered(any(widget.underMouse() for widget in watched))
-
-        def eventFilter(self, obj, event):
-            event_type = event.type()
-            if event_type in (
-                QtCore.QEvent.Type.Enter,
-                QtCore.QEvent.Type.HoverEnter,
-                QtCore.QEvent.Type.HoverMove,
-            ):
-                self.set_hovered(True)
-            elif event_type in (
-                QtCore.QEvent.Type.Leave,
-                QtCore.QEvent.Type.HoverLeave,
-            ):
-                QtCore.QTimer.singleShot(0, self.refresh_hovered)
-            elif event_type in (
-                QtCore.QEvent.Type.MouseButtonPress,
-                QtCore.QEvent.Type.MouseButtonRelease,
-            ) and event.button() == QtCore.Qt.MouseButton.LeftButton:
-                self.set_row_property(
-                    "pressed",
-                    event_type == QtCore.QEvent.Type.MouseButtonPress,
-                )
-            return False
-
     for widget in watched:
         widget.setMouseTracking(True)
         widget.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
-    hover_filter = _TreeHoverFilter()
+    hover_filter = _RowHoverFilter(host, row, watched, property_name)
     for widget in watched:
         widget.installEventFilter(hover_filter)
     host._rizum_hover_filter = hover_filter
@@ -4168,6 +4311,94 @@ QLineEdit#RizumCompactStepperEditor {{
     return _CompactStepper()
 
 
+POPUP_MENU_RADIUS = 6
+POPUP_MENU_FONT_PX = 12
+
+
+def _application_ui_scale():
+    from PySide6 import QtWidgets
+
+    app = QtWidgets.QApplication.instance()
+    try:
+        return float(app.property("rizumUiFontScale") or 1.0) if app else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def popup_menu_stylesheet(scale=None):
+    """Scaled metrics for ``QMenu#RizumPopupMenu``.
+
+    The shared theme and Painter's host style both pin menu metrics, so a
+    popup restates its font and spacing locally at the current UI Font scale
+    (font-scale rule 7). Painter also paints disabled items as grey boxes,
+    which the local rules replace with muted text.
+    """
+    scale = _application_ui_scale() if scale is None else float(scale)
+
+    def scaled(value):
+        return max(int(round(value * 0.75)), int(round(value * scale)))
+
+    return f"""
+QMenu#RizumPopupMenu {{
+    font-size: {scaled(POPUP_MENU_FONT_PX)}px;
+    padding: {scaled(4)}px;
+}}
+QMenu#RizumPopupMenu::item {{
+    padding: {scaled(6)}px {scaled(22)}px {scaled(6)}px {scaled(8)}px;
+}}
+QMenu#RizumPopupMenu::item:disabled {{
+    background: transparent;
+    color: #5c5c5c;
+}}
+QMenu#RizumPopupMenu::separator {{
+    height: 1px;
+    background: #414141;
+    margin: {scaled(4)}px {scaled(6)}px;
+}}
+"""
+
+
+def make_popup_menu(parent=None, extra_stylesheet=""):
+    """Create a rounded shared popup menu scaled to the current UI Font.
+
+    Build menus when they open so they pick up the current scale; a menu kept
+    alive across scale changes must call ``refreshMetrics()``.
+    ``extra_stylesheet`` holds plugin-specific rules appended after the shared
+    ones, so they win where they overlap.
+    """
+    from PySide6 import QtCore, QtGui, QtWidgets
+
+    class _PopupMenu(QtWidgets.QMenu):
+        def __init__(self):
+            super().__init__(parent)
+            self.setObjectName("RizumPopupMenu")
+            self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.setWindowFlag(QtCore.Qt.WindowType.NoDropShadowWindowHint, True)
+            self.setWindowFlag(QtCore.Qt.WindowType.FramelessWindowHint, True)
+            self._extra_stylesheet = extra_stylesheet
+            self.refreshMetrics()
+
+        def refreshMetrics(self):
+            self.setStyleSheet(popup_menu_stylesheet() + self._extra_stylesheet)
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            rect = self.rect()
+            if rect.isEmpty():
+                return
+            # Translucent popups are not composited on every Windows setup,
+            # and the menu background bleeds past border-radius; a mask that
+            # matches the full rect clips only the corner pixels.
+            path = QtGui.QPainterPath()
+            path.addRoundedRect(QtCore.QRectF(rect), POPUP_MENU_RADIUS, POPUP_MENU_RADIUS)
+            region = QtGui.QRegion()
+            for polygon in path.toSubpathPolygons():
+                region += QtGui.QRegion(polygon.toPolygon())
+            self.setMask(region)
+
+    return _PopupMenu()
+
+
 def make_combo_input(options=None):
     """Create a functional compact combo input backed by a lightweight menu."""
     from PySide6 import QtCore, QtGui, QtWidgets
@@ -4398,13 +4629,7 @@ def make_combo_input(options=None):
             if self._menu is not None and self._menu.isVisible():
                 self._menu.close()
                 return
-            menu = QtWidgets.QMenu(self)
-            menu.setObjectName("RizumPopupMenu")
-            menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
-            try:
-                menu.setWindowFlag(QtCore.Qt.WindowType.NoDropShadowWindowHint, True)
-            except Exception:
-                pass
+            menu = make_popup_menu(self)
             for index, item in enumerate(self._items):
                 action = menu.addAction(item[0])
                 action.triggered.connect(lambda checked=False, i=index: self.setCurrentIndex(i))
@@ -4419,26 +4644,7 @@ def make_combo_input(options=None):
             # before the open animation begins.
             menu.setWindowOpacity(0.0)
             menu.popup(self.mapToGlobal(QtCore.QPoint(popup_x, self.height() + 4)))
-            QtCore.QTimer.singleShot(0, lambda: self._applyMenuMask(menu))
             QtCore.QTimer.singleShot(0, lambda: self._animate_menu_open(menu))
-
-        def _applyMenuMask(self, menu):
-            if not _is_qt_object_alive(menu):
-                return
-            rect = menu.rect()
-            if rect.isEmpty():
-                return
-            # QMenu background fills the entire widget rect even with
-            # border-radius, bleeding past the rounded corners. A mask clips
-            # those corner pixels. The mask matches the full rect (no inset)
-            # so the border stays visible on all four sides; only the
-            # transparent corner triangles outside the radius are removed.
-            path = QtGui.QPainterPath()
-            path.addRoundedRect(QtCore.QRectF(rect), 6, 6)
-            region = QtGui.QRegion()
-            for polygon in path.toSubpathPolygons():
-                region += QtGui.QRegion(polygon.toPolygon())
-            menu.setMask(region)
 
         def _animate_menu_open(self, menu):
             if not _is_qt_object_alive(menu) or not menu.isVisible():
