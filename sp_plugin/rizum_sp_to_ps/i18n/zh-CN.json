@@ -75,6 +75,8 @@
   "about": "关于",
   "version": "版本",
   "changes_save_automatically": "更改会自动保存",
+  "settings_first_use": "开始前请确认这些设置",
+  "continue": "继续",
   "choose_photoshop": "选择 Photoshop 可执行文件",
   "filter_executable": "可执行文件",
   "filter_all_files": "所有文件",

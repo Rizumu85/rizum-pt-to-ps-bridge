@@ -253,6 +253,7 @@ class ExportDialogLayoutTests(unittest.TestCase):
         panel.widget = QtWidgets.QWidget()
         panel.QtWidgets = QtWidgets
         panel._project_is_open = lambda: False
+        panel.confirm_settings_once = lambda: None
         self.addCleanup(panel.widget.deleteLater)
 
         with (

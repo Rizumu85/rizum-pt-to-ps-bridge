@@ -75,6 +75,8 @@
   "about": "Sobre",
   "version": "Versão",
   "changes_save_automatically": "As alterações são salvas automaticamente",
+  "settings_first_use": "Confira estas configurações antes de começar",
+  "continue": "Continuar",
   "choose_photoshop": "Escolher o executável do Photoshop",
   "filter_executable": "Executável",
   "filter_all_files": "Todos os arquivos",

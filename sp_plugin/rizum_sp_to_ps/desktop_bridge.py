@@ -93,6 +93,7 @@ class DesktopBridgeController:
             self._show(text("bridge"), text("project_not_ready"))
             return
 
+        self.panel.confirm_settings_once()
         self._launch_desktop()
 
     def _return_to_desktop(self):

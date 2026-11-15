@@ -158,5 +158,52 @@ class SettingsDialogBehaviorTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(self.settings.padding_meta.text(), "Off · uses dilation below")
 
+class FirstUseSettingsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def panel_with(self, stored):
+        class Store:
+            def __init__(self, *_args):
+                pass
+
+            def value(self, key, default=None):
+                return stored.get(key, default)
+
+            def setValue(self, key, value):
+                stored[key] = value
+
+            def allKeys(self):
+                return list(stored)
+
+        panel = BridgePanel.__new__(BridgePanel)
+        panel.QtCore = mock.Mock(QSettings=Store)
+        return panel
+
+    def test_a_new_user_sees_settings_once_before_the_first_export_or_bridge(self):
+        stored = {}
+        panel = self.panel_with(stored)
+        with mock.patch("sp_plugin.rizum_sp_to_ps.ui.SettingsDialog") as dialog:
+            panel.confirm_settings_once()
+            panel.confirm_settings_once()
+        dialog.assert_called_once_with(panel, first_use=True)
+        dialog.return_value.open.assert_called_once()
+
+    def test_someone_who_used_the_plugin_before_is_not_asked(self):
+        panel = self.panel_with({"photoshop_path": "C:/Photoshop.exe"})
+        with mock.patch("sp_plugin.rizum_sp_to_ps.ui.SettingsDialog") as dialog:
+            panel.confirm_settings_once()
+        dialog.assert_not_called()
+
+    def test_the_first_use_dialog_says_why_it_opened_and_continues(self):
+        from sp_plugin.rizum_sp_to_ps.localization import text
+
+        settings = SettingsDialog(_Panel(), first_use=True)
+        self.assertEqual(settings.footer_hint.text(), text("settings_first_use"))
+        self.assertEqual(settings.done_button.text(), text("continue"))
+        settings.dialog.deleteLater()
+
+
 if __name__ == "__main__":
     unittest.main()

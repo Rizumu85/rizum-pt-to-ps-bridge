@@ -95,6 +95,8 @@ FALLBACK_TEXT = {
     "about": "About",
     "version": "Version",
     "changes_save_automatically": "Changes save automatically",
+    "settings_first_use": "Check these before you start",
+    "continue": "Continue",
     "choose_photoshop": "Choose Photoshop executable",
     "filter_executable": "Executable",
     "filter_all_files": "All Files",

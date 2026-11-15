@@ -75,6 +75,8 @@
   "about": "情報",
   "version": "バージョン",
   "changes_save_automatically": "変更は自動的に保存されます",
+  "settings_first_use": "始める前に設定を確認してください",
+  "continue": "続行",
   "choose_photoshop": "Photoshop の実行ファイルを選択",
   "filter_executable": "実行ファイル",
   "filter_all_files": "すべてのファイル",

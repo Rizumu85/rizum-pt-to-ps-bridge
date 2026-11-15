@@ -245,6 +245,9 @@ def _make_bridge_dock_toolbar(QtCore, QtWidgets):
     )
     return toolbar
 
+SETTINGS_CONFIRMED_KEY = "settings_confirmed"
+
+
 class BridgePanel:
     """Painter dock panel for the PT Bridge workflow."""
 
@@ -400,6 +403,19 @@ class BridgePanel:
         dialog = SettingsDialog(self)
         dialog.open()
 
+    def confirm_settings_once(self):
+        # The user asked that a new user go through Settings before the first
+        # Export or Bridge, so the defaults are their own choice. Not when
+        # Painter starts: the plugin stays quiet until it is asked for.
+        store = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
+        if to_bool(store.value(SETTINGS_CONFIRMED_KEY, False)):
+            return
+        # Someone who used the plugin before has stored settings already.
+        first_use = not store.allKeys()
+        store.setValue(SETTINGS_CONFIRMED_KEY, True)
+        if first_use:
+            SettingsDialog(self, first_use=True).open()
+
     def _load_user_settings(self):
         store = self.QtCore.QSettings(SETTINGS_ORG, SETTINGS_APP)
         bit_depth = optional_int(store.value("bit_depth", None))
@@ -444,6 +460,7 @@ class BridgePanel:
         self.user_settings = self._load_user_settings()
 
     def open_export_dialog(self):
+        self.confirm_settings_once()
         dialog = ExportDialog(self)
         dialog.open()
 

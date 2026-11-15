@@ -444,7 +444,7 @@ def _make_settings_reveal_row(QtCore, QtWidgets, content, expanded_height):
 class SettingsDialog:
     """Global Painter-side bridge settings."""
 
-    def __init__(self, panel):
+    def __init__(self, panel, first_use=False):
         self.panel = panel
         self.QtCore = panel.QtCore
         self.QtGui = panel.QtGui
@@ -729,6 +729,11 @@ class SettingsDialog:
             default_theme.radius_small,
         )
         self.done_button.clicked.connect(self.save)
+        if first_use:
+            # Shown before a new user's first Export or Bridge, which goes on
+            # once this closes; the footer says why it opened.
+            self.footer_hint.setText(text("settings_first_use"))
+            self.done_button.setText(text("continue"))
         footer_layout.addWidget(self.done_button)
         footer_outer.addWidget(footer_row)
         surface_layout.addWidget(footer)
