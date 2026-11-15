@@ -4334,7 +4334,14 @@ def popup_menu_stylesheet(scale=None):
     font is Medium (500), which a menu would inherit, and with a font such as
     MiSans that reads as bold. Painter also paints disabled items as grey
     boxes, which the local rules replace with muted text.
+
+    The colours are stated here as well. A menu is a window of its own: the
+    theme set on the dialog or panel it opens from does not reach it inside
+    Painter, and Painter's own ``QMenu`` rules (grey surface, grey selection)
+    showed instead of the kit's.
     """
+    from .theme import default_theme as theme
+
     scale = _application_ui_scale() if scale is None else float(scale)
 
     def scaled(value):
@@ -4342,12 +4349,24 @@ def popup_menu_stylesheet(scale=None):
 
     return f"""
 QMenu#RizumPopupMenu {{
+    background: {theme.surface};
+    color: {theme.text};
+    border: 1px solid {theme.border_hover};
+    border-radius: {POPUP_MENU_RADIUS}px;
     font-size: {scaled(POPUP_MENU_FONT_PX)}px;
     font-weight: 400;
     padding: {scaled(4)}px;
 }}
 QMenu#RizumPopupMenu::item {{
+    background: transparent;
+    color: {theme.text};
+    margin: 0px;
     padding: {scaled(6)}px {scaled(22)}px {scaled(6)}px {scaled(8)}px;
+    border-radius: {theme.radius_small - 2}px;
+}}
+QMenu#RizumPopupMenu::item:selected {{
+    background: {theme.surface_hover};
+    color: {theme.text};
 }}
 QMenu#RizumPopupMenu::item:disabled {{
     background: transparent;
