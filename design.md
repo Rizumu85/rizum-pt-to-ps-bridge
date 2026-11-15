@@ -105,6 +105,13 @@ Apply All Masks opens every folder, so it is done while each layer is placed;
 folder masks stay, as Photoshop applies none to a folder. Export reads it from
 the export list's `settings.apply_layer_masks`, Bridge from the transfer
 request's `apply_layer_masks`.
+**File format** (PSD by default, or TIFF) names and saves what Export builds.
+The user asked for TIFF beside PSD. A TIFF keeps its layers, with ZIP
+compression and the IBM (little-endian) byte order Photoshop on Windows
+writes; Bridge inserts into a TIFF are saved the same way, since a plain
+save could flatten them. The mapper reads a layered TIFF by rebuilding a
+big-endian PSD from Photoshop's layer data in tag 37724 (`desktop/src/tiff.ts`);
+a TIFF saved without layers reads as a document with no layers.
 Painter-wide UI scaling belongs in a separate helper plugin, not the PT Bridge
 settings panel. The bridge may coexist with that helper, but should not own
 global Painter UI scale experiments.

@@ -542,6 +542,20 @@ class SettingsDialog:
         bit_depth_layout.addWidget(self.bit_depth)
         body_layout.addWidget(bit_depth_row)
 
+        self.file_format = make_combo_input([("PSD", "psd"), ("TIFF", "tif")])
+        self.file_format.setFitToContents(False)
+        self.file_format.setFixedWidth(126)
+        file_format_row, file_format_layout = _settings_frame_row(
+            self.QtWidgets,
+            PAINTER_SETTINGS_LAYOUT.row_height.design,
+        )
+        self._settings_rows.append(file_format_row)
+        self.file_format_label = _settings_label(self.QtWidgets, text("file_format"), "RizumSettingsItemName")
+        file_format_layout.addWidget(self.file_format_label)
+        file_format_layout.addStretch(1)
+        file_format_layout.addWidget(self.file_format)
+        body_layout.addWidget(file_format_row)
+
         # Settings hold the defaults; the Export dialog and the Bridge window
         # start from them and change them for one export or Apply, because
         # the user wanted size to adapt case by case without a trip here.
@@ -748,6 +762,7 @@ class SettingsDialog:
         self.infinite_padding.toggled.connect(self._save_live)
         self.dilation_stepper.valueChanged.connect(self._save_live)
         self.bit_depth.currentIndexChanged.connect(self._save_live)
+        self.file_format.currentIndexChanged.connect(self._save_live)
         self.psd_size.currentIndexChanged.connect(self._save_live)
         self.render_scale.currentIndexChanged.connect(self._save_live)
         self.blend_modes.currentIndexChanged.connect(self._sync_blend_modes)
@@ -848,6 +863,12 @@ class SettingsDialog:
             + self._settings_rows[2].layout().itemAt(0).widget().sizeHint().width()
             + 2 * body_margin
         )
+        file_format_need = (
+            self.file_format.width()
+            + PAINTER_SETTINGS_LAYOUT.row_spacing
+            + self.file_format_label.sizeHint().width()
+            + 2 * body_margin
+        )
         uv_map_need = (
             self.uv_map_texts.sizeHint().width()
             + PAINTER_SETTINGS_LAYOUT.row_spacing
@@ -899,6 +920,7 @@ class SettingsDialog:
             metric(338, 254),
             footer_need,
             bit_depth_need,
+            file_format_need,
             uv_map_need,
             masks_need,
             smoothing_need,
@@ -989,7 +1011,7 @@ class SettingsDialog:
             + metric(6, 5)
         )
         self.bit_depth.setFixedWidth(max(metric(126, 95), localized_width, blend_width))
-        for combo in (self.psd_size, self.render_scale, self.blend_modes):
+        for combo in (self.file_format, self.psd_size, self.render_scale, self.blend_modes):
             combo.setCompactHeight(control_height)
             combo.setFixedWidth(self.bit_depth.width())
         self.dilation_reveal.setExpandedHeight(
@@ -1173,6 +1195,8 @@ QPushButton[variant="icon"]:pressed {{
             bit_depth = settings.get("bit_depth")
             index = self.bit_depth.findData(bit_depth)
             self.bit_depth.setCurrentIndex(index if index >= 0 else 0)
+            index = self.file_format.findData(settings.get("file_format", "psd"))
+            self.file_format.setCurrentIndex(index if index >= 0 else 0)
             index = self.psd_size.findData(settings.get("psd_size"))
             self.psd_size.setCurrentIndex(index if index >= 0 else 0)
             index = self.render_scale.findData(settings.get("render_scale", 1))
@@ -1240,6 +1264,7 @@ QPushButton[variant="icon"]:pressed {{
             "export_uv_map": self.export_uv_map.isChecked(),
             "apply_layer_masks": self.apply_layer_masks.isChecked(),
             "bit_depth": self.bit_depth.currentData(),
+            "file_format": self.file_format.currentData(),
             "psd_size": self.psd_size.currentData(),
             "render_scale": self.render_scale.currentData(),
             "blend_modes": self.blend_modes.currentData(),

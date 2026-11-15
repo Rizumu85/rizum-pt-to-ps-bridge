@@ -56,6 +56,7 @@
   "dilation": "膨胀",
   "texture_set": "纹理集",
   "bit_depth": "位深度",
+  "file_format": "文件格式",
   "bit_depth_8": "8位",
   "bit_depth_16": "16位",
   "render_at": "渲染倍率",

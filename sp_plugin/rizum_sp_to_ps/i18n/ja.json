@@ -56,6 +56,7 @@
   "dilation": "拡張",
   "texture_set": "テクスチャセット",
   "bit_depth": "ビット数",
+  "file_format": "ファイル形式",
   "bit_depth_8": "8 ビット",
   "bit_depth_16": "16 ビット",
   "render_at": "レンダリング倍率",

@@ -49,7 +49,21 @@ class ExportSizeTests(unittest.TestCase):
         # The Export dialog's choice wins for this export.
         self.assertEqual(settings["render_scale"], 4)
 
-    def test_layer_masks_stay_unless_settings_apply_them(self):
+    def test_the_file_format_names_the_saved_file(self):
+        from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
+
+        request = {"output_naming": {"stem": "Tex_Body_BaseColor"}}
+        bundle = Path("C:/work/0001_bundle")
+        self.assertEqual(exporter._psd_path(request, bundle, {"psd_dir": "C:/out"}), Path("C:/out/Tex_Body_BaseColor.psd"))
+        self.assertEqual(
+            exporter._psd_path(request, bundle, {"psd_dir": "C:/out", "file_format": "tif"}),
+            Path("C:/out/Tex_Body_BaseColor.tif"),
+        )
+        panel = BridgePanel.__new__(BridgePanel)
+        panel.user_settings = {}
+        self.assertEqual(panel._base_export_settings()["file_format"], "psd")
+
+
         from sp_plugin.rizum_sp_to_ps.ui import BridgePanel
 
         panel = BridgePanel.__new__(BridgePanel)

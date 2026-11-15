@@ -1447,10 +1447,11 @@ def _psd_path(request, bundle_path, settings):
     # An export names Painter's export path here; without one the PSD stays
     # beside its bundle.
     folder = Path(settings["psd_dir"]) if settings.get("psd_dir") else bundle_path.parent
+    suffix = ".tif" if settings.get("file_format") == "tif" else ".psd"
     output_stem = (request.get("output_naming") or {}).get("stem")
     if output_stem:
-        return folder / f"{output_stem}.psd"
-    return folder / f"{_bundle_name(request, 0)[5:]}.psd"
+        return folder / f"{output_stem}{suffix}"
+    return folder / f"{_bundle_name(request, 0)[5:]}{suffix}"
 
 
 def _name_parts(request, index):

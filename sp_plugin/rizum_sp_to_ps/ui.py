@@ -428,6 +428,7 @@ class BridgePanel:
             "dilation": dilation_value(store.value("dilation", None)),
             "export_uv_map": to_bool(store.value("export_uv_map", False)),
             "apply_layer_masks": to_bool(store.value("apply_layer_masks", False)),
+            "file_format": "tif" if store.value("file_format", "psd") == "tif" else "psd",
             "bit_depth": bit_depth,
             "edge_smoothing": _smoothing_strength(store.value("edge_smoothing", None)),
             "psd_size": optional_int(store.value("psd_size", None)),
@@ -442,6 +443,7 @@ class BridgePanel:
         store.setValue("dilation", dilation_value(values.get("dilation")))
         store.setValue("export_uv_map", bool(values.get("export_uv_map")))
         store.setValue("apply_layer_masks", bool(values.get("apply_layer_masks")))
+        store.setValue("file_format", "tif" if values.get("file_format") == "tif" else "psd")
         store.setValue("edge_smoothing", _smoothing_strength(values.get("edge_smoothing")))
         if values.get("psd_size"):
             store.setValue("psd_size", int(values["psd_size"]))
@@ -657,6 +659,7 @@ class BridgePanel:
             "keep_alpha": True,
             "export_uv_map": bool(self.user_settings.get("export_uv_map")),
             "apply_layer_masks": bool(self.user_settings.get("apply_layer_masks")),
+            "file_format": self.user_settings.get("file_format", "psd"),
             # These were read from Settings only by Bridge transfers; exports
             # silently used their defaults.
             "edge_smoothing": self.user_settings.get("edge_smoothing"),

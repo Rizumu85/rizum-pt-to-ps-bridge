@@ -56,6 +56,7 @@
   "dilation": "Ausdehnung",
   "texture_set": "Textursatz",
   "bit_depth": "Bittiefe",
+  "file_format": "Dateiformat",
   "bit_depth_8": "8 Bit",
   "bit_depth_16": "16 Bit",
   "render_at": "Rendern mit",

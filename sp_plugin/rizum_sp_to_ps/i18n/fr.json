@@ -56,6 +56,7 @@
   "dilation": "Dilatation",
   "texture_set": "Jeu de textures",
   "bit_depth": "Nombre de bits par pixel",
+  "file_format": "Format de fichier",
   "bit_depth_8": "8 bits",
   "bit_depth_16": "16 bits",
   "render_at": "Rendu à",

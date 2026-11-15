@@ -623,9 +623,26 @@ __RIZUM_MASK_RUNTIME__
     }
 
     function savePsd(document, path, policy) {
+        if (/\.tiff?$/i.test(path)) {
+            saveLayeredTiff(document, path, policy.embed_profile === true);
+            return;
+        }
         var options = new PhotoshopSaveOptions();
         options.layers = true;
         options.embedColorProfile = policy.embed_profile === true;
+        document.saveAs(File(path), options, false, Extension.LOWERCASE);
+    }
+
+    // The user asked for TIFF beside PSD. It keeps its layers, and is written
+    // in the byte order Photoshop on Windows uses, which Bridge reads.
+    function saveLayeredTiff(document, path, embedProfile) {
+        var options = new TiffSaveOptions();
+        options.layers = true;
+        options.layerCompression = LayerCompression.ZIP;
+        options.imageCompression = TIFFEncoding.TIFFZIP;
+        options.byteOrder = ByteOrder.IBM;
+        options.transparency = true;
+        options.embedColorProfile = embedProfile;
         document.saveAs(File(path), options, false, Extension.LOWERCASE);
     }
 

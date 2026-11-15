@@ -76,6 +76,7 @@ FALLBACK_TEXT = {
     "dilation": "Dilation",
     "texture_set": "Texture Set",
     "bit_depth": "Bit depth",
+    "file_format": "File format",
     "bit_depth_8": "8-bit",
     "bit_depth_16": "16-bit",
     "render_at": "Render at",

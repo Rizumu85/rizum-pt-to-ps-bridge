@@ -150,7 +150,16 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertEqual(transfer.count("applySelectedLayerMask()"), 2)
         self.assertEqual(transfer.count("request.apply_layer_masks === true && !isGroup("), 2)
 
-    def test_a_psd_is_saved_alone_with_no_file_beside_it(self):
+    def test_tiff_exports_and_bridge_inserts_keep_their_layers(self):
+        transfer = (BUILD_SCRIPT.parent / "photoshop_transfer.jsx").read_text(encoding="utf-8")
+        for script in (self.source, transfer):
+            self.assertIn("options.layers = true;", script)
+            self.assertIn("new TiffSaveOptions()", script)
+            # Bridge reads the byte order Photoshop on Windows writes.
+            self.assertIn("options.byteOrder = ByteOrder.IBM;", script)
+        self.assertIn("saveDocument(document);", transfer)
+
+
         # The PSD goes into the user's texture folder; nothing else may land there.
         self.assertNotIn(".rizum.json", self.source)
         self.assertNotIn("writeSidecar", self.source)

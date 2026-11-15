@@ -56,6 +56,7 @@
   "dilation": "확장",
   "texture_set": "텍스처 세트",
   "bit_depth": "비트 심도",
+  "file_format": "파일 형식",
   "bit_depth_8": "8비트",
   "bit_depth_16": "16비트",
   "render_at": "렌더링 배율",
