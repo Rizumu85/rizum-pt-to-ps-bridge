@@ -4330,8 +4330,10 @@ def popup_menu_stylesheet(scale=None):
 
     The shared theme and Painter's host style both pin menu metrics, so a
     popup restates its font and spacing locally at the current UI Font scale
-    (font-scale rule 7). Painter also paints disabled items as grey boxes,
-    which the local rules replace with muted text.
+    (font-scale rule 7). The weight is stated too: Painter's application
+    font is Medium (500), which a menu would inherit, and with a font such as
+    MiSans that reads as bold. Painter also paints disabled items as grey
+    boxes, which the local rules replace with muted text.
     """
     scale = _application_ui_scale() if scale is None else float(scale)
 
@@ -4341,6 +4343,7 @@ def popup_menu_stylesheet(scale=None):
     return f"""
 QMenu#RizumPopupMenu {{
     font-size: {scaled(POPUP_MENU_FONT_PX)}px;
+    font-weight: 400;
     padding: {scaled(4)}px;
 }}
 QMenu#RizumPopupMenu::item {{
