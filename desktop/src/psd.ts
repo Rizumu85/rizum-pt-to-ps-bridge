@@ -13,6 +13,7 @@ import {
 } from "ag-psd"
 
 import { t } from "./i18n"
+import { isTiff, readTiffDocument, type LayerHint } from "./tiff"
 import type { HostLayerRef, LayerNode } from "./model"
 import { encodePng, pngDataUrl, type RasterImage } from "./png"
 
@@ -60,13 +61,16 @@ export type PhotoshopTransferSource = {
 }
 
 /**
- * Reads a PSD/PSB directly so connecting a document never needs Photoshop.
- * The trade-off is that nothing rendered by Photoshop itself comes along:
- * layer styles are dropped, and adjustment or fill layers cannot transfer.
+ * Reads a PSD/PSB, or a layered TIFF, directly so connecting a document never
+ * needs Photoshop. The trade-off is that nothing rendered by Photoshop itself
+ * comes along: layer styles are dropped, and adjustment or fill layers cannot
+ * transfer.
  */
 export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopDocument> {
   const resolved = path.resolve(psdPath)
-  const psd = readPsd(await readFile(resolved), {
+  const bytes = await readFile(resolved)
+  const tiff = isTiff(bytes) ? readTiffDocument(bytes) : null
+  const psd = readPsd(tiff?.psd ?? bytes, {
     useRawData: true,
     useImageData: true,
     skipCompositeImageData: true,
@@ -74,6 +78,7 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
     skipLinkedFilesData: true,
   })
   if (psd.colorMode !== 3) throw new Error(t("Only RGB Photoshop documents can be connected"))
+  if (tiff) applyTiffHints(psd.children, tiff.hints)
   const document: PhotoshopDocument = {
     path: resolved,
     name: path.basename(resolved),
@@ -192,6 +197,18 @@ function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): s
 
 function hasMask(layer: Layer): boolean {
   return Boolean(layer.mask && !layer.mask.disabled)
+}
+
+/** What a TIFF's layers hold that only Photoshop renders, set as reading a PSD would. */
+function applyTiffHints(layers: Layer[] | undefined, hints: Map<number, LayerHint>) {
+  for (const layer of layers ?? []) {
+    const hint = layer.id === undefined ? undefined : hints.get(layer.id)
+    if (hint?.adjustment) layer.adjustment = { type: "unknown" } as unknown as Layer["adjustment"]
+    if (hint?.effects) layer.effects = {}
+    if (hint?.vectorMask) layer.vectorMask = { paths: [] }
+    if (hint?.vectorFill) layer.vectorFill = hint.vectorFill as Layer["vectorFill"]
+    applyTiffHints(layer.children, hints)
+  }
 }
 
 function solidFillColor(layer: Layer): Rgb | null {

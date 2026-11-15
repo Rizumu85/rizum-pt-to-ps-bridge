@@ -98,7 +98,7 @@ __RIZUM_TARGET_RUNTIME__
             try {
                 publishProgress("saving_document", request.layers.length, request.layers.length);
                 document.fullName;
-                document.save();
+                saveDocument(document);
                 result.saved = true;
             } catch (saveError) {
                 result.warnings.push("Imported layers are open but the Photoshop document could not be saved: " + errorMessage(saveError));
@@ -402,6 +402,27 @@ __RIZUM_TARGET_RUNTIME__
         case "LUMINOSITY": return BlendMode.LUMINOSITY;
         default: return null;
         }
+    }
+
+    // A TIFF is saved with its layers, as the PSD builder saves one: a plain
+    // save could flatten what was just inserted.
+    function saveDocument(document) {
+        if (!/\.tiff?$/i.test(document.fullName.fsName)) {
+            document.save();
+            return;
+        }
+        var embedProfile = true;
+        try {
+            embedProfile = document.colorProfileType !== ColorProfile.NONE;
+        } catch (ignored) {}
+        var options = new TiffSaveOptions();
+        options.layers = true;
+        options.layerCompression = LayerCompression.ZIP;
+        options.imageCompression = TIFFEncoding.TIFFZIP;
+        options.byteOrder = ByteOrder.IBM;
+        options.transparency = true;
+        options.embedColorProfile = embedProfile;
+        document.saveAs(document.fullName, options, false, Extension.LOWERCASE);
     }
 
     function applyMask(targetDocument, targetLayer, path) {

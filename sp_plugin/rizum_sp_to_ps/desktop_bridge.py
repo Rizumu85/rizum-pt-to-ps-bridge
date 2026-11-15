@@ -26,7 +26,7 @@ from .ui_dialogs import CompactProgressDialog
 SETTINGS_ORG = "Rizum"
 SETTINGS_APP = "PTBridge"
 PHOTOSHOP_DIR_KEY = "photoshop_document_dir"
-PHOTOSHOP_SUFFIXES = {".psd", ".psb"}
+PHOTOSHOP_SUFFIXES = {".psd", ".psb", ".tif", ".tiff"}
 DESKTOP_REQUEST_MARKER = "@ptbridge "
 # The mapper's Cancel while Painter renders. It is read on the pipe's own
 # thread, since Painter's UI thread is busy with the render it stops.
@@ -228,7 +228,7 @@ class DesktopBridgeController:
                 self.panel.widget.window(),
                 text("connect_photoshop_document"),
                 start_dir,
-                f"{text('filter_photoshop_document')} (*.psd *.psb)",
+                f"{text('filter_photoshop_document')} (*.psd *.psb *.tif *.tiff)",
             )
         finally:
             self._picking = False

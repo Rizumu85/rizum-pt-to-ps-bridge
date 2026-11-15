@@ -88,7 +88,7 @@ class DesktopConnectDialogTests(unittest.TestCase):
         dialog = self.choose(None)
         args = dialog.call_args.args
         self.assertEqual(args[1], "Connect Photoshop Document")
-        self.assertEqual(args[3], "Photoshop Document (*.psd *.psb)")
+        self.assertEqual(args[3], "Photoshop Document (*.psd *.psb *.tif *.tiff)")
 
     def test_accepting_a_psd_connects_the_open_mapper_without_photoshop(self):
         source = self.psd("external.psd")
