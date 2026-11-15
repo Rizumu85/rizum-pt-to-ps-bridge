@@ -1419,11 +1419,23 @@ class ShortcutCaptureField(QtWidgets.QFrame):
             return self._empty_text
         return self._formatter(self._shortcut) or self._shortcut
 
+    # Where the text starts and where the trailing glyph sits are the combo
+    # input's own (components._ComboInput: an 8 px left margin, and a chevron
+    # of 14 px at height 32 whose box ends 10 px from the right edge). A
+    # shortcut field under a picker then has its text on the picker's text
+    # and its X under the picker's chevron (user report, 2026-11-15).
+    _TEXT_INSET = 8
+
+    def _trailing_slot_width(self) -> int:
+        """Twice the distance from the right edge to the combo's chevron centre."""
+        chevron = max(11, int(round(14 * self._compact_height / 32.0)))
+        return 20 + chevron
+
     def _clear_slot_width(self) -> int:
-        return self._scaled(22) if self._shortcut and not self._capturing else 0
+        return self._trailing_slot_width() if self._shortcut and not self._capturing else 0
 
     def _reserved_clear_slot_width(self) -> int:
-        return self._scaled(22) if self._shortcut else 0
+        return self._trailing_slot_width() if self._shortcut else 0
 
     def _clear_rect(self) -> QtCore.QRectF:
         slot = self._clear_slot_width()
@@ -1443,7 +1455,7 @@ class ShortcutCaptureField(QtWidgets.QFrame):
             candidates.append(self._formatter(self._shortcut) or self._shortcut)
         text_width = max(metrics.horizontalAdvance(text) for text in candidates)
         width = (
-            self._scaled(10)
+            self._TEXT_INSET
             + text_width
             + self._reserved_clear_slot_width()
             + self._scaled(8)
@@ -1640,7 +1652,7 @@ class ShortcutCaptureField(QtWidgets.QFrame):
         metrics = QtGui.QFontMetricsF(font)
         available = (
             rect.width()
-            - self._scaled(10)
+            - self._TEXT_INSET
             - self._clear_slot_width()
             - self._scaled(8)
         )
@@ -1648,7 +1660,7 @@ class ShortcutCaptureField(QtWidgets.QFrame):
             text, QtCore.Qt.TextElideMode.ElideRight, int(available)
         )
         baseline = rect.center().y() + (metrics.ascent() - metrics.descent()) / 2
-        painter.drawText(QtCore.QPointF(self._scaled(10), baseline), text)
+        painter.drawText(QtCore.QPointF(self._TEXT_INSET, baseline), text)
 
         conflict_rect = self._conflict_rect()
         if not conflict_rect.isEmpty() and not self._hover_clear:
