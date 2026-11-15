@@ -161,7 +161,7 @@ export function InsetSeparator() {
 const stageTitle = (stage: ApplyStage): string => ({
   read: t("Reading Photoshop layers"),
   render: t("Rendering Painter layers"),
-  match: t("Matching Painter's look"),
+  match: t("Baking color correction"),
   import: t("Importing into Painter"),
   photoshop: t("Inserting into Photoshop"),
 })[stage]

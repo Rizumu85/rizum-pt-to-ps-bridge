@@ -95,7 +95,7 @@ class FeedbackDialogTests(unittest.TestCase):
         self.assertGreaterEqual(progress.progress_bar.height(), 3)
 
         update({"stage": "match", "value": 0, "total": 1, "detail": "M_body / Base Color"}, first_step=1, step_total=2)
-        self.assertEqual(progress.heading_label.text(), "Matching Painter's look")
+        self.assertEqual(progress.heading_label.text(), "Baking color correction")
         self.assertEqual(progress.step_label.text(), "Step 2 of 2")
         self.assertEqual(progress.count_label.text(), "0 / 1")
 
