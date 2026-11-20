@@ -9,6 +9,7 @@ import { inflateSync } from "node:zlib"
 import { writePsdBuffer } from "ag-psd"
 
 import { findNode, PAINTER_STACK_TOP, transferBetweenHosts, transferSelection } from "./model"
+import { readPhotoshopDocument, renderPhotoshopTransfer } from "./psd"
 import { writeFeaturePsd } from "./test-psd"
 import {
   PAINTER_REQUEST_MARKER,
@@ -608,6 +609,43 @@ describe("Painter link", () => {
     expect(session.documentsPath).toBe(path.resolve(documents))
     const none = await loadBridgeSession({ painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"), documents, photoshopDocument: null })
     expect(none.photoshop).toBeNull()
+  })
+})
+
+describe("Photoshop layers painted in one colour", () => {
+  it("go to Painter as colour fills, their alpha as the mask", async () => {
+    const size = 8
+    const plane = (width: number, height: number, rgba: (x: number, y: number) => number[]) => {
+      const data = new Uint8ClampedArray(width * height * 4)
+      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) data.set(rgba(x, y), (y * width + x) * 4)
+      return { width, height, data }
+    }
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-flat-"))
+    const psd = path.join(directory, "flat.psd")
+    await writeFile(psd, writePsdBuffer({
+      width: size, height: size, children: [
+        { id: 1, name: "Paint", top: 0, left: 0, imageData: plane(size, size, x => (x < 4 ? [255, 0, 0, 255] : [0, 0, 255, 255])) },
+        // A flat shape with a soft edge, as CSP saves one: one colour, alpha varies.
+        { id: 2, name: "Blob", top: 2, left: 2, imageData: plane(4, 4, x => [40, 90, 200, x === 0 ? 128 : 255]) },
+        { id: 3, name: "Fill", top: 0, left: 0, imageData: plane(size, size, () => [10, 20, 30, 255]) },
+      ],
+    }, { generateThumbnail: false, noBackground: true }))
+    const document = await readPhotoshopDocument(psd)
+    const render = (name: string) => renderPhotoshopTransfer(document, document.nodes.find(node => node.name === name)!, directory, [])
+
+    const fill = (await render("Fill"))!
+    expect(fill.color).toEqual([10 / 255, 20 / 255, 30 / 255])
+    expect([fill.png, fill.mask_png]).toEqual([null, null])
+
+    const blob = (await render("Blob"))!
+    expect(blob.color).toEqual([40 / 255, 90 / 255, 200 / 255])
+    expect(blob.png).toBeNull()
+    const mask = new Uint8Array(await readFile(blob.mask_png!))
+    expect([pixel8(mask, 0, 0), pixel8(mask, 2, 3), pixel8(mask, 3, 3)]).toEqual([[0], [128], [255]])
+
+    const paint = (await render("Paint"))!
+    expect(paint.color).toBeUndefined()
+    expect(paint.png).not.toBeNull()
   })
 })
 

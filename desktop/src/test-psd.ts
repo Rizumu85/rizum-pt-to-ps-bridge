@@ -23,6 +23,12 @@ export async function writeFeaturePsd(): Promise<string> {
     for (let index = 0; index < data.length; index += 4) data.set(rgba, index)
     return { width: size, height: size, data }
   }
+  // One pixel off, so a layer stays pixels: a one-colour layer goes to Painter as a colour fill.
+  const paint = (rgba: number[]) => {
+    const plane = fill(rgba)
+    plane.data[plane.data.length - 4] ^= 1
+    return plane
+  }
   const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-feature-psd-"))
   const file = path.join(directory, "features.psd")
   await writeFile(file, writePsdBuffer({
@@ -32,9 +38,9 @@ export async function writeFeaturePsd(): Promise<string> {
       {
         id: 10, name: "Paint", blendMode: "pass through", children: [
           { id: 12, name: "Shade", blendMode: "multiply", clipping: true, opacity: 0.5, hidden: true,
-            imageData: fill([128, 128, 128, 96]), mask: { imageData: fill([192, 192, 192, 255]) } },
+            imageData: paint([128, 128, 128, 96]), mask: { imageData: fill([192, 192, 192, 255]) } },
           {
-            id: 11, name: "Base", blendMode: "normal", opacity: 0.8, left: 1, imageData: fill([255, 0, 0, 128]),
+            id: 11, name: "Base", blendMode: "normal", opacity: 0.8, left: 1, imageData: paint([255, 0, 0, 128]),
             mask: { imageData: fill([64, 64, 64, 255]) },
             effects: { dropShadow: [{ enabled: true }] },
           },
@@ -45,7 +51,7 @@ export async function writeFeaturePsd(): Promise<string> {
         id: 30, name: "Tint", blendMode: "multiply", vectorFill: { type: "color", color: { r: 255, g: 128, b: 0 } },
         mask: { top: 0, left: 0, bottom: size, right: size, defaultColor: 0, imageData: fill([255, 255, 255, 255]) },
       },
-      { id: 40, name: "Glow", blendMode: "hard mix", top: 0, left: 0, imageData: fill([255, 255, 255, 255]) },
+      { id: 40, name: "Glow", blendMode: "hard mix", top: 0, left: 0, imageData: paint([255, 255, 255, 255]) },
       {
         id: 31, name: "Ramp", vectorFill: {
           type: "solid", name: "", style: "linear", colorStops: [], opacityStops: [],

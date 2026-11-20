@@ -57,7 +57,7 @@ function setup(extra: Partial<ComponentProps<typeof BridgeApp>> = {}) {
   session.state.painter = [layer("substance_painter", "pt-group", Array.from({ length: 1000 }, (_, i) => layer("substance_painter", `pt-${i}`)))]
   session.photoshop = {
     path: "fixture.psd", name: "fixture", width: 1024, height: 1024, bitDepth: 8,
-    nodes: session.state.photoshop, layers: new Map(), clipped: new Map(), colors: new Map(),
+    nodes: session.state.photoshop, layers: new Map(), clipped: new Map(), colors: new Map(), rasterColors: new Set(),
   }
   session.painterContexts = [{ id: "body", textureSet: "body", stack: "", channel: "basecolor", channelLabel: "Base Color", subtitle: "body", nodes: session.state.painter, photoshopDocument: null }]
   session.initialPainterContextId = "body"

@@ -13,6 +13,8 @@ const size = 64
 function solid(r: number, g: number, b: number, a = 255) {
   const data = new Uint8ClampedArray(size * size * 4)
   for (let index = 0; index < data.length; index += 4) data.set([r, g, b, a], index)
+  // One pixel off, so the layer stays pixels: a one-colour layer goes to Painter as a colour fill.
+  data[data.length - 4] ^= 1
   return { width: size, height: size, data }
 }
 

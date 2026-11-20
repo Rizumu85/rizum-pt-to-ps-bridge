@@ -37,6 +37,8 @@ export type PhotoshopDocument = {
   clipped: Map<string, LayerNode[]>
   /** Solid colour fill layers by node id, as sRGB components in 0..1. */
   colors: Map<string, Rgb>
+  /** Of those, raster layers painted in one colour: their alpha is their shape. */
+  rasterColors: Set<string>
 }
 
 type Rgb = [number, number, number]
@@ -87,6 +89,7 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
     layers: new Map(),
     clipped: new Map(),
     colors: new Map(),
+    rasterColors: new Set(),
   }
   document.nodes = layerNodes(document, psd.children ?? [], "", [])
   return document
@@ -141,6 +144,15 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
         node.unsupported = t("Fill colour model not supported")
       } else {
         const pixels = getLayerImageData(layer)
+        // CSP saves a layer filled with one colour as pixels, not as a fill
+        // layer. The user wanted it back as a colour they can change in
+        // Painter, so any layer whose covered pixels share one colour goes
+        // over as a colour fill, its alpha becoming the mask.
+        const flat = pixels && uniformColor(pixels)
+        if (flat) {
+          document.colors.set(node.id, flat)
+          document.rasterColors.add(node.id)
+        }
         if (pixels) node.thumbnailPath = thumbnail(document, layer, pixels)
         else if (layer.vectorMask) node.unsupported = t("Shape layer · not supported")
         else if (layer.vectorFill) node.unsupported = t("Gradient or pattern fill · not supported")
@@ -299,6 +311,10 @@ export async function renderPhotoshopTransfer(
   const color = document.colors.get(node.id)
   if (color) record.color = color
   else record.png = await writeRaster(`${stem}.png`, layerCanvas(document, layer))
+  if (document.rasterColors.has(node.id)) {
+    const coverage = coverageCanvas(document, layer)
+    record.mask_png = coverage ? await writeRaster(`${stem}_mask.png`, coverage) : record.mask_png
+  }
   const clipped = document.clipped.get(node.id)
   if (clipped) {
     record.clipped = []
@@ -348,6 +364,37 @@ function layerCanvas(document: PhotoshopDocument, layer: Layer): RasterImage {
     }
   })
   return canvas
+}
+
+/** The colour every covered pixel shares, or null when they differ. */
+function uniformColor(pixels: PixelData): Rgb | null {
+  const data = pixels.data
+  const max = maxSample(pixels)
+  let first = -1
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] === 0) continue
+    if (first < 0) first = index
+    else if (data[index] !== data[first] || data[index + 1] !== data[first + 1] || data[index + 2] !== data[first + 2]) return null
+  }
+  return first < 0 ? null : [data[first] / max, data[first + 1] / max, data[first + 2] / max]
+}
+
+/** A raster layer's alpha times its mask on the canvas, or null where it covers all of it. */
+function coverageCanvas(document: PhotoshopDocument, layer: Layer): RasterImage | null {
+  const canvas = newCanvas(document, 1)
+  const scale = document.bitDepth === 8 ? 255 : 65535
+  const pixels = getLayerImageData(layer)!
+  const max = maxSample(pixels)
+  eachPixel(document, layer, pixels, (target, source) => {
+    canvas.data[target / 4] = Math.round(sampleUnit(pixels, source + 3, 3, max) * scale)
+  })
+  if (hasMask(layer)) {
+    const mask = maskCanvas(document, layer)
+    for (let index = 0; index < canvas.data.length; index += 1) {
+      canvas.data[index] = Math.round((canvas.data[index] * mask.data[index]) / scale)
+    }
+  }
+  return canvas.data.every(value => value === scale) ? null : canvas
 }
 
 function maskCanvas(document: PhotoshopDocument, layer: Layer): RasterImage {
