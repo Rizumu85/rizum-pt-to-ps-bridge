@@ -612,8 +612,8 @@ describe("Painter link", () => {
   })
 })
 
-describe("Photoshop layers painted in one colour", () => {
-  it("go to Painter as colour fills, their alpha as the mask", async () => {
+describe("Photoshop layers filled with one colour", () => {
+  it("go to Painter as colour fills; a flat shape stays pixels", async () => {
     const size = 8
     const plane = (width: number, height: number, rgba: (x: number, y: number) => number[]) => {
       const data = new Uint8ClampedArray(width * height * 4)
@@ -638,10 +638,8 @@ describe("Photoshop layers painted in one colour", () => {
     expect([fill.png, fill.mask_png]).toEqual([null, null])
 
     const blob = (await render("Blob"))!
-    expect(blob.color).toEqual([40 / 255, 90 / 255, 200 / 255])
-    expect(blob.png).toBeNull()
-    const mask = new Uint8Array(await readFile(blob.mask_png!))
-    expect([pixel8(mask, 0, 0), pixel8(mask, 2, 3), pixel8(mask, 3, 3)]).toEqual([[0], [128], [255]])
+    expect(blob.color).toBeUndefined()
+    expect(blob.png).not.toBeNull()
 
     const paint = (await render("Paint"))!
     expect(paint.color).toBeUndefined()

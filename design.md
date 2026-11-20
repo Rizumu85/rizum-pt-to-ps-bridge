@@ -561,9 +561,9 @@ from Photoshop's own renderer, the mapper treats layers this way:
 - Solid colour fill layers become Painter fill layers with that colour (plus
   their mask), so the colour stays editable. Colour channels receive the sRGB
   value; data channels receive the raw value.
-- A raster layer whose covered pixels all share one colour goes over the same
-  way, its alpha (times its mask) becoming the Painter mask. CSP saves a layer
-  filled with one colour as pixels, and the user wanted that colour editable.
+- A raster layer filling the whole canvas with one opaque colour goes over the
+  same way. CSP saves such a fill as pixels, and the user wanted its colour
+  editable; a flat shape of one colour stays pixels, as the user asked.
 - Adjustment layers and gradient or pattern fills are locked, because Painter
   has no equivalent.
 - A Photoshop folder arrives in Painter as a folder of its layers. The mapper
