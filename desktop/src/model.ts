@@ -36,14 +36,14 @@ export type LayerNode = {
   name: string
   masked?: boolean
   thumbnailPath?: string | null
-  /** Why this node cannot be transferred; locked rows stay visible but inert. */
+  /** Why this row cannot be mapped independently. */
   locked?: string
-  /** What changes on transfer (merged clipping, dropped styles); shown under the name. */
+  /** Why Painter cannot import the content, even as part of a clipping stack. */
+  unsupported?: string
+  /** What changes on transfer, shown under the name. */
   note?: string
-  /** A clipped Photoshop layer that travels inside its base, not on its own. */
-  mergedIntoBase?: boolean
-  /** A Photoshop layer clipped to the layer below it; it and its base are one stack. */
-  clipped?: boolean
+  /** The kind of Photoshop base this row clips to. */
+  clipped?: LayerKind
   ref: HostLayerRef
   children?: LayerNode[]
   /** A folder is shown open where its host shows it open; unknown is open. */

@@ -67,7 +67,7 @@ multi-level folder hover was tried and read as noise in real trees. The remove
 control appears on hover in neutral colours. A row's second line is reserved
 for what the user must know: "Pending" (with any pre-Apply warning such as a
 blend mode that becomes Normal or skipped layers), why a row is locked, or what
-changes on transfer (merged clipping, dropped styles, colour fill). Masked
+changes on transfer (clipping masks, dropped styles, colour fill). Masked
 layers show a mask badge; Painter layers without a thumbnail show a paint or
 fill glyph.
 The export dialog uses the same hover hierarchy: hovering a stack shows the
@@ -547,9 +547,16 @@ from Photoshop's own renderer, the mapper treats layers this way:
 
 - Raster, text, and smart-object layers transfer as Painter fill layers; their
   user masks transfer as real Painter masks.
-- Clipped layers merge into their base when transferred. Clipped rows stay
-  visible but locked with "Clipped · merges into <base>", and the base row
-  says how many layers merge into it.
+- Clipped rows stay locked and travel with their base as separate editable
+  layers. The base keeps its pixel alpha and exposes it through a `Clipping Mask`
+  content anchor. A base with a Photoshop mask also gets a `Clipping Mask (mask)`
+  anchor in its mask stack. Each clipped layer's mask gets same-named fills in
+  that order. The content fill extracts alpha and multiplies when the clipped
+  layer already has a mask. The optional mask fill always multiplies.
+  Both references use clamped levels with `input_max=0.2`, matching the edge
+  in `rizum-pt-clipping-mask`. Its Release command recognises these fills.
+  Clipped layers inherit the base's opacity at transfer and blend independently.
+  Clipping to a folder is unsupported.
 - Layer styles are not transferred; the row says so.
 - Solid colour fill layers become Painter fill layers with that colour (plus
   their mask), so the colour stays editable. Colour channels receive the sRGB

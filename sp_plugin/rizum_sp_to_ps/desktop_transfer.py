@@ -16,6 +16,11 @@ from .localization import text
 SCHEMA_VERSION = 3
 REQUEST_TYPE = "desktop_transfer"
 
+# Match rizum-pt-clipping-mask so Release recognises these markers and clips use the user's measured 0.2 edge.
+CONTENT_MARKER = "Clipping Mask"
+MASK_MARKER = "Clipping Mask (mask)"
+EDGE = 0.2
+
 
 class DesktopTransferError(RuntimeError):
     """Raised when a desktop transfer cannot be applied safely."""
@@ -34,10 +39,13 @@ class PhotoshopLayer:
     visible: bool
     children: tuple["PhotoshopLayer", ...] = ()
     color: tuple[float, float, float] | None = None
+    clipped: tuple["PhotoshopLayer", ...] = ()
 
     def assets(self):
         yield from (path for path in (self.png, self.mask_png) if path is not None)
         for child in self.children:
+            yield from child.assets()
+        for child in self.clipped:
             yield from child.assets()
 
 
@@ -383,6 +391,32 @@ def _insert_photoshop_layer(layer, position, target):
         mask_fill.set_name("Photoshop Mask")
         mask_fill.set_source(None, resources[layer.mask_png].identifier())
 
+    if layer.clipped:
+        inside = layerstack.InsertPosition.inside_node
+        content_anchor = layerstack.insert_anchor_point_effect(inside(node, layerstack.NodeStack.Content), CONTENT_MARKER)
+        mask_anchor = None
+        if layer.mask_png is not None:
+            mask_anchor = layerstack.insert_anchor_point_effect(inside(node, layerstack.NodeStack.Mask), MASK_MARKER)
+        edge = target.painter.levels.LevelsParamsMono(input_max=EDGE, clamp=True)
+        previous = node
+        for clipped in layer.clipped:
+            previous = _insert_photoshop_layer(clipped, layerstack.InsertPosition.above_node(previous), target)
+            if clipped.mask_png is None:
+                previous.add_mask(layerstack.MaskBackground.Black)
+            mask_position = inside(previous, layerstack.NodeStack.Mask)
+            fill = layerstack.insert_fill(mask_position)
+            fill.set_name(CONTENT_MARKER)
+            ref = fill.set_source(None, content_anchor)
+            ref.alpha_matte = target.painter.source.AlphaMatte.ExtractAlpha
+            ref.set_levels(edge)
+            if clipped.mask_png is not None:
+                fill.set_blending_mode(layerstack.BlendingMode.Multiply, None)
+            if mask_anchor is not None:
+                fill = layerstack.insert_fill(mask_position)
+                fill.set_name(MASK_MARKER)
+                fill.set_source(None, mask_anchor).set_levels(edge)
+                fill.set_blending_mode(layerstack.BlendingMode.Multiply, None)
+
     previous = None
     for child in layer.children:
         child_position = (
@@ -720,10 +754,20 @@ def _transfer_item(value, fallback_order, manifest_dir):
 
 def _photoshop_layer(source, manifest_dir, label):
     kind = "group" if _optional_text(source.get("kind")) == "group" else "layer"
-    children = source.get("children") or []
-    if not isinstance(children, list):
-        raise DesktopTransferError(f"Transfer {label}.children must be a list.")
+    def layers(key):
+        entries = source.get(key, [])
+        if not isinstance(entries, list):
+            raise DesktopTransferError(f"Transfer {label}.{key} must be a list.")
+        result = []
+        for index, entry in enumerate(entries):
+            entry_label = f"{label}.{key}[{index}]"
+            result.append(_photoshop_layer(_mapping(entry, entry_label), manifest_dir, entry_label))
+        return tuple(result)
+
     color = _color(source.get("color"), label)
+    clipped = layers("clipped")
+    if clipped and kind == "group":
+        raise DesktopTransferError(f"Transfer {label}.clipped cannot use a folder as its base.")
     return PhotoshopLayer(
         name=_layer_name(source, "Photoshop Layer"),
         kind=kind,
@@ -734,10 +778,8 @@ def _photoshop_layer(source, manifest_dir, label):
         blend_mode=_optional_text(source.get("blend_mode")) or "normal",
         opacity=_number(source.get("opacity"), 100.0),
         visible=source.get("visible") is not False,
-        children=tuple(
-            _photoshop_layer(_mapping(child, f"{label}.children[{index}]"), manifest_dir, f"{label}.children[{index}]")
-            for index, child in enumerate(children)
-        ),
+        children=layers("children"),
+        clipped=clipped,
     )
 
 

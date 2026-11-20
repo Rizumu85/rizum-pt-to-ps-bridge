@@ -31,9 +31,11 @@ export async function writeFeaturePsd(): Promise<string> {
     children: fileOrder([
       {
         id: 10, name: "Paint", blendMode: "pass through", children: [
-          { id: 12, name: "Shade", blendMode: "multiply", clipping: true, top: 0, left: 0, imageData: fill([128, 128, 128, 255]) },
+          { id: 12, name: "Shade", blendMode: "multiply", clipping: true, opacity: 0.5, hidden: true,
+            imageData: fill([128, 128, 128, 96]), mask: { imageData: fill([192, 192, 192, 255]) } },
           {
-            id: 11, name: "Base", blendMode: "normal", top: 0, left: 0, imageData: fill([255, 0, 0, 255]),
+            id: 11, name: "Base", blendMode: "normal", opacity: 0.8, left: 1, imageData: fill([255, 0, 0, 128]),
+            mask: { imageData: fill([64, 64, 64, 255]) },
             effects: { dropShadow: [{ enabled: true }] },
           },
         ],

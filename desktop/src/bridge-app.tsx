@@ -117,12 +117,12 @@ export function BridgeApp({
   const canRedo = redoStack.length > 0
   // Say before Apply what Painter will change, instead of only reporting it after.
   const pendingNotes = useMemo(() => {
-    const notes = photoshopPendingNotes(bridge, session.importBlendModes)
+    const notes = photoshopPendingNotes(bridge, session)
     for (const [, entry] of replacedTargets(bridge)) {
       for (const row of entry.by) notes.set(row.id, t("{note} · replaces {name}", { note: notes.get(row.id) ?? t("Pending"), name: entry.target.name }))
     }
     return notes
-  }, [bridge, session.importBlendModes])
+  }, [bridge, session])
   const mappedIds = useMemo(
     () => new Set(bridge.mappings.map((mapping) => mapping.sourceId)),
     [bridge.mappings],
@@ -815,7 +815,7 @@ function DragOverlay({ bridge, gesture, pointer, store }: {
   return <AnimatePresence>{id && carried.length ? <DragPreview key="drag" items={carried} pointer={pointer} /> : null}</AnimatePresence>
 }
 
-function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string> | null): Map<string, string> {
+function photoshopPendingNotes(state: BridgeState, { importBlendModes, photoshop }: BridgeSession): Map<string, string> {
   const notes = new Map<string, string>()
   for (const mapping of state.mappings) {
     if (mapping.direction !== "photoshop_to_painter") continue
@@ -824,13 +824,16 @@ function photoshopPendingNotes(state: BridgeState, importBlendModes: Set<string>
     const renamed = new Set<string>()
     let skipped = 0
     const visit = (node: LayerNode) => {
-      if (node.locked) {
-        if (!node.mergedIntoBase) skipped += 1
+      if (node.unsupported) {
+        skipped += 1
         return
       }
       const mode = node.ref.blendMode ?? "normal"
       if (importBlendModes && !importBlendModes.has(normalizedBlendMode(mode))) renamed.add(mode)
-      node.children?.forEach(visit)
+      for (const child of node.children ?? []) {
+        if (child.clipped !== "layer") visit(child)
+      }
+      photoshop?.clipped.get(node.id)?.forEach(visit)
     }
     visit(root)
     const parts = [t("Pending")]

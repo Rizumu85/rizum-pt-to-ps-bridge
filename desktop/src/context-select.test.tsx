@@ -470,7 +470,7 @@ describe("Painter context selectors", () => {
       await drag("Glow")
       expect(await app.getByText("Pending · Hard Mix becomes Normal").count()).toBe(1)
       await drag("Paint")
-      // Its clipped layer merges into the base, so nothing is reported skipped.
+      // Its clipped layer travels with the base.
       expect(await app.getByText("skipped").count()).toBe(0)
       expect(await app.getByText("Pending · Hard Mix becomes Normal").count()).toBe(1)
     } finally { root.unmount(); await app.close() }
@@ -487,7 +487,7 @@ describe("Painter context selectors", () => {
       root.render(<BridgeApp session={session} onApply={async () => ({ session: null, message: "Applied", failed: false })} onConnectPhotoshop={async () => null} />)
       root.renderer.flush()
       for (const text of [
-        "Clipped · merges into Base", "Merges 1 clipped · Styles not transferred",
+        "Clipped to Base · goes with it", "Brings 1 clipped · Styles not transferred",
         "Adjustment layer · not supported", "Colour fill",
       ]) expect(await app.getByText(text).count()).toBe(1)
     } finally { root.unmount(); await app.close() }

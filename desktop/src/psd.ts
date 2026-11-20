@@ -6,7 +6,6 @@ import {
   getLayerMaskImageData,
   initializeCanvas,
   readPsd,
-  type BlendMode,
   type Color,
   type Layer,
   type PixelData,
@@ -35,9 +34,7 @@ export type PhotoshopDocument = {
   nodes: LayerNode[]
   layers: Map<string, Layer>
   /** Clipped layers per base node id, bottom to top. */
-  clipped: Map<string, Layer[]>
-  /** Clipped node ids already merged into a base; skipping them is silent. */
-  merged: Set<string>
+  clipped: Map<string, LayerNode[]>
   /** Solid colour fill layers by node id, as sRGB components in 0..1. */
   colors: Map<string, Rgb>
 }
@@ -58,6 +55,7 @@ export type PhotoshopTransferSource = {
   opacity: number
   visible: boolean
   children?: PhotoshopTransferSource[]
+  clipped?: PhotoshopTransferSource[]
 }
 
 /**
@@ -88,7 +86,6 @@ export async function readPhotoshopDocument(psdPath: string): Promise<PhotoshopD
     nodes: [],
     layers: new Map(),
     clipped: new Map(),
-    merged: new Set(),
     colors: new Map(),
   }
   document.nodes = layerNodes(document, psd.children ?? [], "", [])
@@ -100,14 +97,9 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
   // Photoshop scripting (document.layers, which index_path walks) all read
   // top to bottom, so siblings flip here and nowhere else. A clipped layer
   // belongs to the nearest unclipped layer below it: the one before it here.
-  const bases = new Map<Layer, Layer>()
-  let base: Layer | null = null
-  for (const layer of layers) {
-    if (layer.clipping && base) bases.set(layer, base)
-    else base = layer
-  }
-
-  const nodes = [...layers].reverse().map((layer, index) => {
+  let base: LayerNode | undefined
+  const nodes = layers.map((layer, fileIndex) => {
+    const index = layers.length - fileIndex - 1
     const name = layer.name || t("Layer {index}", { index: layers.length - index })
     const layerPath = parentPath ? `${parentPath}/${name}` : name
     const indexPath = [...parentIndex, index]
@@ -138,59 +130,51 @@ function layerNodes(document: PhotoshopDocument, layers: Layer[], parentPath: st
     if (layer.children) {
       node.children = layerNodes(document, layer.children, layerPath, indexPath)
       node.open = layer.opened !== false
-    }
-    return { layer, node }
-  })
-
-  const byLayer = new Map(nodes.map(({ layer, node }) => [layer, node]))
-  for (const { layer, node } of nodes) {
-    const clipBase = bases.get(layer)
-    if (clipBase) {
-      node.clipped = true
-      const baseNode = byLayer.get(clipBase)!
-      if (clipBase.children) {
-        node.locked = t("Clipped to a folder · not supported")
+    } else {
+      const color = layer.vectorMask ? null : solidFillColor(layer)
+      if (layer.adjustment) {
+        node.unsupported = t("Adjustment layer · not supported")
+      } else if (color) {
+        document.colors.set(node.id, color)
+        node.thumbnailPath = swatch(color)
+      } else if (layer.vectorFill?.type === "color" && !layer.vectorMask) {
+        node.unsupported = t("Fill colour model not supported")
       } else {
-        // Painter has no clipping, so the clipped stack travels as one layer.
-        node.locked = t("Clipped · merges into {name}", { name: baseNode.name })
-        const list = document.clipped.get(baseNode.id) ?? []
-        list.unshift(layer)
-        document.clipped.set(baseNode.id, list)
-        document.merged.add(node.id)
-        node.mergedIntoBase = true
+        const pixels = getLayerImageData(layer)
+        if (pixels) node.thumbnailPath = thumbnail(document, layer, pixels)
+        else if (layer.vectorMask) node.unsupported = t("Shape layer · not supported")
+        else if (layer.vectorFill) node.unsupported = t("Gradient or pattern fill · not supported")
+        else node.unsupported = t("Empty layer")
       }
     }
-  }
-
-  for (const { layer, node } of nodes) {
-    if (layer.children) continue
-    const color = layer.vectorMask ? null : solidFillColor(layer)
-    if (layer.adjustment) {
-      node.locked = t("Adjustment layer · not supported")
-    } else if (color) {
-      // A solid colour fill stays a colour in Painter instead of a baked bitmap,
-      // so it remains editable there; shapes keep their pixels because the
-      // vector outline is the content.
-      document.colors.set(node.id, color)
-      node.thumbnailPath = swatch(color)
-    } else if (layer.vectorFill?.type === "color" && !layer.vectorMask) {
-      node.locked = t("Fill colour model not supported")
+    if (layer.clipping && base) {
+      node.clipped = base.kind
+      if (base.kind === "group") {
+        node.unsupported ??= t("Clipped to a folder · not supported")
+      } else {
+        const list = document.clipped.get(base.id) ?? []
+        list.push(node)
+        document.clipped.set(base.id, list)
+        node.locked = t("Clipped to {name} · goes with it", { name: base.name })
+      }
     } else {
-      const pixels = getLayerImageData(layer)
-      if (pixels) node.thumbnailPath = thumbnail(document, layer, pixels)
-      else if (layer.vectorMask) node.locked = t("Shape layer · not supported")
-      else if (layer.vectorFill) node.locked = t("Gradient or pattern fill · not supported")
-      else node.locked = t("Empty layer")
+      base = node
     }
-    node.note = transferNote(layer, document.clipped.get(node.id)?.length ?? 0, Boolean(color))
+    node.locked = node.unsupported ?? node.locked
+    return node
+  })
+  for (const [index, node] of nodes.entries()) {
+    if (node.kind === "layer") {
+      node.note = transferNote(layers[index], document.clipped.get(node.id)?.length ?? 0, document.colors.has(node.id))
+    }
   }
-  return nodes.map(({ node }) => node)
+  return nodes.reverse()
 }
 
 function transferNote(layer: Layer, clippedCount: number, colorFill: boolean): string | undefined {
   const parts = []
   if (colorFill) parts.push(t("Colour fill"))
-  if (clippedCount) parts.push(t("Merges {count} clipped", { count: clippedCount }))
+  if (clippedCount) parts.push(t("Brings {count} clipped", { count: clippedCount }))
   if (layer.effects && !layer.effects.disabled) parts.push(t("Styles not transferred"))
   return parts.length ? parts.join(" · ") : undefined
 }
@@ -272,19 +256,20 @@ function thumbnail(document: PhotoshopDocument, layer: Layer, pixels: PixelData)
  * Renders a mapped Photoshop node into the PNG files Painter imports. A folder
  * becomes a Painter folder with the children it still holds in the mapping
  * preview (a child mapped on its own was already moved out and must not be
- * sent twice). Locked nodes are skipped and reported, except clipped layers,
- * which are already merged into their base.
+ * sent twice). A clipped row travels with its base even when only the base
+ * was mapped.
  */
 export async function renderPhotoshopTransfer(
   document: PhotoshopDocument,
   node: LayerNode,
   directory: string,
   warnings: string[],
+  baseOpacity = 1,
 ): Promise<PhotoshopTransferSource | null> {
   const layer = document.layers.get(node.id)
   if (!layer) throw new Error(t("Photoshop layer is no longer in {name}", { name: document.name }))
-  if (node.locked) {
-    if (!document.merged.has(node.id)) warnings.push(t("{name}: {reason}, skipped.", { name: node.name, reason: node.locked }))
+  if (node.unsupported) {
+    warnings.push(t("{name}: {reason}, skipped.", { name: node.name, reason: node.unsupported }))
     return null
   }
   await mkdir(directory, { recursive: true })
@@ -298,25 +283,33 @@ export async function renderPhotoshopTransfer(
     png: null,
     mask_png: hasMask(layer) ? await writeRaster(`${stem}_mask.png`, maskCanvas(document, layer)) : null,
     blend_mode: layer.blendMode ?? "normal",
-    opacity: Math.round((layer.opacity ?? 1) * 100),
+    opacity: Math.round((layer.opacity ?? 1) * baseOpacity * 100),
     visible: !layer.hidden,
   }
   if (node.kind === "group") {
     const children = []
     for (const child of node.children ?? []) {
+      if (child.clipped === "layer") continue
       const rendered = await renderPhotoshopTransfer(document, child, directory, warnings)
       if (rendered) children.push(rendered)
     }
     record.children = children
     return record
   }
-  const clipped = document.clipped.get(node.id) ?? []
   const color = document.colors.get(node.id)
-  if (color && clipped.length === 0) {
-    record.color = color
-    return record
+  if (color) record.color = color
+  else record.png = await writeRaster(`${stem}.png`, layerCanvas(document, layer))
+  const clipped = document.clipped.get(node.id)
+  if (clipped) {
+    record.clipped = []
+    for (const child of clipped) {
+      const rendered = await renderPhotoshopTransfer(document, child, directory, warnings, layer.opacity ?? 1)
+      if (rendered) record.clipped.push(rendered)
+    }
+    if (record.clipped.length && record.blend_mode !== "normal") {
+      warnings.push(t("{name}: in Painter its clipped layers blend on their own.", { name: node.name }))
+    }
   }
-  record.png = await writeRaster(`${stem}.png`, layerCanvas(document, layer, clipped, color))
   return record
 }
 
@@ -344,52 +337,16 @@ function newCanvas(document: PhotoshopDocument, channels: 1 | 4): RasterImage {
   }
 }
 
-function layerCanvas(document: PhotoshopDocument, base: Layer, clipped: Layer[], color?: Rgb): RasterImage {
+function layerCanvas(document: PhotoshopDocument, layer: Layer): RasterImage {
   const canvas = newCanvas(document, 4)
   const scale = document.bitDepth === 8 ? 255 : 65535
-  if (color) {
-    // A colour fill covers the canvas; its mask is transferred separately.
-    const pixel = [...color.map((value) => Math.round(clamp(value) * scale)), scale]
-    for (let index = 0; index < canvas.data.length; index += 4) canvas.data.set(pixel, index)
-  } else {
-    const pixels = getLayerImageData(base)
-    if (!pixels) return canvas
-    const baseMax = maxSample(pixels)
-    eachPixel(document, base, pixels, (target, source) => {
-      for (let channel = 0; channel < 4; channel += 1) {
-        canvas.data[target + channel] = Math.round(sampleUnit(pixels, source + channel, channel, baseMax) * scale)
-      }
-    })
-  }
-  for (const layer of clipped) {
-    if (layer.hidden) continue
-    const source = getLayerImageData(layer)
-    if (!source) continue
-    const mask = hasMask(layer) ? maskCanvas(document, layer) : null
-    const opacity = (layer.opacity ?? 1) * (layer.fillOpacity ?? 1)
-    const blend = blendFunction(layer.blendMode ?? "normal")
-    const max = maxSample(source)
-    const backdrop = [0, 0, 0]
-    const color = [0, 0, 0]
-    eachPixel(document, layer, source, (target, offset) => {
-      const baseAlpha = canvas.data[target + 3] / scale
-      if (baseAlpha === 0) return
-      const pixelIndex = target / 4
-      const coverage = sampleUnit(source, offset + 3, 3, max) * opacity
-        * (mask ? mask.data[pixelIndex] / scale : 1)
-      if (coverage === 0) return
-      for (let channel = 0; channel < 3; channel += 1) {
-        backdrop[channel] = canvas.data[target + channel] / scale
-        color[channel] = sampleUnit(source, offset + channel, channel, max)
-      }
-      // A clipped layer only paints inside its base, so the base alpha stays.
-      const blended = blend(backdrop, color)
-      for (let channel = 0; channel < 3; channel += 1) {
-        const value = backdrop[channel] + (blended[channel] - backdrop[channel]) * coverage
-        canvas.data[target + channel] = Math.round(clamp(value) * scale)
-      }
-    })
-  }
+  const pixels = getLayerImageData(layer)!
+  const max = maxSample(pixels)
+  eachPixel(document, layer, pixels, (target, source) => {
+    for (let channel = 0; channel < 4; channel += 1) {
+      canvas.data[target + channel] = Math.round(sampleUnit(pixels, source + channel, channel, max) * scale)
+    }
+  })
   return canvas
 }
 
@@ -452,81 +409,4 @@ function sampleUnit(pixels: PixelData, index: number, channel: number, max: numb
 
 function clamp(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value
-}
-
-type Blend = (backdrop: number[], source: number[]) => number[]
-
-function separable(mix: (b: number, s: number) => number): Blend {
-  return (backdrop, source) => backdrop.map((b, index) => mix(b, source[index]))
-}
-
-const multiply = (b: number, s: number) => b * s
-const screen = (b: number, s: number) => b + s - b * s
-const colorDodge = (b: number, s: number) => (b === 0 ? 0 : s >= 1 ? 1 : Math.min(1, b / (1 - s)))
-const colorBurn = (b: number, s: number) => (b >= 1 ? 1 : s <= 0 ? 0 : 1 - Math.min(1, (1 - b) / s))
-const hardLight = (b: number, s: number) => (s <= 0.5 ? multiply(b, 2 * s) : screen(b, 2 * s - 1))
-const softLight = (b: number, s: number) => {
-  if (s <= 0.5) return b - (1 - 2 * s) * b * (1 - b)
-  const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b)
-  return b + (2 * s - 1) * (d - b)
-}
-const vividLight = (b: number, s: number) => (s <= 0.5 ? colorBurn(b, 2 * s) : colorDodge(b, 2 * s - 1))
-const pinLight = (b: number, s: number) => (s <= 0.5 ? Math.min(b, 2 * s) : Math.max(b, 2 * s - 1))
-
-const lum = (c: number[]) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
-const sat = (c: number[]) => Math.max(...c) - Math.min(...c)
-function clipColor(c: number[]): number[] {
-  const l = lum(c)
-  const n = Math.min(...c)
-  const x = Math.max(...c)
-  return c.map((value) => {
-    let out = value
-    if (n < 0) out = l + ((out - l) * l) / (l - n)
-    if (x > 1) out = l + ((out - l) * (1 - l)) / (x - l)
-    return out
-  })
-}
-function setLum(c: number[], l: number): number[] {
-  const d = l - lum(c)
-  return clipColor(c.map((value) => value + d))
-}
-function setSat(c: number[], s: number): number[] {
-  const max = Math.max(...c)
-  const min = Math.min(...c)
-  if (max === min) return [0, 0, 0]
-  return c.map((value) => (value === max ? s : value === min ? 0 : ((value - min) * s) / (max - min)))
-}
-
-// Photoshop blends in document (sRGB-encoded) space; these follow its published
-// mode definitions so a clipped stack merges the way the artist saw it.
-const BLENDS: Partial<Record<BlendMode, Blend>> = {
-  darken: separable(Math.min),
-  multiply: separable(multiply),
-  "color burn": separable(colorBurn),
-  "linear burn": separable((b, s) => Math.max(0, b + s - 1)),
-  "darker color": (b, s) => (lum(s) < lum(b) ? s : b),
-  lighten: separable(Math.max),
-  screen: separable(screen),
-  "color dodge": separable(colorDodge),
-  "linear dodge": separable((b, s) => Math.min(1, b + s)),
-  "lighter color": (b, s) => (lum(s) > lum(b) ? s : b),
-  overlay: separable((b, s) => hardLight(s, b)),
-  "soft light": separable(softLight),
-  "hard light": separable(hardLight),
-  "vivid light": separable(vividLight),
-  "linear light": separable((b, s) => clamp(b + 2 * s - 1)),
-  "pin light": separable(pinLight),
-  "hard mix": separable((b, s) => (vividLight(b, s) < 0.5 ? 0 : 1)),
-  difference: separable((b, s) => Math.abs(b - s)),
-  exclusion: separable((b, s) => b + s - 2 * b * s),
-  subtract: separable((b, s) => Math.max(0, b - s)),
-  divide: separable((b, s) => (s <= 0 ? 1 : Math.min(1, b / s))),
-  hue: (b, s) => setLum(setSat(s, sat(b)), lum(b)),
-  saturation: (b, s) => setLum(setSat(b, sat(s)), lum(b)),
-  color: (b, s) => setLum(s, lum(b)),
-  luminosity: (b, s) => setLum(b, lum(s)),
-}
-
-function blendFunction(mode: BlendMode): Blend {
-  return BLENDS[mode] ?? ((_backdrop, source) => source)
 }

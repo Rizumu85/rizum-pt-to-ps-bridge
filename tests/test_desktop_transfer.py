@@ -54,6 +54,8 @@ class _FillNode:
 
     def set_source(self, channel, source):
         self.sources.append((channel, source))
+        self.reference = mock.Mock(alpha_matte=None)
+        return self.reference
 
     def set_visible(self, value):
         self.visible = value
@@ -86,6 +88,7 @@ class _LayerStack:
         self.target = target
         self.fills = []
         self.groups = []
+        self.anchors = []
         self.deleted = []
         self.ScopedModification = _ScopedModification
         self.InsertPosition = SimpleNamespace(
@@ -95,7 +98,7 @@ class _LayerStack:
         )
         self.NodeStack = SimpleNamespace(Content="content", Mask="mask", Substack="substack")
         self.MaskBackground = SimpleNamespace(Black="black")
-        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", Passthrough="passthrough")
+        self.BlendingMode = SimpleNamespace(Normal="normal", Overlay="overlay", Multiply="multiply", Passthrough="passthrough")
 
     def delete_node(self, node):
         self.deleted.append(node)
@@ -116,6 +119,11 @@ class _LayerStack:
         group.position = position
         self.groups.append(group)
         return group
+
+    def insert_anchor_point_effect(self, position, name):
+        anchor = SimpleNamespace(position=position, name=name)
+        self.anchors.append(anchor)
+        return anchor
 
 
 class _Resource:
@@ -605,6 +613,92 @@ class DesktopTransferTests(unittest.TestCase):
 
             self.assertEqual(layerstack.fills[0].sources, [(channel, (1.0, 0.5, 0.0, space))])
             self.assertEqual(painter.resource.imported, [])
+
+    def test_clipped_layers_share_named_content_and_mask_anchors_in_stacking_order(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        base = payload["transfers"][0]["source"]
+        upper_png = self.root / "upper.png"
+        upper_png.write_bytes(b"upper")
+        upper_mask = self.root / "upper_mask.png"
+        upper_mask.write_bytes(b"upper mask")
+        base["clipped"] = [
+            {"name": "Lower", "png": str(self.layer_png)},
+            {"name": "Upper", "png": str(upper_png), "mask_png": str(upper_mask)},
+        ]
+        payload["transfers"][0]["source"] = {
+            "host": "photoshop", "kind": "group", "name": "Group",
+            "children": [base, {"name": "Sibling", "png": str(self.layer_png)}],
+        }
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        channel = _NamedValue("BaseColor")
+        layerstack = _LayerStack(_TargetNode(_Stack(channel)))
+        painter = self.painter(layerstack)
+        painter.source = SimpleNamespace(AlphaMatte=SimpleNamespace(ExtractAlpha="extract-alpha"))
+        painter.levels = SimpleNamespace(LevelsParamsMono=dict)
+
+        apply_transfer_plan(load_transfer_plan(self.manifest), painter)
+
+        base, mask, lower, lower_clip, lower_mask, upper, own_mask, upper_clip, upper_mask, sibling = layerstack.fills
+        content_anchor, mask_anchor = layerstack.anchors
+        self.assertEqual(mask.position, ("inside", base, "mask"))
+        self.assertEqual(content_anchor.position, ("inside", base, "content"))
+        self.assertEqual(content_anchor.name, "Clipping Mask")
+        self.assertEqual(mask_anchor.position, ("inside", base, "mask"))
+        self.assertEqual(mask_anchor.name, "Clipping Mask (mask)")
+        self.assertEqual(lower.position, ("above", base))
+        self.assertEqual(upper.position, ("above", lower))
+        self.assertEqual(sibling.position, ("below", base))
+        self.assertEqual(lower.mask_background, "black")
+        self.assertIsNone(lower_clip.blending_mode)
+        self.assertEqual(upper.sources, [(channel, "resource:upper.png")])
+        self.assertEqual(own_mask.position, ("inside", upper, "mask"))
+        self.assertEqual(own_mask.sources, [(None, "resource:upper_mask.png")])
+        self.assertEqual(upper_clip.blending_mode, ("multiply", None))
+        for layer, content_fill, mask_fill in ((lower, lower_clip, lower_mask), (upper, upper_clip, upper_mask)):
+            self.assertEqual(content_fill.position, ("inside", layer, "mask"))
+            self.assertEqual(content_fill.name, "Clipping Mask")
+            self.assertEqual(content_fill.sources, [(None, content_anchor)])
+            self.assertEqual(content_fill.reference.alpha_matte, "extract-alpha")
+            self.assertEqual(mask_fill.position, ("inside", layer, "mask"))
+            self.assertEqual(mask_fill.name, "Clipping Mask (mask)")
+            self.assertEqual(mask_fill.sources, [(None, mask_anchor)])
+            self.assertIsNone(mask_fill.reference.alpha_matte)
+            self.assertEqual(mask_fill.blending_mode, ("multiply", None))
+            for fill in (content_fill, mask_fill):
+                fill.reference.set_levels.assert_called_once_with({"input_max": 0.2, "clamp": True})
+
+    def test_unmasked_base_only_exposes_content_alpha(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["transfers"][0]["source"].update(mask_png=None, clipped=[{"png": str(self.layer_png)}])
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+        layerstack = _LayerStack(_TargetNode(_Stack(_NamedValue("BaseColor"))))
+        painter = self.painter(layerstack)
+        painter.source = SimpleNamespace(AlphaMatte=SimpleNamespace(ExtractAlpha="extract-alpha"))
+        painter.levels = SimpleNamespace(LevelsParamsMono=dict)
+
+        apply_transfer_plan(load_transfer_plan(self.manifest), painter)
+
+        base, clipped, fill = layerstack.fills
+        anchor, = layerstack.anchors
+        self.assertIsNone(base.mask_background)
+        self.assertEqual(anchor.position, ("inside", base, "content"))
+        self.assertEqual(anchor.name, "Clipping Mask")
+        self.assertEqual(fill.position, ("inside", clipped, "mask"))
+        self.assertEqual(fill.sources, [(None, anchor)])
+
+    def test_manifest_rejects_invalid_clipping_before_editing_painter(self):
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        source = payload["transfers"][0]["source"]
+        for changes, error in [
+            ({"clipped": {}}, "must be a list"),
+            ({"clipped": [42]}, "must be a JSON object"),
+            ({"clipped": [{"png": str(self.layer_png)}], "kind": "group"}, "cannot use a folder as its base"),
+        ]:
+            with self.subTest(changes=changes):
+                source.update(changes)
+                self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+                with self.assertRaisesRegex(DesktopTransferError, error):
+                    load_transfer_plan(self.manifest)
 
     def test_missing_source_png_is_rejected_before_painter_import(self):
         self.layer_png.unlink()

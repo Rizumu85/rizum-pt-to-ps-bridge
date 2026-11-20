@@ -96,7 +96,7 @@ describe("drops beside a Photoshop clipping stack", () => {
       layer("photoshop", "shine", "layer"), layer("photoshop", "shade", "layer"),
       layer("photoshop", "base", "layer"), layer("photoshop", "other", "layer"),
     ]
-    nodes[0].clipped = nodes[1].clipped = true
+    nodes[0].clipped = nodes[1].clipped = "layer"
     return nodes
   }
 
@@ -148,7 +148,7 @@ describe("replacing the layer a row was dropped beside", () => {
     // "cleanup" is the base of a clipping stack: deleting it would hand the
     // clipped layer above it to whatever lies below.
     const clipping = fixture()
-    clipping.photoshop.splice(1, 0, { ...layer("photoshop", "shine", "layer"), clipped: true })
+    clipping.photoshop.splice(1, 0, { ...layer("photoshop", "shine", "layer"), clipped: "layer" })
     const base = transferBetweenHosts(clipping, "substance_painter:maskout", "photoshop:cleanup", "after")
     expect(canReplace(base, "substance_painter:maskout")).toBe(false)
   })

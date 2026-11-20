@@ -215,8 +215,8 @@ describe("desktop file transport", () => {
     const [folder, levels] = session.state.photoshop
     expect(folder.name).toBe("Paint")
     const [clipped, base] = folder.children ?? []
-    expect(clipped.locked).toBe("Clipped · merges into Base")
-    expect(base.note).toBe("Merges 1 clipped · Styles not transferred")
+    expect(clipped.locked).toBe("Clipped to Base · goes with it")
+    expect(base.note).toBe("Brings 1 clipped · Styles not transferred")
     expect(levels.locked).toBe("Adjustment layer · not supported")
     const [, , tint, , ramp] = session.state.photoshop
     expect(tint.locked).toBeUndefined()
@@ -243,7 +243,7 @@ describe("desktop file transport", () => {
     })
     expect(session.state.photoshop.map(node => node.name)).toEqual(["Top", "Shade", "Bottom"])
     expect(session.state.photoshop.map(node => node.ref.indexPath)).toEqual([[0], [1], [2]])
-    expect(session.state.photoshop[1].locked).toBe("Clipped · merges into Bottom")
+    expect(session.state.photoshop[1].locked).toBe("Clipped to Bottom · goes with it")
   })
 
   it("sends a colour fill as its colour and mask instead of a bitmap", async () => {
@@ -264,7 +264,7 @@ describe("desktop file transport", () => {
     expect(source.mask_png).toMatch(/Tint_ps_30_mask\.png$/)
   })
 
-  it("renders a mapped folder as its layers with clipping merged into the base", async () => {
+  it("preserves the base's pixel alpha and separate mask and sends each clipped layer once", async () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-psd-"))
     const session = await loadBridgeSession({
       photoshopDocument: await writeFeaturePsd(),
@@ -281,9 +281,50 @@ describe("desktop file transport", () => {
     const source = manifest.transfers[0].source
     expect(source).toMatchObject({ kind: "group", png: null, blend_mode: "pass through" })
     expect(source.children.map((child: { path: string }) => child.path)).toEqual(["Paint/Base"])
-    const base = new Uint8Array(await readFile(source.children[0].png))
-    // Multiply of red (255,0,0) by gray (128) keeps red at 128 inside the base.
-    expect(Array.from(decodeRgba8(base, 1, 1))).toEqual([128, 0, 0, 255])
+    const [base] = source.children
+    const png = await readFile(base.png)
+    const mask = await readFile(base.mask_png)
+    expect(pixel8(png, 1, 1)).toEqual([255, 0, 0, 128])
+    expect(pixel8(mask, 1, 1)).toEqual([64])
+    expect(pixel8(png, 0, 1)).toEqual([0, 0, 0, 0])
+    expect(pixel8(mask, 0, 1)).toEqual([64])
+    expect(base.opacity).toBe(80)
+    expect(base.clipped).toMatchObject([{ name: "Shade", opacity: 40, visible: false, blend_mode: "multiply" }])
+    expect(pixel8(await readFile(base.clipped[0].png), 1, 1)).toEqual([128, 128, 128, 96])
+    expect(pixel8(await readFile(base.clipped[0].mask_png), 1, 1)).toEqual([192])
+    expect(manifest.warnings).toEqual([])
+  })
+
+  it("keeps clipped colour fills editable and reports unsupported members when only the base is mapped", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pt-bridge-clipping-"))
+    const file = path.join(directory, "colors.psd")
+    const vectorFill = { type: "color" as const, color: { r: 0, g: 128, b: 255 } }
+    await writeFile(file, writePsdBuffer({
+      width: 2, height: 2, children: [
+        { name: "Base", vectorFill, blendMode: "overlay" },
+        { name: "Lower", clipping: true, vectorFill },
+        { name: "Levels", clipping: true, adjustment: { type: "levels" } },
+        { name: "Upper", clipping: true, vectorFill },
+      ],
+    }, { generateThumbnail: false, noBackground: true }))
+    const session = await loadBridgeSession({
+      photoshopDocument: file, painterSnapshot: path.join(fixtureDir, "painter_snapshot.json"),
+      output: path.join(directory, "request.json"),
+    })
+    const base = session.state.photoshop[3]
+    const mapped = transferBetweenHosts(session.state, base.id, "substance_painter:sp-working")
+    const manifest = JSON.parse(await readFile(
+      await writeTransferManifest(session, mapped, session.initialPainterContextId), "utf8",
+    ))
+    const source = manifest.transfers[0].source
+    const fill = { color: [0, 128 / 255, 1], png: null }
+    expect(source).toMatchObject(fill)
+    expect(source.mask_png).toBeNull()
+    expect(source.clipped).toMatchObject([{ name: "Lower", ...fill }, { name: "Upper", ...fill }])
+    expect(manifest.warnings).toEqual([
+      "Levels: Adjustment layer · not supported, skipped.",
+      "Base: in Painter its clipped layers blend on their own.",
+    ])
   })
 
   it("writes Painter-to-Photoshop intent with the native Photoshop layer id", async () => {
@@ -570,7 +611,7 @@ describe("Painter link", () => {
   })
 })
 
-function decodeRgba8(png: Uint8Array, x: number, y: number): Uint8Array {
+function pixel8(png: Uint8Array, x: number, y: number): number[] {
   const view = new DataView(png.buffer, png.byteOffset)
   const width = view.getUint32(16)
   const chunks: Uint8Array[] = []
@@ -581,6 +622,7 @@ function decodeRgba8(png: Uint8Array, x: number, y: number): Uint8Array {
     offset += length + 12
   }
   const raw = inflateSync(Buffer.concat(chunks))
-  const start = y * (width * 4 + 1) + 1 + x * 4
-  return raw.subarray(start, start + 4)
+  const channels = png[25] === 6 ? 4 : 1
+  const start = y * (width * channels + 1) + 1 + x * channels
+  return Array.from(raw.subarray(start, start + channels))
 }
