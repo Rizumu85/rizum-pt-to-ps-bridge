@@ -9,6 +9,17 @@ from sp_plugin.rizum_sp_to_ps.geometry_mask import GeometryMaskBaker, _parse_obj
 
 
 class GeometryMaskRasterizationTests(unittest.TestCase):
+    def test_obj_objects_named_after_their_mesh_with_a_suffix_still_match(self):
+        # Painter exported the mesh "Jacket_Body" as "Jacket_Body_Jacket_Body".
+        baker = GeometryMaskBaker()
+        baker._available_names = {"Jacket_Body_Jacket_Body", "Cuff_Fin_L", "Cuff_Fin_L_01", "Group|Cuff_Ring_L"}
+        meshes = ["Jacket_Body", "Cuff_Fin_L", "Cuff_Fin_L_01", "Cuff_Ring_L"]
+
+        self.assertEqual(baker._matched_names(["Jacket_Body"], meshes), {"Jacket_Body_Jacket_Body"})
+        self.assertEqual(baker._matched_names(["Cuff_Fin_L"], meshes), {"Cuff_Fin_L"})
+        self.assertEqual(baker._matched_names(["Cuff_Fin_L_01"], meshes), {"Cuff_Fin_L_01"})
+        self.assertEqual(baker._matched_names(["cuff_ring_l"], meshes), {"Group|Cuff_Ring_L"})
+
     def test_geometry_mask_png_uses_photoshop_document_resolution(self):
         baker = GeometryMaskBaker()
         baker._faces = [

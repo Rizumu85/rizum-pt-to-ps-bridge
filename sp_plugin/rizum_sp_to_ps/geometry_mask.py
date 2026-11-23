@@ -70,7 +70,7 @@ class GeometryMaskBaker:
                 face_count=face_count,
             )
 
-        matched_names = self._matched_names(mesh_names)
+        matched_names = self._matched_names(mesh_names, asset.get("texture_set_meshes") or mesh_names)
         if mesh_names and not matched_names:
             diagnostics = self._diagnostic(asset, [], cached=False)
             raise GeometryMaskExportError(
@@ -187,17 +187,13 @@ class GeometryMaskBaker:
             self._available_materials,
         ) = _parse_obj(mesh_path, checkpoint=self._checkpoint)
 
-    def _matched_names(self, requested_names):
-        aliases = {}
-        for available in self._available_names:
-            for alias in _name_aliases(available):
-                aliases.setdefault(alias, set()).add(available)
-
-        matched = set()
-        for requested in requested_names:
-            for alias in _name_aliases(requested):
-                matched.update(aliases.get(alias, ()))
-        return matched
+    def _matched_names(self, requested_names, mesh_names):
+        requested = {alias for name in requested_names for alias in _name_aliases(name)}
+        return {
+            available
+            for available in self._available_names
+            if _mesh_owner(available, mesh_names) in requested
+        }
 
     def _rasterize(
         self,
@@ -612,6 +608,26 @@ def _name_aliases(name):
     for separator in ("|", ":"):
         aliases.add(text.rsplit(separator, 1)[-1])
     return aliases
+
+
+def _mesh_owner(obj_name, mesh_names):
+    """The Painter mesh an OBJ object belongs to, as an alias, or None.
+
+    Painter's OBJ export names some objects after their mesh with a suffix:
+    a user's "Jacket_Body" arrived as "Jacket_Body_Jacket_Body" and failed
+    the export. An object belongs to the longest mesh name it equals or
+    starts with followed by "_", so a mesh "Cuff_Fin_L_01" keeps its own
+    object instead of the mesh "Cuff_Fin_L" taking it.
+    """
+    best = None
+    for alias in _name_aliases(obj_name):
+        for mesh in mesh_names:
+            for mesh_alias in _name_aliases(mesh):
+                if (alias == mesh_alias or alias.startswith(mesh_alias + "_")) and (
+                    best is None or len(mesh_alias) > len(best)
+                ):
+                    best = mesh_alias
+    return best
 
 
 def _matching_materials(available_materials, *texture_set_names):

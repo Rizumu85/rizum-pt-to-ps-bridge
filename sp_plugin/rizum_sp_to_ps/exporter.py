@@ -1109,6 +1109,7 @@ def _geometry_mask_record(node):
         "inclusion_list": inclusion_list,
         "meshes": listed_meshes,
         "enabled_meshes": enabled_meshes,
+        "all_meshes": all_meshes,
         "is_restrictive": bool(all_meshes)
         and set(enabled_meshes) != set(all_meshes),
         "is_empty": bool(all_meshes) and not enabled_meshes,
@@ -1582,6 +1583,7 @@ def _annotate_node_assets(
                 "source": "painter_geometry_mask",
                 "fidelity": "uv_rasterized",
                 "enabled_meshes": list(geometry["enabled_meshes"]),
+                "texture_set_meshes": list(geometry.get("all_meshes") or []),
                 "texture_set": request["texture_set"],
                 "texture_set_original": request.get("texture_set_original"),
                 "uv_tile": deepcopy(request["uv_tile"]),
