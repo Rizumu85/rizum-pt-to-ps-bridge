@@ -107,10 +107,17 @@
     }
 
     if (result.errors.length > 0) {
+        // The errors themselves, not the result file's path: Painter reads
+        // and removes that file as soon as the build ends, so a user who
+        // followed the path found nothing and the cause was lost.
+        var reasons = [];
+        for (var errorIndex = 0; errorIndex < result.errors.length && errorIndex < 3; errorIndex += 1) {
+            reasons.push("- " + result.errors[errorIndex].message);
+        }
         alert(
             "Rizum PT-to-PS built " + result.built.length +
             " document(s), with " + result.errors.length +
-            " error(s).\n\nDetails: " + resultPath
+            " error(s).\n\n" + reasons.join("\n")
         );
     }
 
