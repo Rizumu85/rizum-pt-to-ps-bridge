@@ -184,6 +184,9 @@ __RIZUM_MASK_RUNTIME__
             // performs one rasterization pass instead of one pass per asset.
             progress.describe("Finalizing " + documentName);
             document.rasterizeAllLayers();
+            if (applyLayerMasks) {
+                applyAllLayerMasks();
+            }
             advanceImportProgress(
                 progress,
                 progressState,
@@ -260,25 +263,18 @@ __RIZUM_MASK_RUNTIME__
 
         applyNodeProperties(placed, node, channel);
         if (node.mask_asset && node.mask_asset.path) {
-            var pixelLayer = !!(node.asset && node.asset.path);
             try {
-                // Only a pixel layer takes a mask into its pixels, so this one
-                // skips the single rasterize pass that runs at the end.
-                if (applyLayerMasks && pixelLayer) {
-                    placed.rasterize(RasterizeType.ENTIRELAYER);
-                }
                 applyMask(document, placed, node.mask_asset.path);
-                if (applyLayerMasks && pixelLayer) {
-                    applySelectedLayerMask();
-                }
                 advanceImportProgress(
                     progress,
                     progressState,
                     "Applied mask: " + nodeDisplayName(node)
                 );
             } catch (error) {
+                // The Painter name: reading the layer's own could fail with it
+                // and hide the error that matters.
                 throw new Error(
-                    "Could not apply mask for " + placed.name + ": " +
+                    "Could not apply mask for " + nodeDisplayName(node) + ": " +
                     errorMessage(error)
                 );
             }

@@ -107,7 +107,7 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         finally_start = self.source.index("} finally {")
         finally_block = self.source[
             finally_start : self.source.index(
-                "if (result.errors.length > 0) {\n        alert",
+                "if (result.errors.length > 0) {",
                 finally_start,
             )
         ]
@@ -130,20 +130,23 @@ class PhotoshopBuildPipelineTests(unittest.TestCase):
         self.assertNotIn("removeFolderTree(outputFolder)", own)
 
 
-    def test_applied_masks_merge_only_into_rasterized_pixel_layers(self):
-        placer = self.source[
-            self.source.index("function placeNode(") :
-            self.source.index("function countImportUnits")
+    def test_applied_masks_merge_after_the_one_rasterize_pass_by_layer_id(self):
+        builder = self.source[
+            self.source.index("function buildRequest") :
+            self.source.index("function placeNodes")
         ]
         self.assertIn("exportList.settings.apply_layer_masks === true", self.source)
-        # A smart object takes no mask into its pixels, and a folder none at all.
-        self.assertIn("var pixelLayer = !!(node.asset && node.asset.path);", placer)
-        rasterize = placer.index("placed.rasterize(RasterizeType.ENTIRELAYER)")
-        mask = placer.index("applyMask(document, placed, node.mask_asset.path)")
-        merge = placer.index("applySelectedLayerMask()")
-        self.assertLess(rasterize, mask)
-        self.assertLess(mask, merge)
-        self.assertEqual(placer.count("if (applyLayerMasks && pixelLayer)"), 2)
+        self.assertLess(builder.index("rasterizeAllLayers()"), builder.index("applyAllLayerMasks()"))
+        self.assertEqual(self.source.count("rasterizeAllLayers()"), 1)
+        masks = (BUILD_SCRIPT.parent / "photoshop_masks.jsx").read_text(encoding="utf-8")
+        merge = masks[masks.index("function applyAllLayerMasks") : masks.index("function pasteLayerAsMask")]
+        # Folders take no mask into pixels; layers are found by id, not DOM handle.
+        self.assertIn('"layerSectionContent"', merge)
+        self.assertIn("putIdentifier", merge)
+        self.assertLess(merge.index("foldedFolders()"), merge.index("applySelectedLayerMask()"))
+        self.assertIn("foldAgain(folded)", merge)
+        # A failed mask is named from Painter, never by reading the layer.
+        self.assertNotIn("placed.name", self.source[self.source.index("function placeNode(") : self.source.index("function countImportUnits")])
 
     def test_bridge_inserts_merge_masks_only_when_asked_and_never_into_folders(self):
         transfer = (BUILD_SCRIPT.parent / "photoshop_transfer.jsx").read_text(encoding="utf-8")

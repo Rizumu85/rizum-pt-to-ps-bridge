@@ -124,56 +124,6 @@ __RIZUM_TARGET_RUNTIME__
         }
     }
 
-    // Selecting a layer makes Photoshop open every folder above it, and the
-    // mask steps cannot work without selecting, so folders the user keeps
-    // folded came back open after an Apply. They are recorded before the
-    // first insert and folded again after the last, before the save that
-    // stores the state; a folder this Apply added stays as Photoshop opens it.
-    function foldedFolders() {
-        var folded = [];
-        try {
-            var count = new ActionReference();
-            count.putProperty(charIDToTypeID("Prpr"), stringIDToTypeID("numberOfLayers"));
-            count.putEnumerated(charIDToTypeID("Dcmn"), charIDToTypeID("Ordn"), charIDToTypeID("Trgt"));
-            var total = executeActionGet(count).getInteger(stringIDToTypeID("numberOfLayers"));
-            for (var index = 1; index <= total; index += 1) {
-                var reference = new ActionReference();
-                reference.putIndex(charIDToTypeID("Lyr "), index);
-                var layer = executeActionGet(reference);
-                if (isFoldedFolder(layer)) folded.push(layer.getInteger(stringIDToTypeID("layerID")));
-            }
-        } catch (ignored) {
-            // A Photoshop that cannot report the state keeps its folders as they end up.
-            return [];
-        }
-        return folded;
-    }
-
-    function isFoldedFolder(layer) {
-        var expanded = stringIDToTypeID("layerSectionExpanded");
-        return typeIDToStringID(layer.getEnumerationValue(stringIDToTypeID("layerSection"))) === "layerSectionStart"
-            && layer.hasKey(expanded) && !layer.getBoolean(expanded);
-    }
-
-    function foldAgain(layerIds) {
-        for (var index = 0; index < layerIds.length; index += 1) {
-            try {
-                var reference = new ActionReference();
-                reference.putIdentifier(charIDToTypeID("Lyr "), layerIds[index]);
-                if (isFoldedFolder(executeActionGet(reference))) continue;
-                var property = new ActionReference();
-                property.putProperty(charIDToTypeID("Prpr"), stringIDToTypeID("layerSectionExpanded"));
-                property.putIdentifier(charIDToTypeID("Lyr "), layerIds[index]);
-                var descriptor = new ActionDescriptor();
-                descriptor.putReference(charIDToTypeID("null"), property);
-                descriptor.putBoolean(charIDToTypeID("T   "), false);
-                executeAction(charIDToTypeID("setd"), descriptor, DialogModes.NO);
-            } catch (ignored) {
-                // The folder is gone: this Apply replaced it.
-            }
-        }
-    }
-
     function validateRequest(request) {
         if (!request || request.request_type !== "painter_to_photoshop_transfer") {
             throw new Error("Expected a Painter-to-Photoshop transfer request");
