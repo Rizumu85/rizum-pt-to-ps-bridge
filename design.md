@@ -122,9 +122,9 @@ its text does not depend on the user's installed fonts: 13px primary and
 no Hangul, so Korean uses the system's Malgun Gothic.
 
 Painter writes build bundles to the working folder
-`<exportPath>/<project>_photoshop_export/`, resolving Painter's project export
-path through the JS `alg.mapexport.exportPath()` fallback, plus
-`_last_export.json` listing the exact requests of that run. The PSDs
+`<temp>/rizum-pt-bridge/<project>/photoshop_export/`, plus `_last_export.json`
+listing the exact requests of that run. Painter's project export path is
+resolved through the JS `alg.mapexport.exportPath()` fallback. The PSDs
 themselves are saved straight into `<exportPath>` (see section 3). The plugin is an automation bridge, so every
 successful export continues straight into Photoshop: Painter writes a JSX
 launcher for the export list and starts the configured Photoshop executable
@@ -302,9 +302,10 @@ Painter's Export Textures dialog and updates dynamically if they change it.
 PSDs are written straight into `<exportPath>`, beside the textures Painter
 exports there: the PSD is the deliverable, and the user asked that an export
 leave nothing else behind. The bundles Photoshop builds from go to the working
-folder `<exportPath>/<project>_photoshop_export/`. A fully successful build
-deletes what the export wrote there and then the folder itself if it is empty;
-files the user keeps in it are never deleted. A failed build keeps everything.
+folder in the system temp folder, not beside the PSDs: an export path in
+OneDrive locked freshly written layer PNGs while syncing them and failed the
+export. A fully successful build deletes what the export wrote there and then
+the folder itself if it is empty. A failed build keeps everything.
 There is no setting to keep the layer PNGs: the user dropped it once the PSDs
 left the folder.
 Because the export path also holds the PSDs the user works in, Painter asks

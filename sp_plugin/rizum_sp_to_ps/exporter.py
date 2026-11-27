@@ -125,14 +125,16 @@ def write_json_atomic(path, payload):
 def default_output_dir(settings=None):
     """Return the working folder an export renders its build bundles into.
 
-    The user asked that an export leave only its PSDs behind, in Painter's
-    own export path (see export_root), so this folder holds what Photoshop
-    builds them from and is removed once the build succeeds.
+    It holds what Photoshop builds the PSDs from and is removed once the
+    build succeeds; the PSDs go to Painter's export path (see export_root).
+    It lives in the local temp folder: in the export path it sat in the
+    user's OneDrive, which locked a freshly written layer PNG while syncing
+    it and failed the export with "Access is denied".
     """
     settings = settings or {}
     if settings.get("output_dir"):
         return Path(settings["output_dir"])
-    return export_root() / f"{_project_name()}_photoshop_export"
+    return session_dir() / "photoshop_export"
 
 
 def session_dir():
